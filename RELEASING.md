@@ -66,8 +66,9 @@ artifacts. Authorized maintainers must supply or approve:
 
 - Changes to the canonical identity and contact values listed above
 - Repository creation and visibility, branch/tag protections, environments,
-  secrets, and required reviewers
-- npm package ownership and Trusted Publisher configuration
+  secrets, and environment approval policies
+- npm package ownership for the maintainer-confirmed `cometapi-team` account
+  and Trusted Publisher configuration
 - A `COMETAPI_KEY`, request budget, and explicit authorization for live smoke
   tests
 - Immutable public tags, GitHub releases, environment approvals, and npm
@@ -75,6 +76,12 @@ artifacts. Authorized maintainers must supply or approve:
 
 Missing identity, credentials, ownership, or authorization blocks the
 corresponding release gate. Do not invent it or replace it with a mock.
+
+The `cometapi` package does not exist in the public registry yet, so npm cannot
+verify its owner before the first publication. Registry Alpha owner evidence is
+complete only when `npm owner ls cometapi` lists the maintainer-confirmed
+`cometapi-team` account after bootstrap; until then this remains a Registry
+Alpha prerequisite, not a Public Preview blocker.
 
 For the current milestone, authorized external actions stop at creating the
 empty private repository, pushing its sanitized first history, and observing

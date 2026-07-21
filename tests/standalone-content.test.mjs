@@ -1,4 +1,5 @@
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -7,12 +8,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { URL } from "node:url";
+import { basename, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { collectStandaloneContentViolations } from "../scripts/standalone-content.mjs";
+import { collectPublicPreviewGateViolations } from "../scripts/check-public-preview.mjs";
+import { ROOT } from "../scripts/lib.mjs";
+import {
+  collectStandaloneContentViolations,
+  STANDALONE_CONTENT_EXCLUSIONS,
+} from "../scripts/standalone-content.mjs";
 
 function withTemporaryDirectory(callback) {
   const directory = mkdtempSync(join(tmpdir(), "cometapi-content-test-"));
@@ -58,6 +63,32 @@ describe("standalone content", () => {
     });
   });
 
+  it("reports missing symbolic-link targets", () => {
+    withTemporaryDirectory((root) => {
+      symlinkSync(join(root, "missing.txt"), join(root, "broken.txt"));
+
+      expect(collectStandaloneContentViolations(root)).toEqual([
+        expect.stringMatching(/symbolic link target is missing/),
+      ]);
+    });
+  });
+
+  it("reports private artifacts and sibling workspaces", () => {
+    withTemporaryDirectory((root) => {
+      const privateArtifact = ["SDK", "PRD.md"].join("_");
+      const siblingWorkspace = `${["cometapi", "python"].join("-")}/README.md`;
+      writeFileSync(
+        join(root, "notes.md"),
+        `See ${privateArtifact} and ${siblingWorkspace}.\n`,
+      );
+
+      const violations = collectStandaloneContentViolations(root);
+      expect(violations).toHaveLength(2);
+      expect(violations.join("\n")).toMatch(/private material/);
+      expect(violations.join("\n")).toMatch(/sibling repository/);
+    });
+  });
+
   it("ignores generated and dependency directories", () => {
     withTemporaryDirectory((root) => {
       const dependencyDirectory = join(root, "node_modules", "fixture");
@@ -69,12 +100,28 @@ describe("standalone content", () => {
     });
   });
 
-  it("is included in the Public Preview aggregate gate", () => {
-    const gate = readFileSync(
-      new URL("../scripts/check-public-preview.mjs", import.meta.url),
-      "utf8",
-    );
-    expect(gate).toContain("collectStandaloneContentViolations(ROOT)");
-    expect(gate).toContain("...standaloneContentViolations");
+  it("aggregates content and standalone violations in one Public Preview run", () => {
+    withTemporaryDirectory((parent) => {
+      const root = join(parent, "repository");
+      cpSync(ROOT, root, {
+        filter: (source) =>
+          !STANDALONE_CONTENT_EXCLUSIONS.has(basename(source)),
+        recursive: true,
+      });
+
+      const manifestPath = join(root, "package.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      manifest.author = "Different Author";
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      const absoluteReference = ["", "Users", "example", "notes.md"].join("/");
+      writeFileSync(join(root, "outside.md"), `${absoluteReference}\n`);
+
+      const violations = collectPublicPreviewGateViolations(root);
+      expect(violations.join("\n")).toMatch(/package\.json author/);
+      expect(violations.join("\n")).toMatch(
+        /outside\.md: absolute machine-local path/,
+      );
+    });
   });
 });
