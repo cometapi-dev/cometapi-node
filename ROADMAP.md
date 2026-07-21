@@ -1,7 +1,7 @@
 # CometAPI TypeScript and Node.js SDK Roadmap
 
-Status: Approved for 0.1 implementation; later milestones planned  
-Last updated: 2026-07-20  
+Status: Private Remote Validation complete; Public Preview and later milestones planned  
+Last updated: 2026-07-21  
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
@@ -11,18 +11,18 @@ The TypeScript and Node.js SDK will provide a typed CometAPI entry point that
 preserves the official OpenAI JavaScript client experience while shipping a
 small, auditable package for supported Node.js LTS runtimes.
 
-The current product target is to complete Private Remote Validation for a
-sanitized repository and then stop before its visibility changes. Public
-Preview and the functional `0.1.0-alpha.1` prerelease follow as separate
-evidence gates. Registry publication proceeds only through Private Remote
-Validation, Public Preview, Registry Alpha, and stable 0.1.0 stages.
+Private Remote Validation is complete for the sanitized private repository,
+and work stops before its visibility changes. Public Preview and the functional
+`0.1.0-alpha.1` prerelease follow as separate evidence gates. Registry
+publication proceeds only through Private Remote Validation, Public Preview,
+Registry Alpha, and stable 0.1.0 stages.
 
 ## Milestones
 
 | Milestone                    | Status      | User outcome                                                                                                                             |
 | ---------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository foundation        | In progress | The repository has reproducible development, contribution, security, and release processes.                                              |
-| Private Remote Validation    | Planned     | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.     |
+| Private Remote Validation    | Complete    | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.     |
 | Public Preview               | Planned     | The public repository has blocking CI, repository rules, security reporting, protected environments, and authorized live-smoke evidence. |
 | 0.1.0-alpha.1 Registry Alpha | Planned     | Early adopters can install a functional prerelease from npm's `next` channel and call the three required OpenAI-compatible resources.    |
 | 0.1.0 Stable                 | Planned     | Users can install a fully verified package from npm's default channel.                                                                   |
