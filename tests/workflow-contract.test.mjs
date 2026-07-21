@@ -108,11 +108,10 @@ describe("GitHub Actions workflow contract", () => {
     expect(publish).toContain(
       "needs.verify.outputs.version == '0.1.0-alpha.1'",
     );
-    expect(publish).toContain('"$VERSION" != "0.1.0-alpha.1"');
-    expect(publish).toContain('"$DIST_TAG" != "next"');
     expect(publish).toContain(
-      '"$ALPHA1_BOOTSTRAP_ENABLED" == "true" && -z "$NODE_AUTH_TOKEN"',
+      "ref: ${{ needs.verify.outputs.release-commit }}",
     );
+    expect(publish).toContain("run: bash scripts/publish-artifact.sh");
     expect(
       matches(publishWorkflow, /secrets\.NPM_ALPHA1_BOOTSTRAP_TOKEN/g),
     ).toHaveLength(1);

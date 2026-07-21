@@ -19,8 +19,8 @@ jobs:
       vars.LIVE_SMOKE_ENABLED == 'true' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # Required repository configuration: protect this environment, its reviewers,
-    # COMETAPI_KEY secret, and the optional model variable.
+    # Required repository configuration: protect this environment without required
+    # reviewers, add COMETAPI_KEY, and optionally set the model variable.
     environment: live-smoke
     timeout-minutes: 5
     steps:
