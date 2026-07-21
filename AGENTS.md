@@ -16,13 +16,15 @@ repository.
 - Record repository-specific product and release decisions locally in
   `ROADMAP.md`, `ARCHITECTURE.md`, `RELEASING.md`, and this file.
 
-## Current Milestone: Private Remote Validation
+## Current Milestone: Public Preview
 
-Complete Private Remote Validation and stop before changing repository
-visibility. Repository-local source, tests, documentation, metadata, fixtures,
-and workflows may be changed and verified. Creation of the empty private
-canonical repository, its sanitized first history, a push, and observation of
-credential-free GitHub Actions require explicit maintainer authorization.
+Private Remote Validation is complete, and the current execution target is
+Public Preview. Repository-local source, tests, documentation, metadata,
+fixtures, workflows, private pull requests, and credential-free CI may be
+changed and verified. Stop before changing repository visibility: making the
+canonical repository public and configuring or exercising public-only settings,
+protected environments, secrets, or live smoke require explicit maintainer
+authorization.
 
 The accepted identity is:
 
