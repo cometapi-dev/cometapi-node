@@ -80,8 +80,8 @@ corresponding release gate. Do not invent it or replace it with a mock.
 The `cometapi` package does not exist in the public registry yet, so npm cannot
 verify its owner before the first publication. Registry Alpha owner evidence is
 complete only when `npm owner ls cometapi` lists the maintainer-confirmed
-`cometapi-team` account after bootstrap; until then this remains a Registry
-Alpha prerequisite, not a Public Preview blocker.
+`cometapi-team` account after the first publication; until then this remains a
+Registry Alpha prerequisite, not a Public Preview blocker.
 
 For the current Public Preview milestone, authorized external actions remain
 limited to private pull requests and credential-free CI. Changing repository
@@ -285,7 +285,18 @@ dist-tag. Before authorizing release:
     environment with OIDC and provenance, or use the one-time alpha.1 bootstrap
     only when normal Trusted Publishing cannot create the new package. The
     workflow selects `next`; no static package-manifest dist-tag participates.
-11. Install `cometapi@next` from npm and run an independent import and mocked
+11. After the first npm publication, an authorized maintainer adds the
+    company-controlled owner and verifies the resulting owner list:
+
+    ```bash
+    npm owner add cometapi-team cometapi
+    npm owner ls cometapi
+    ```
+
+    Record evidence that the output lists `cometapi-team`; Registry Alpha owner
+    setup is incomplete until it does.
+
+12. Install `cometapi@next` from npm and run an independent import and mocked
     call before marking the alpha released. Enable Release Please only after
     the initial manual alpha is complete.
 
@@ -309,17 +320,8 @@ one-time exception:
    `next` dist-tag, and fails if the token is absent when publication is needed.
 3. That run verifies and publishes the exact artifact with public access and
    provenance, then verifies registry installation.
-4. After the first publication, an authorized maintainer adds the
-   company-controlled owner and verifies the resulting owner list:
-
-   ```bash
-   npm owner add cometapi-team cometapi
-   npm owner ls cometapi
-   ```
-
-   Record evidence that the output lists `cometapi-team`; Registry Alpha owner
-   setup is incomplete until it does.
-
+4. Complete the common Registry Alpha owner-verification step after this first
+   publication; the bootstrap does not change or defer that requirement.
 5. A maintainer immediately configures OIDC, removes the environment variable
    and secret, revokes the token, and restricts token-based publishing.
 6. The project immediately prepares and publishes `0.1.0-alpha.2` through
