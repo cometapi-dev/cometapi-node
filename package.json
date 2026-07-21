@@ -73,7 +73,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "openai": "^6.47.0"
+    "openai": "^6.48.0"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
