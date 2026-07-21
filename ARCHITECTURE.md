@@ -1,0 +1,141 @@
+# Architecture
+
+## Purpose
+
+The `cometapi` package provides a branded, typed CometAPI client while reusing
+the official OpenAI JavaScript SDK for the OpenAI-compatible protocol. The 0.1
+design minimizes owned protocol code and keeps package behavior auditable.
+
+## 0.1 boundary
+
+The supported public surface is limited to:
+
+- `chat.completions.create`, streaming and non-streaming
+- `responses.create`, streaming and non-streaming
+- `models.list`
+
+Inherited methods are not automatically supported. A method becomes supported
+only after its contract tests and compatibility entry are committed. Provider-
+native adapters, CometAPI-specific resources, account operations, media APIs,
+and provider-neutral request translation are future work.
+
+## Client design
+
+`CometAPI` is a thin subclass of the official `OpenAI` class. It is responsible
+only for CometAPI defaults and public branding:
+
+1. An explicit constructor `apiKey` wins over `COMETAPI_KEY`.
+2. An explicit constructor `baseURL` wins over `COMETAPI_BASE_URL`.
+3. The default base URL is `https://api.cometapi.com/v1`.
+4. Other documented OpenAI client options pass through unchanged.
+
+Missing or blank CometAPI credentials and blank explicit base URLs are rejected
+before transport through the official `OpenAIError` family. Configuration
+validation must not introduce an unrelated SDK-specific error hierarchy.
+
+The official dependency owns HTTP transport, request and response models,
+errors, retries, timeouts, pagination, streaming parsing, stream lifecycle, and
+custom `fetch` integration. This repository must not reimplement those layers
+or depend on private upstream methods or properties.
+
+## Type and error identity
+
+The package preserves official OpenAI request, response, stream, and exception
+types. Local configuration failures are `OpenAIError` instances; HTTP failures
+preserve the more specific official `APIError` subclasses. `openai` is a normal
+compatible runtime dependency so an application that already installs a
+compatible version can deduplicate it. The packed host fixture must prove both
+a single effective OpenAI installation and `error instanceof APIError` identity
+across the host application and CometAPI.
+
+Public APIs use strict TypeScript. New public contracts may not use `any` or
+`Record<string, any>` as an escape hatch.
+
+## Source boundaries
+
+The 0.1 source root contains the client, configuration, and public exports:
+
+```text
+src/
+├── index.ts
+├── client.ts
+└── config.ts
+```
+
+Future CometAPI-specific resources belong in `src/resources/`, with their
+models in `src/types/`. Future provider adapters belong in `src/providers/` and
+must be isolated behind their own subpath exports. Empty placeholder modules do
+not establish support.
+
+## Module formats and packaging
+
+The published root export supports both ESM `import` and CommonJS `require` with
+matching declarations. Export-map and package-shape checks must verify both
+conditions. Release validation installs the exact tarball into clean ESM,
+CommonJS, and compatible-OpenAI host fixtures before any publication step.
+
+The package manifest declares only intended runtime files. Generated build
+artifacts and dependency directories are not committed. A successful source-tree
+import is not package evidence; verification must use the packed artifact.
+
+`package.json` is the source of the candidate version. Local and release checks
+derive the version from it and require agreement with the package-lock root,
+the Release Please manifest or the documented one-time bootstrap, the single
+candidate changelog heading, and packed metadata. Remote publication adds exact
+tag and GitHub release agreement.
+
+The publish workflow is the sole source of npm dist-tag selection: prereleases
+use `next`, stable versions use `latest`. The package manifest must not carry a
+static dist-tag because that would make stable and prerelease policy diverge.
+
+## Testing layers
+
+Evidence is separated by layer:
+
+1. Unit and mocked contract tests verify URL resolution, authentication,
+   serialization, deserialization, option forwarding, custom `fetch`, errors,
+   streaming, cancellation, and client lifecycle without a production key.
+2. Package tests inspect the tarball, validate its exports and types, and run
+   mocked calls from clean fixtures.
+3. Compatibility tests cover the minimum OpenAI dependency, the locked
+   development version, and a latest-within-major canary.
+4. Trusted live smoke tests make exactly three sequential requests with a
+   16-token output cap, a 60-second per-request timeout, concurrency of one, and
+   stop-on-first-failure behavior.
+5. Post-publication verification installs from npm and runs an independent
+   import and mocked-call smoke test.
+
+Passing an earlier layer does not prove a later one. In particular, mocked
+responses do not establish live compatibility, and local workflow validation
+does not establish GitHub Actions execution.
+
+## Runtime policy
+
+The package `engines` contract supports Node.js 22 and 24 only. Node.js 26 is an
+advisory compatibility target and remains outside `engines` until it enters LTS
+and the policy is deliberately updated. Node.js 18 and 20 are unsupported. The
+normal publication runtime is Node.js 24 and must satisfy npm Trusted
+Publishing's minimum Node.js and npm CLI versions recorded in
+[RELEASING.md](./RELEASING.md).
+
+## Security boundary
+
+The SDK reads credentials from explicit options or the environment and does not
+provide persistent credential storage. Full keys must never enter logs,
+CometAPI-generated errors, fixtures, examples, source maps, or package
+artifacts. Browser-side long-lived key use is unsupported.
+
+## Repository independence
+
+This directory is the repository root. Public documents, commands,
+configuration, fixtures, and workflows must not depend on files outside this
+root, a sibling repository, or a private checkout. The self-containment gate
+copies the source into an empty temporary parent and runs the documented
+offline checks there.
+
+## Decision changes
+
+Changes to the public client name, supported surface, dependency strategy,
+module formats, runtime matrix, or release security model require an explicit
+roadmap and compatibility update. Public behavior changes also require tests,
+examples, and a changelog entry.

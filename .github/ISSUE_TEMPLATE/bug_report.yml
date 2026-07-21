@@ -1,0 +1,65 @@
+name: Bug report
+description: Report reproducible incorrect SDK behavior.
+title: "[Bug]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not include API keys, access tokens, private prompts, or customer
+        data. Replace credentials and sensitive values with redacted examples.
+  - type: input
+    id: version
+    attributes:
+      label: CometAPI SDK version
+      placeholder: 0.1.0-alpha.1
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: 22.x or 24.x
+    validations:
+      required: true
+  - type: dropdown
+    id: module-system
+    attributes:
+      label: Module system
+      options:
+        - ESM
+        - CommonJS
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest offline or redacted example that shows the problem.
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include relevant dependency versions and sanitized logs.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, private prompts, and customer data.
+          required: true

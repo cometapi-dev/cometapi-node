@@ -1,0 +1,185 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-lint:
+    name: GitHub Actions static validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+      - name: Validate Public Preview content and identity
+        run: npm run check:public-preview
+      - name: Download the pinned actionlint release
+        id: actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\n' < .github/actionlint-version)"
+          asset="actionlint_${version}_linux_amd64.tar.gz"
+          base="https://github.com/rhysd/actionlint/releases/download/v${version}"
+          curl --fail --location --proto '=https' --retry 3 --silent --show-error \
+            "$base/$asset" --output "$RUNNER_TEMP/$asset"
+          expected="$(awk -v file="$asset" '$2 == file { print $1 }' .github/actionlint-checksums.txt)"
+          actual="$(sha256sum "$RUNNER_TEMP/$asset" | awk '{ print $1 }')"
+          if [[ -z "$expected" || "$actual" != "$expected" ]]; then
+            echo "actionlint release checksum verification failed." >&2
+            exit 1
+          fi
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$RUNNER_TEMP" actionlint
+          echo "binary=$RUNNER_TEMP/actionlint" >> "$GITHUB_OUTPUT"
+      - name: Validate all workflows
+        env:
+          ACTIONLINT_BIN: ${{ steps.actionlint.outputs.binary }}
+        run: npm run actionlint
+
+  locked:
+    name: Locked OpenAI / Node.js ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 22.x
+          - 24.x
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format:check
+      - name: Lint
+        run: npm run lint
+      - name: Type-check
+        run: npm run typecheck
+      - name: Run unit and mocked contract tests
+        run: npm test
+      - name: Scan tracked material for secret patterns
+        run: npm run test:secrets
+      - name: Build ESM and CommonJS outputs
+        run: npm run build
+      - name: Validate the package shape
+        run: npm run test:package
+      - name: Verify live-smoke semantic checks with mocked transport
+        run: npm run test:live-contract
+      - name: Test packed-package fixtures
+        run: npm run test:fixtures
+
+  minimum-openai:
+    name: Minimum OpenAI / Node.js 22
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22.x
+          cache: npm
+      - name: Install locked development dependencies
+        run: npm ci
+      - name: Test the minimum supported OpenAI version
+        run: npm run test:compat -- --lane minimum
+
+  latest-openai:
+    name: Latest OpenAI 6.x canary / Node.js 24
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install locked development dependencies
+        run: npm ci
+      - name: Test the latest compatible OpenAI version
+        run: npm run test:compat -- --lane latest
+
+  current-node-advisory:
+    name: Node.js 26 advisory
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 26
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 26.x
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type-check
+        run: npm run typecheck
+      - name: Run unit and mocked contract tests
+        run: npm test
+      - name: Build ESM and CommonJS outputs
+        run: npm run build
+      - name: Validate the package shape
+        run: npm run test:package
+      - name: Verify live-smoke semantic checks with mocked transport
+        run: npm run test:live-contract
+
+  self-contained:
+    name: Standalone repository check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Copy and verify the standalone repository
+        run: npm run check:self-contained

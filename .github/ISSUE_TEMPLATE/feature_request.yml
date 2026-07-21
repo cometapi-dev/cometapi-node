@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a change within the documented SDK roadmap.
+title: "[Feature]: "
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user problem rather than only the proposed API.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the public behavior and why it belongs in this SDK.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: I checked the roadmap and compatibility documentation.
+          required: true
+        - label: This request does not include credentials or customer data.
+          required: true

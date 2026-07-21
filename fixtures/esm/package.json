@@ -1,0 +1,11 @@
+{
+  "name": "cometapi-esm-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node index.mjs"
+  },
+  "dependencies": {
+    "openai": "6.47.0"
+  }
+}

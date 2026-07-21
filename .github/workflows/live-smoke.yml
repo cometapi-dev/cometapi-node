@@ -1,0 +1,52 @@
+name: Live smoke
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Bounded trusted CometAPI smoke
+    if: >-
+      vars.LIVE_SMOKE_ENABLED == 'true' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Required repository configuration: protect this environment, its reviewers,
+    # COMETAPI_KEY secret, and the optional model variable.
+    environment: live-smoke
+    timeout-minutes: 5
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build the package
+        run: npm run build
+      - name: Run the bounded live smoke
+        env:
+          COMETAPI_KEY: ${{ secrets.COMETAPI_KEY }}
+          COMETAPI_LIVE_SMOKE: "1"
+          COMETAPI_SMOKE_MODEL: ${{ vars.COMETAPI_SMOKE_MODEL || 'gpt-5.4' }}
+          COMETAPI_LIVE_REQUEST_LIMIT: "3"
+          COMETAPI_LIVE_MAX_OUTPUT_TOKENS: "16"
+          COMETAPI_LIVE_REQUEST_TIMEOUT_MS: "60000"
+          COMETAPI_LIVE_CONCURRENCY: "1"
+        # The test performs exactly three sequential requests (Models, Chat
+        # non-streaming, Responses streaming), stops on the first failure, and
+        # never prints the credential.
+        run: npm run test:live

@@ -1,0 +1,91 @@
+{
+  "name": "cometapi",
+  "version": "0.1.0-alpha.1",
+  "description": "Official TypeScript and Node.js client for the CometAPI OpenAI-compatible API",
+  "author": "CometAPI",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cometapi-dev/cometapi-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cometapi-dev/cometapi-node/issues"
+  },
+  "homepage": "https://www.cometapi.com",
+  "keywords": [
+    "cometapi",
+    "openai",
+    "openai-compatible",
+    "ai",
+    "sdk",
+    "typescript",
+    "nodejs"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --out-dir dist",
+    "clean": "node scripts/clean.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:contract": "vitest run tests",
+    "test:live": "node scripts/live-smoke.mjs",
+    "test:live-contract": "node scripts/test-live-smoke-contract.mjs",
+    "test:package": "node scripts/test-package.mjs",
+    "test:fixtures": "node scripts/test-fixtures.mjs",
+    "test:compat": "node scripts/test-compat.mjs",
+    "test:secrets": "node scripts/check-secrets.mjs",
+    "check:self-contained": "node scripts/check-self-contained.mjs",
+    "check:public-preview": "node scripts/check-public-preview.mjs",
+    "actionlint": "node scripts/run-actionlint.mjs",
+    "verify:offline": "node scripts/verify.mjs --offline",
+    "verify": "node scripts/verify.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "openai": "^6.47.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^24.10.13",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
+    "publint": "^0.3.17",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.53.1",
+    "vitest": "^4.0.18"
+  }
+}

@@ -1,0 +1,368 @@
+name: Publish
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify the immutable release artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      dist-tag: ${{ steps.version.outputs.dist-tag }}
+      release-commit: ${{ steps.trust.outputs.release-commit }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out the published release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: refs/tags/${{ github.event.release.tag_name }}
+      - name: Reject an untrusted release target
+        id: trust
+        env:
+          EXPECTED_BUGS_URL: https://github.com/cometapi-dev/cometapi-node/issues
+          EXPECTED_REPOSITORY: cometapi-dev/cometapi-node
+          EXPECTED_REPOSITORY_URL: git+https://github.com/cometapi-dev/cometapi-node.git
+          RELEASE_IMMUTABLE: ${{ github.event.release.immutable }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REPOSITORY" != "$EXPECTED_REPOSITORY" ]]; then
+            echo "Publication is restricted to $EXPECTED_REPOSITORY; received $GITHUB_REPOSITORY." >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_IMMUTABLE" != "true" ]]; then
+            echo "Publication requires a GitHub release with immutable=true." >&2
+            exit 1
+          fi
+
+          release_ref="refs/tags/${RELEASE_TAG}"
+          release_commit="$(git rev-parse --verify "${release_ref}^{commit}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$head_commit" != "$release_commit" ]]; then
+            echo "Checked-out commit $head_commit does not match $release_ref ($release_commit)." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
+            echo "Release commit $release_commit is not reachable from origin/main." >&2
+            exit 1
+          fi
+
+          node <<'EOF'
+          const manifest = require("./package.json");
+          const expectedRepository = process.env.EXPECTED_REPOSITORY_URL;
+          const expectedBugs = process.env.EXPECTED_BUGS_URL;
+          if (
+            manifest.repository?.type !== "git" ||
+            manifest.repository?.url !== expectedRepository
+          ) {
+            throw new Error(
+              `package.json repository must equal ${expectedRepository}.`,
+            );
+          }
+          if (manifest.bugs?.url !== expectedBugs) {
+            throw new Error(`package.json bugs.url must equal ${expectedBugs}.`);
+          }
+          EOF
+
+          echo "release-commit=${release_commit}" >> "$GITHUB_OUTPUT"
+      - name: Verify release metadata and derive the npm dist-tag
+        id: version
+        env:
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/validate-release.mjs \
+            --tag "$RELEASE_TAG" \
+            --release-prerelease "$RELEASE_IS_PRERELEASE" \
+            --require-final \
+            --require-releasable-docs >> "$GITHUB_OUTPUT"
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Use a Trusted Publishing-capable npm CLI
+        run: npm install --global npm@11.12.1
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run release checks
+        run: |
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run test:secrets
+          npm run build
+          npm run test:package
+          npm run test:live-contract
+          npm run test:compat -- --lane locked
+          npm run check:self-contained
+      - name: Pack the exact release artifact
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          npm pack --pack-destination release-artifacts
+          mapfile -t tarballs < <(find release-artifacts -maxdepth 1 -type f -name '*.tgz' -print)
+          if [[ "${#tarballs[@]}" -ne 1 ]]; then
+            echo "Expected exactly one packed artifact, found ${#tarballs[@]}." >&2
+            exit 1
+          fi
+          echo "tarball=${tarballs[0]}" >> "$GITHUB_OUTPUT"
+      - name: Test consumers against the exact release artifact
+        run: |
+          npm run test:package -- \
+            --tarball "${{ steps.pack.outputs.tarball }}" \
+            --tag "${{ github.event.release.tag_name }}"
+          npm run test:fixtures -- --tarball "${{ steps.pack.outputs.tarball }}"
+      - name: Upload the verified release artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-package-${{ steps.version.outputs.version }}
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 30
+
+  live-smoke:
+    name: Verify the release tag against CometAPI
+    needs:
+      - verify
+    concurrency:
+      group: live-smoke
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Required repository configuration: configure the protected live-smoke environment,
+    # required reviewers, and COMETAPI_KEY before publishing a release.
+    environment: live-smoke
+    steps:
+      - name: Check out the verified release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          ref: ${{ needs.verify.outputs.release-commit }}
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build the release tag
+        run: npm run build
+      - name: Run the bounded live smoke
+        env:
+          COMETAPI_KEY: ${{ secrets.COMETAPI_KEY }}
+          COMETAPI_LIVE_SMOKE: "1"
+          COMETAPI_SMOKE_MODEL: ${{ vars.COMETAPI_SMOKE_MODEL || 'gpt-5.4' }}
+          COMETAPI_LIVE_REQUEST_LIMIT: "3"
+          COMETAPI_LIVE_MAX_OUTPUT_TOKENS: "16"
+          COMETAPI_LIVE_REQUEST_TIMEOUT_MS: "60000"
+          COMETAPI_LIVE_CONCURRENCY: "1"
+        run: npm run test:live
+
+  publish:
+    name: Publish with npm Trusted Publishing
+    needs:
+      - live-smoke
+      - verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Required repository configuration: configure the protected npm environment, required
+    # reviewers, package ownership, and this workflow as the Trusted Publisher.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/cometapi/v/${{ needs.verify.outputs.version }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+      - name: Use a Trusted Publishing-capable npm CLI
+        run: npm install --global npm@11.12.1
+      - name: Download the verified release artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: npm-package-${{ needs.verify.outputs.version }}
+          path: release-artifacts
+      - name: Publish the exact artifact with provenance
+        env:
+          DIST_TAG: ${{ needs.verify.outputs.dist-tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tarballs < <(find release-artifacts -maxdepth 1 -type f -name '*.tgz' -print)
+          if [[ "${#tarballs[@]}" -ne 1 ]]; then
+            echo "Expected exactly one downloaded artifact, found ${#tarballs[@]}." >&2
+            exit 1
+          fi
+          local_integrity="$(node -e 'const {createHash}=require("node:crypto");const {readFileSync}=require("node:fs");process.stdout.write("sha512-"+createHash("sha512").update(readFileSync(process.argv[1])).digest("base64"))' "${tarballs[0]}")"
+
+          view_error="$(mktemp)"
+          set +e
+          existing_dist="$(npm view "cometapi@${VERSION}" dist --json 2>"$view_error")"
+          view_status=$?
+          set -e
+          if [[ "$view_status" -eq 0 && -n "$existing_dist" ]]; then
+            EXISTING_DIST="$existing_dist" LOCAL_INTEGRITY="$local_integrity" node <<'EOF'
+          const dist = JSON.parse(process.env.EXISTING_DIST);
+          if (dist.integrity !== process.env.LOCAL_INTEGRITY) {
+            throw new Error("The existing registry version has different integrity.");
+          }
+          EOF
+            echo "cometapi@${VERSION} already matches the verified artifact; resuming checks."
+          elif grep -q "E404" "$view_error"; then
+            npm publish "${tarballs[0]}" --access public --provenance --tag "$DIST_TAG"
+          else
+            echo "Unable to determine whether cometapi@${VERSION} already exists." >&2
+            sed -n '1,20p' "$view_error" >&2
+            exit 1
+          fi
+      - name: Verify the public registry artifact
+        env:
+          DIST_TAG: ${{ needs.verify.outputs.dist-tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tarballs < <(find "$GITHUB_WORKSPACE/release-artifacts" -maxdepth 1 -type f -name '*.tgz' -print)
+          if [[ "${#tarballs[@]}" -ne 1 ]]; then
+            echo "Expected exactly one downloaded artifact for registry verification." >&2
+            exit 1
+          fi
+          local_integrity="$(node -e 'const {createHash}=require("node:crypto");const {readFileSync}=require("node:fs");process.stdout.write("sha512-"+createHash("sha512").update(readFileSync(process.argv[1])).digest("base64"))' "${tarballs[0]}")"
+          registry_ready="false"
+          for attempt in {1..12}; do
+            resolved="$(npm view "cometapi@${VERSION}" version 2>/dev/null || true)"
+            tagged="$(npm view "cometapi@${DIST_TAG}" version 2>/dev/null || true)"
+            registry_dist="$(npm view "cometapi@${VERSION}" dist --json 2>/dev/null || true)"
+            if [[ "$resolved" == "$VERSION" && "$tagged" == "$VERSION" && -n "$registry_dist" ]] && \
+              REGISTRY_DIST="$registry_dist" LOCAL_INTEGRITY="$local_integrity" node <<'EOF'
+          let ready = false;
+          try {
+            const dist = JSON.parse(process.env.REGISTRY_DIST);
+            ready =
+              dist.integrity === process.env.LOCAL_INTEGRITY &&
+              Boolean(dist.attestations?.url) &&
+              dist.attestations?.provenance?.predicateType ===
+                "https://slsa.dev/provenance/v1";
+          } catch {}
+          process.exitCode = ready ? 0 : 1;
+          EOF
+            then
+              registry_ready="true"
+              break
+            fi
+            if [[ "$attempt" -lt 12 ]]; then
+              sleep 10
+            fi
+          done
+          if [[ "$registry_ready" != "true" ]]; then
+            echo "Registry state did not converge for cometapi@${VERSION}, ${DIST_TAG}, integrity, and provenance." >&2
+            exit 1
+          fi
+
+          verify_dir="$(mktemp -d)"
+          cd "$verify_dir"
+          npm init --yes >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund \
+            "openai@6.47.0" "cometapi@${VERSION}"
+          signatures_verified="false"
+          for attempt in {1..3}; do
+            if npm audit signatures; then
+              signatures_verified="true"
+              break
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep 10
+            fi
+          done
+          if [[ "$signatures_verified" != "true" ]]; then
+            echo "Registry signature and provenance verification did not converge." >&2
+            exit 1
+          fi
+          npm ls openai --all
+          if [[ -d node_modules/cometapi/node_modules/openai ]]; then
+            echo "The registry fixture contains a nested OpenAI installation." >&2
+            exit 1
+          fi
+
+          node --input-type=module <<'EOF'
+          import assert from "node:assert/strict";
+          import { CometAPI } from "cometapi";
+
+          const client = new CometAPI({
+            apiKey: "mock-registry-key",
+            maxRetries: 0,
+            fetch: async () =>
+              new Response(JSON.stringify({ object: "list", data: [] }), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+          });
+          const models = await client.models.list();
+          assert.deepEqual(models.data, []);
+          EOF
+
+          node <<'EOF'
+          const assert = require("node:assert/strict");
+          const { CometAPI } = require("cometapi");
+          const { APIError } = require("openai");
+
+          const client = new CometAPI({
+            apiKey: "mock-registry-key",
+            maxRetries: 0,
+            fetch: async () =>
+              new Response(
+                JSON.stringify({
+                  error: {
+                    message: "mock registry failure",
+                    type: "invalid_request_error",
+                  },
+                }),
+                {
+                  status: 400,
+                  headers: { "content-type": "application/json" },
+                },
+              ),
+          });
+
+          (async () => {
+            let caught;
+            try {
+              await client.models.list();
+            } catch (error) {
+              caught = error;
+            }
+            assert.ok(caught instanceof APIError);
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          EOF
+
+          # The conditional first-publication token bootstrap is intentionally
+          # not encoded here. It is an owner-run, one-time exception only.

@@ -1,0 +1,10 @@
+{
+  "name": "cometapi-commonjs-fixture",
+  "private": true,
+  "scripts": {
+    "test": "node index.cjs"
+  },
+  "dependencies": {
+    "openai": "6.47.0"
+  }
+}

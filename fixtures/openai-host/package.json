@@ -1,0 +1,15 @@
+{
+  "name": "cometapi-openai-host-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run typecheck && node verify.mjs && node verify.cjs",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "dependencies": {
+    "openai": "6.47.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

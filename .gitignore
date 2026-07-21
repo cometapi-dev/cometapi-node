@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Package tarballs
+*.tgz
+
+# Local verification output
+.artifacts/
+.cache/
+.tmp/
+release-artifacts/
+
+# Environment
+.env
+.envrc
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store

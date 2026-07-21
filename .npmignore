@@ -1,0 +1,13 @@
+# The package.json files allowlist is authoritative. These exclusions are a
+# second guard against shipping repository-only material if that list changes.
+.github/
+coverage/
+fixtures/
+scripts/
+src/
+tests/
+.cache/
+.tmp/
+*.config.*
+*.tgz
+tsconfig*.json
