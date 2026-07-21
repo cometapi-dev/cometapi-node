@@ -218,11 +218,13 @@ The repository maintains four independently auditable workflows:
   `release.published` event can trigger publication.
 - `publish.yml`: rejects mutable releases and tag commits outside `main`, packs
   and tests one exact artifact, requires a protected live smoke for that release
-  tag, publishes the same file through npm OIDC, and verifies the dist-tag,
-  integrity, provenance attestation, signatures, deduplication, and public
-  installation. A rerun resumes after an already accepted version only when its
-  registry integrity matches the downloaded artifact, then repeats all bounded
-  registry-state and signature checks.
+  tag, and publishes the same file through npm OIDC by default. Only
+  `0.1.0-alpha.1` may use the one-time protected-token bootstrap when npm does
+  not permit Trusted Publisher configuration before the package exists. The
+  workflow verifies the dist-tag, integrity, provenance attestation, signatures,
+  deduplication, and public installation. A rerun resumes after an already
+  accepted version only when its registry integrity matches the downloaded
+  artifact, then repeats all bounded registry-state and signature checks.
 
 Third-party actions are pinned to full commit SHAs. Workflow permissions remain
 read-only except where a documented job requires more; `id-token: write` belongs
@@ -307,12 +309,23 @@ one-time exception:
    `next` dist-tag, and fails if the token is absent when publication is needed.
 3. That run verifies and publishes the exact artifact with public access and
    provenance, then verifies registry installation.
-4. A maintainer immediately configures OIDC, removes the environment variable
+4. After the first publication, an authorized maintainer adds the
+   company-controlled owner and verifies the resulting owner list:
+
+   ```bash
+   npm owner add cometapi-team cometapi
+   npm owner ls cometapi
+   ```
+
+   Record evidence that the output lists `cometapi-team`; Registry Alpha owner
+   setup is incomplete until it does.
+
+5. A maintainer immediately configures OIDC, removes the environment variable
    and secret, revokes the token, and restricts token-based publishing.
-5. The project immediately prepares and publishes `0.1.0-alpha.2` through
+6. The project immediately prepares and publishes `0.1.0-alpha.2` through
    OIDC, verifies its provenance and public installation, and confirms that
    `next` resolves to `0.1.0-alpha.2`.
-6. The release record documents the exception and both public-install evidence
+7. The release record documents the exception and both public-install evidence
    layers.
 
 This exception must never become a reusable source-controlled publishing path.

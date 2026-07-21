@@ -44,32 +44,28 @@ The unscoped `cometapi` package is the primary Node SDK. `@cometapi` is the
 standard scope for future official scoped packages; do not introduce new
 official packages under `@cometapi-dev`.
 
-Before the first remote push:
+Before requesting visibility-change authorization:
 
-1. Apply the accepted identity to package metadata and public documents. Make
-   the Public Preview gate and publish validation require the same normalized
-   `git+https://github.com/cometapi-dev/cometapi-node.git` repository value.
-2. Remove `.github/CODEOWNERS` and every check, fixture, test, or document that
-   requires it. Do not replace it with an individual owner.
-3. Refactor `npm run check:public-preview` to collect and report all violations
-   in one run while returning non-zero if any violation exists. Keep checks for
-   canonical identity, contacts, repository metadata, public-safe language,
-   and standalone content.
-4. Gate scheduled live smoke with a `LIVE_SMOKE_ENABLED` repository variable
-   and gate Release Please with `RELEASE_PLEASE_ENABLED`. Unset or non-true
-   values must prevent those workflows from running. Leave both disabled
-   throughout Private Remote Validation and leave Release Please disabled
-   through the initial manual alpha.
-5. Run every local offline, package, fixture, compatibility, self-containment,
-   public-content, secret, and workflow-static-validation gate.
+1. Confirm the current `main` includes every approved private closeout and that
+   its blocking Node.js 22 and 24 CI checks pass.
+2. Run the complete local offline, package, fixture, compatibility,
+   self-containment, public-content, secret, workflow-static-validation, and
+   Public Preview gates from the final private `main`.
+3. Review open failing dependency-update pull requests before visibility
+   changes and repair, close, or explicitly defer them with a recorded reason;
+   do not treat their branch failures as evidence that the current `main`
+   failed validation.
+4. Confirm the repository remains private and that public-only repository or
+   tag rules, Private Vulnerability Reporting, secrets, protected environments,
+   Trusted Publishing, live smoke, tags, releases, and registry publication
+   have not been configured or exercised.
+5. Record the final private evidence and stop for explicit maintainer
+   authorization before changing repository visibility.
 
-When authorized, create an empty private repository without generated files,
-make the sanitized repository content its first commit, push the default
-branch, and wait for credential-free CI. Do not configure branch or tag rules,
-Private Vulnerability Reporting, secrets, protected environments, Trusted
-Publishing, live smoke, tags, releases, or registry publication during the
-private stage. Record the real CI result and stop before any visibility change,
-even when all checks pass.
+Private repository creation, the sanitized first history, and the initial push
+are complete historical steps and must not be repeated. Their procedure and
+evidence belong in `RELEASING.md`. Keep Release Please disabled through the
+initial manual alpha.
 
 ## Product Contract
 

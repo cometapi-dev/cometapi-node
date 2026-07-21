@@ -73,18 +73,23 @@ describe("standalone content", () => {
     });
   });
 
-  it("reports private artifacts and sibling workspaces", () => {
+  it("reports private artifacts, reference directories, and sibling workspaces", () => {
     withTemporaryDirectory((root) => {
       const privateArtifact = ["SDK", "PRD.md"].join("_");
+      const privateReference = ["references", "private.md"].join("/");
       const siblingWorkspace = `${["cometapi", "python"].join("-")}/README.md`;
       writeFileSync(
         join(root, "notes.md"),
-        `See ${privateArtifact} and ${siblingWorkspace}.\n`,
+        `See ${privateArtifact}, ${privateReference}, and ${siblingWorkspace}.\n`,
       );
 
       const violations = collectStandaloneContentViolations(root);
-      expect(violations).toHaveLength(2);
-      expect(violations.join("\n")).toMatch(/private material/);
+      expect(violations).toHaveLength(3);
+      expect(
+        violations.filter((violation) =>
+          violation.includes("private material"),
+        ),
+      ).toHaveLength(2);
       expect(violations.join("\n")).toMatch(/sibling repository/);
     });
   });

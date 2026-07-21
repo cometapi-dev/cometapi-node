@@ -89,6 +89,13 @@ describe("GitHub Actions workflow contract", () => {
   });
 
   it("matches the required environment reviewer configuration", () => {
+    const liveSmokeWorkflow = workflow("live-smoke.yml");
+    const liveSmoke = job(liveSmokeWorkflow, "smoke").replace(
+      /\n\s*#\s*/g,
+      " ",
+    );
+    expect(liveSmoke).toContain("without required reviewers");
+
     const publishWorkflow = workflow("publish.yml");
     expect(job(publishWorkflow, "live-smoke")).toContain(
       "without required reviewers",
