@@ -83,9 +83,9 @@ complete only when `npm owner ls cometapi` lists the maintainer-confirmed
 `cometapi-team` account after bootstrap; until then this remains a Registry
 Alpha prerequisite, not a Public Preview blocker.
 
-For the current milestone, authorized external actions stop at creating the
-empty private repository, pushing its sanitized first history, and observing
-credential-free CI. Visibility changes and every subsequent external action
+For the current Public Preview milestone, authorized external actions remain
+limited to private pull requests and credential-free CI. Changing repository
+visibility and every subsequent public-only configuration or live action
 require separate authorization.
 
 ## Candidate verification gate
