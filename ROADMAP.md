@@ -320,15 +320,18 @@ Maintainers must first attempt to configure the Trusted Publisher normally. If
 npm does not allow configuration before the first package publication, only
 `0.1.0-alpha.1` may use a one-time bootstrap:
 
-1. A maintainer creates a short-lived granular read/write publish token with the
-   minimum available scope and non-interactive 2FA bypass from an account
+1. A maintainer creates a short-lived granular read/write publish token with
+   the minimum available scope and non-interactive 2FA bypass from an account
    protected by 2FA.
-2. The token is exposed only through a protected GitHub Environment to one
-   reviewed immutable-tag run on a GitHub-hosted runner.
+2. In the protected `npm` environment, set
+   `NPM_ALPHA1_BOOTSTRAP_ENABLED=true` and expose the token only as
+   `NPM_ALPHA1_BOOTSTRAP_TOKEN` to one reviewed immutable-tag run. The workflow
+   rejects that mode unless the version is exactly `0.1.0-alpha.1` and the
+   dist-tag is `next`.
 3. That run builds and verifies the tag artifact, publishes it with public
    access and provenance, and verifies registry installation.
-4. A maintainer immediately configures Trusted Publishing, removes the secret,
-   revokes the token, and restricts token-based publishing.
+4. A maintainer immediately configures Trusted Publishing, removes the variable
+   and secret, revokes the token, and restricts token-based publishing.
 5. The project immediately publishes `0.1.0-alpha.2` through OIDC, verifies its
    provenance and installation, and confirms that `next` resolves to
    `0.1.0-alpha.2`.

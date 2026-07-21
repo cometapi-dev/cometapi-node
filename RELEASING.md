@@ -96,6 +96,7 @@ npm run test:package
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat
+npm run check:standalone-content
 npm run check:self-contained
 npm run actionlint
 npm run verify
@@ -290,14 +291,17 @@ Maintainers must first attempt normal Trusted Publisher configuration. If npm
 does not permit it before the package exists, only `0.1.0-alpha.1` may use this
 one-time exception:
 
-1. A maintainer creates a short-lived granular read/write token with minimum scope
-   and non-interactive 2FA bypass from an account protected by 2FA.
-2. The token is exposed only through a protected GitHub Environment to one
-   reviewed immutable-tag run on a GitHub-hosted runner.
+1. A maintainer creates a short-lived granular read/write token with minimum
+   scope and non-interactive 2FA bypass from an account protected by 2FA.
+2. In the protected `npm` environment, set
+   `NPM_ALPHA1_BOOTSTRAP_ENABLED=true` and expose the token only as
+   `NPM_ALPHA1_BOOTSTRAP_TOKEN` to one reviewed immutable-tag run. The workflow
+   rejects the bootstrap for every version except `0.1.0-alpha.1`, requires the
+   `next` dist-tag, and fails if the token is absent when publication is needed.
 3. That run verifies and publishes the exact artifact with public access and
    provenance, then verifies registry installation.
-4. A maintainer immediately configures OIDC, removes the environment secret,
-   revokes the token, and restricts token-based publishing.
+4. A maintainer immediately configures OIDC, removes the environment variable
+   and secret, revokes the token, and restricts token-based publishing.
 5. The project immediately prepares and publishes `0.1.0-alpha.2` through
    OIDC, verifies its provenance and public installation, and confirms that
    `next` resolves to `0.1.0-alpha.2`.

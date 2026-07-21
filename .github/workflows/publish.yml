@@ -150,8 +150,8 @@ jobs:
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Required repository configuration: configure the protected live-smoke environment,
-    # required reviewers, and COMETAPI_KEY before publishing a release.
+    # Required repository configuration: configure the protected live-smoke environment
+    # without required reviewers and add COMETAPI_KEY before publishing a release.
     environment: live-smoke
     steps:
       - name: Check out the verified release tag
@@ -180,14 +180,14 @@ jobs:
         run: npm run test:live
 
   publish:
-    name: Publish with npm Trusted Publishing
+    name: Publish with npm Trusted Publishing or alpha.1 bootstrap
     needs:
       - live-smoke
       - verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Required repository configuration: configure the protected npm environment, required
-    # reviewers, package ownership, and this workflow as the Trusted Publisher.
+    # Required repository configuration: configure the protected npm environment with
+    # approval by the current release approver and self-review allowed, plus package ownership.
     environment:
       name: npm
       url: https://www.npmjs.com/package/cometapi/v/${{ needs.verify.outputs.version }}
@@ -209,11 +209,19 @@ jobs:
           path: release-artifacts
       - name: Publish the exact artifact with provenance
         env:
+          ALPHA1_BOOTSTRAP_ENABLED: ${{ vars.NPM_ALPHA1_BOOTSTRAP_ENABLED }}
           DIST_TAG: ${{ needs.verify.outputs.dist-tag }}
+          NODE_AUTH_TOKEN: ${{ vars.NPM_ALPHA1_BOOTSTRAP_ENABLED == 'true' && needs.verify.outputs.version == '0.1.0-alpha.1' && secrets.NPM_ALPHA1_BOOTSTRAP_TOKEN || '' }}
           VERSION: ${{ needs.verify.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$ALPHA1_BOOTSTRAP_ENABLED" == "true" && \
+            ( "$VERSION" != "0.1.0-alpha.1" || "$DIST_TAG" != "next" ) ]]; then
+            echo "The token bootstrap is restricted to cometapi@0.1.0-alpha.1 on the next dist-tag." >&2
+            exit 1
+          fi
+
           mapfile -t tarballs < <(find release-artifacts -maxdepth 1 -type f -name '*.tgz' -print)
           if [[ "${#tarballs[@]}" -ne 1 ]]; then
             echo "Expected exactly one downloaded artifact, found ${#tarballs[@]}." >&2
@@ -235,6 +243,10 @@ jobs:
           EOF
             echo "cometapi@${VERSION} already matches the verified artifact; resuming checks."
           elif grep -q "E404" "$view_error"; then
+            if [[ "$ALPHA1_BOOTSTRAP_ENABLED" == "true" && -z "$NODE_AUTH_TOKEN" ]]; then
+              echo "NPM_ALPHA1_BOOTSTRAP_TOKEN is required when the alpha.1 bootstrap is enabled." >&2
+              exit 1
+            fi
             npm publish "${tarballs[0]}" --access public --provenance --tag "$DIST_TAG"
           else
             echo "Unable to determine whether cometapi@${VERSION} already exists." >&2
@@ -363,6 +375,3 @@ jobs:
             process.exitCode = 1;
           });
           EOF
-
-          # The conditional first-publication token bootstrap is intentionally
-          # not encoded here. It is an owner-run, one-time exception only.

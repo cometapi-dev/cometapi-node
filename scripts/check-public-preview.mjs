@@ -6,6 +6,7 @@ import {
   collectPublicPreviewViolations,
   formatPublicPreviewViolations,
 } from "./release-validation.mjs";
+import { collectStandaloneContentViolations } from "./standalone-content.mjs";
 
 const inputViolations = [];
 const read = (name) => {
@@ -47,7 +48,21 @@ const violations = collectPublicPreviewViolations({
   sourceManifest,
 });
 
-const allViolations = [...inputViolations, ...violations];
+const standaloneContentViolations = [];
+try {
+  standaloneContentViolations.push(...collectStandaloneContentViolations(ROOT));
+} catch (error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  standaloneContentViolations.push(
+    `standalone content could not be checked: ${detail}`,
+  );
+}
+
+const allViolations = [
+  ...inputViolations,
+  ...violations,
+  ...standaloneContentViolations,
+];
 if (allViolations.length > 0) {
   console.error(formatPublicPreviewViolations(allViolations));
   process.exitCode = 1;

@@ -87,6 +87,9 @@ tag and GitHub release agreement.
 The publish workflow is the sole source of npm dist-tag selection: prereleases
 use `next`, stable versions use `latest`. The package manifest must not carry a
 static dist-tag because that would make stable and prerelease policy diverge.
+Trusted Publishing remains the default authentication path. The only token
+path is an explicitly enabled protected-environment fallback that rejects every
+version except `0.1.0-alpha.1` and every dist-tag except `next`.
 
 ## Testing layers
 
