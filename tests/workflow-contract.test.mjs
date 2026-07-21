@@ -88,6 +88,36 @@ describe("GitHub Actions workflow contract", () => {
     );
   });
 
+  it("matches the required environment reviewer configuration", () => {
+    const publishWorkflow = workflow("publish.yml");
+    expect(job(publishWorkflow, "live-smoke")).toContain(
+      "without required reviewers",
+    );
+    expect(job(publishWorkflow, "publish")).toContain(
+      "approval by the current release approver and self-review allowed",
+    );
+  });
+
+  it("keeps the token bootstrap opt-in and alpha.1-only", () => {
+    const publishWorkflow = workflow("publish.yml");
+    const publish = job(publishWorkflow, "publish");
+    expect(publish).toContain(
+      "ALPHA1_BOOTSTRAP_ENABLED: ${{ vars.NPM_ALPHA1_BOOTSTRAP_ENABLED }}",
+    );
+    expect(publish).toContain("secrets.NPM_ALPHA1_BOOTSTRAP_TOKEN");
+    expect(publish).toContain(
+      "needs.verify.outputs.version == '0.1.0-alpha.1'",
+    );
+    expect(publish).toContain('"$VERSION" != "0.1.0-alpha.1"');
+    expect(publish).toContain('"$DIST_TAG" != "next"');
+    expect(publish).toContain(
+      '"$ALPHA1_BOOTSTRAP_ENABLED" == "true" && -z "$NODE_AUTH_TOKEN"',
+    );
+    expect(
+      matches(publishWorkflow, /secrets\.NPM_ALPHA1_BOOTSTRAP_TOKEN/g),
+    ).toHaveLength(1);
+  });
+
   it("pins third-party actions and disables checkout credential persistence", () => {
     for (const name of workflowNames) {
       const contents = workflow(name);

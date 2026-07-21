@@ -176,6 +176,7 @@ npm run format:check
 npm run test:package
 npm run test:fixtures
 npm run test:compat
+npm run check:standalone-content
 npm run check:self-contained
 npm run actionlint
 npm run verify

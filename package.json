@@ -65,6 +65,7 @@
     "test:fixtures": "node scripts/test-fixtures.mjs",
     "test:compat": "node scripts/test-compat.mjs",
     "test:secrets": "node scripts/check-secrets.mjs",
+    "check:standalone-content": "node scripts/check-standalone-content.mjs",
     "check:self-contained": "node scripts/check-self-contained.mjs",
     "check:public-preview": "node scripts/check-public-preview.mjs",
     "actionlint": "node scripts/run-actionlint.mjs",

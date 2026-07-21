@@ -32,6 +32,8 @@ No user-visible changes are currently recorded beyond the initial alpha scope.
 - Made Public Preview and publication validation fail closed on canonical
   identity, public-safe standalone content, and release-ready status at the
   applicable gate.
+- Added standalone-content scanning to the aggregated Public Preview gate and
+  encoded the protected, opt-in npm token bootstrap for `0.1.0-alpha.1` only.
 - Made the release workflow the sole npm dist-tag source: prereleases use
   `next`, stable releases use `latest`, and the package manifest has no static
   dist-tag.
