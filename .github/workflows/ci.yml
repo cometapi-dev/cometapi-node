@@ -30,6 +30,9 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24.x
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
       - name: Validate Public Preview content and identity
         run: npm run check:public-preview
       - name: Download the pinned actionlint release

@@ -80,6 +80,13 @@ jobs:
           EOF
 
           echo "release-commit=${release_commit}" >> "$GITHUB_OUTPUT"
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install validation dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
       - name: Verify release metadata and derive the npm dist-tag
         id: version
         env:
@@ -93,11 +100,6 @@ jobs:
             --release-prerelease "$RELEASE_IS_PRERELEASE" \
             --require-final \
             --require-releasable-docs >> "$GITHUB_OUTPUT"
-      - name: Set up Node.js 24
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 24.x
-          cache: npm
       - name: Use a Trusted Publishing-capable npm CLI
         run: npm install --global npm@11.12.1
       - name: Install locked dependencies
