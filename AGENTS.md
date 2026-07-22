@@ -171,11 +171,14 @@ npm test
 npm run typecheck
 npm run lint
 npm run format:check
+npm run test:secrets
 npm run test:package
+npm run test:live-contract
 npm run test:fixtures
 npm run test:compat
 npm run check:standalone-content
 npm run check:self-contained
+npm run check:public-preview
 npm run actionlint
 npm run verify
 ```

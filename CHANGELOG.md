@@ -34,6 +34,10 @@ No user-visible changes are currently recorded beyond the initial alpha scope.
   applicable gate.
 - Added standalone-content scanning to the aggregated Public Preview gate and
   encoded the protected, opt-in npm token bootstrap for `0.1.0-alpha.1` only.
+- Hardened pre-visibility evidence by scanning tracked files and reachable Git
+  history for credential patterns, verifying an exact clean `HEAD` copy,
+  requiring substantive public documentation, and exercising every documented
+  live-smoke stream failure state with mocked transport.
 - Made the release workflow the sole npm dist-tag source: prereleases use
   `next`, stable releases use `latest`, and the package manifest has no static
   dist-tag.

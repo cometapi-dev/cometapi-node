@@ -4,13 +4,45 @@ import { URL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  CANONICAL_IDENTITY,
   collectPublicPreviewViolations,
   distTagForVersion,
   escapeRegularExpression,
   SUPPORTED_NODE_ENGINES,
+  SUPPORTED_OPENAI_RANGE,
   validatePublicPreviewDocuments,
   validateReleaseMetadata,
+  visibleMarkdownText,
 } from "../scripts/release-validation.mjs";
+
+const PUBLIC_DOCUMENT_FILES = [
+  ["agents", "AGENTS.md"],
+  ["architecture", "ARCHITECTURE.md"],
+  ["changelog", "CHANGELOG.md"],
+  ["compatibility", "COMPATIBILITY.md"],
+  ["conduct", "CODE_OF_CONDUCT.md"],
+  ["contributing", "CONTRIBUTING.md"],
+  ["license", "LICENSE"],
+  ["readme", "README.md"],
+  ["releasing", "RELEASING.md"],
+  ["roadmap", "ROADMAP.md"],
+  ["security", "SECURITY.md"],
+  ["support", "SUPPORT.md"],
+];
+
+function repositoryPublicPreviewFixture() {
+  return {
+    documents: Object.fromEntries(
+      PUBLIC_DOCUMENT_FILES.map(([field, filename]) => [
+        field,
+        readFileSync(new URL(`../${filename}`, import.meta.url), "utf8"),
+      ]),
+    ),
+    sourceManifest: JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ),
+  };
+}
 
 function fixture(version = "0.1.0-alpha.1") {
   const sourceManifest = {
@@ -18,8 +50,10 @@ function fixture(version = "0.1.0-alpha.1") {
     bugs: {
       url: "https://github.com/cometapi-dev/cometapi-node/issues",
     },
+    dependencies: { openai: SUPPORTED_OPENAI_RANGE },
     engines: { node: SUPPORTED_NODE_ENGINES },
     homepage: "https://www.cometapi.com",
+    keywords: ["cometapi", "typescript", "nodejs"],
     name: "cometapi",
     publishConfig: { access: "public", provenance: true },
     repository: {
@@ -47,20 +81,28 @@ function fixture(version = "0.1.0-alpha.1") {
       version,
     },
     releaseDocuments: {
-      agents: "# Engineering contract\n",
-      architecture: "# Architecture\n",
-      changelog: `# Changelog\n\n## [${version}] - Unreleased\n`,
-      compatibility: "# Compatibility\n",
-      conduct: "Report privately to support@cometapi.com.\n",
-      contributing: "# Contributing\n",
-      license: "MIT License\n\nCopyright (c) 2026 CometAPI\n",
-      readme: `${version} is approved for npm publication.\n`,
-      releasing: "# Releasing\n",
-      roadmap: "# Roadmap\n",
+      agents:
+        "# CometAPI SDK Agent Instructions\n\nThis repository has a standalone engineering contract.\n",
+      architecture:
+        "# Architecture\n\nThe SDK reuses the official OpenAI client.\n\n## 0.1 boundary\n\nOnly the documented operations are supported.\n",
+      changelog: `# Changelog\n\nAll notable changes are recorded here.\n\n## [${version}] - Unreleased\n`,
+      compatibility:
+        "# Compatibility\n\nThis document records tested support.\n\n## Supported protocol surface\n\nOnly contract-tested operations are supported.\n",
+      conduct:
+        "# Code of Conduct\n\nContributors must participate respectfully.\n\n## Reporting and enforcement\n\nReport privately to support@cometapi.com.\n",
+      contributing:
+        "# Contributing\n\nContributions must include tests.\n\n## Development setup\n\nInstall from the lock file before running checks.\n",
+      license:
+        'MIT License\n\nCopyright (c) 2026 CometAPI\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software, to use the Software subject to the MIT conditions.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.\n',
+      readme: `# CometAPI SDK\n\n**Pre-release:** the SDK is under active development. ${version} is approved for npm publication.\n\n## Supported 0.1 surface\n\n- \`chat.completions.create\`, streaming and non-streaming\n- \`responses.create\`, streaming and non-streaming\n- \`models.list\`\n`,
+      releasing:
+        "# Releasing\n\nRelease status is evidence-based.\n\n## Authorization boundary\n\nRemote publication requires maintainer authorization.\n",
+      roadmap:
+        "# CometAPI SDK Roadmap\n\nThis roadmap defines the release sequence.\n\n## Public Preview\n\nThe preview requires public documentation and offline CI.\n",
       security:
-        "Report vulnerabilities at https://github.com/cometapi-dev/cometapi-node/security/advisories/new.\n",
+        "# Security Policy\n\nNever disclose credentials publicly.\n\n## Reporting a vulnerability\n\nReport vulnerabilities at https://github.com/cometapi-dev/cometapi-node/security/advisories/new.\n",
       support:
-        "Email support@cometapi.com or use https://github.com/cometapi-dev/cometapi-node/issues.\n",
+        "# Support\n\nSupport covers the tested SDK surface.\n\n## Getting help\n\nEmail support@cometapi.com or use https://github.com/cometapi-dev/cometapi-node/issues.\n",
     },
     releaseConfig: { packages: { ".": {} } },
     releaseManifest: { ".": version },
@@ -78,6 +120,277 @@ describe("Public Preview content", () => {
       }),
     ).not.toThrow();
   });
+
+  it("accepts the real repository documents and package metadata", () => {
+    expect(
+      collectPublicPreviewViolations(repositoryPublicPreviewFixture()),
+    ).toEqual([]);
+  });
+
+  it.each(PUBLIC_DOCUMENT_FILES)(
+    "rejects single-character %s content",
+    (field, filename) => {
+      const values = fixture();
+      values.releaseDocuments[field] = "x";
+      expect(
+        collectPublicPreviewViolations({
+          documents: values.releaseDocuments,
+          sourceManifest: values.sourceManifest,
+        }).join("\n"),
+      ).toMatch(new RegExp(filename.replaceAll(".", "\\.")));
+    },
+  );
+
+  it.each([
+    [
+      "top-level pre-release label",
+      (readme) => readme.replace("**Pre-release:**", "Status:"),
+      /pre-release near the top/,
+    ],
+    [
+      "pre-release label only in a link target",
+      (readme) =>
+        readme.replace(
+          "**Pre-release:**",
+          "[Status](https://example.invalid/pre-release)",
+        ),
+      /pre-release near the top/,
+    ],
+    [
+      "chat.completions.create",
+      (readme) => readme.replace("chat.completions.create", "chat.create"),
+      /exact operation chat\.completions\.create/,
+    ],
+    [
+      "responses.create",
+      (readme) => readme.replace("responses.create", "responses.retrieve"),
+      /exact operation responses\.create/,
+    ],
+    [
+      "models.list",
+      (readme) => readme.replace("models.list", "models.retrieve"),
+      /exact operation models\.list/,
+    ],
+    [
+      "models.list in the supported section",
+      (readme) =>
+        `${readme.replace("- `models.list`\n", "")}\n## Example\n\nCall \`models.list\`.\n`,
+      /exact operation models\.list/,
+    ],
+    [
+      "models.list only in a link target",
+      (readme) =>
+        readme.replace(
+          "- `models.list`",
+          "- [Model reference](https://example.invalid/models.list)",
+        ),
+      /exact operation models\.list/,
+    ],
+    [
+      "Chat Completions streaming mode",
+      (readme) =>
+        readme.replace(
+          "`chat.completions.create`, streaming and non-streaming",
+          "`chat.completions.create`, non-streaming",
+        ),
+      /chat\.completions\.create as streaming and non-streaming/,
+    ],
+    [
+      "Responses non-streaming mode",
+      (readme) =>
+        readme.replace(
+          "`responses.create`, streaming and non-streaming",
+          "`responses.create`, streaming",
+        ),
+      /responses\.create as streaming and non-streaming/,
+    ],
+    [
+      "a distinct streaming mode",
+      (readme) =>
+        readme.replace(
+          "`responses.create`, streaming and non-streaming",
+          "`responses.create`, non-streaming and nonstreaming",
+        ),
+      /responses\.create as streaming and non-streaming/,
+    ],
+  ])("rejects a README without %s", (_name, mutate, message) => {
+    const values = fixture();
+    values.releaseDocuments.readme = mutate(values.releaseDocuments.readme);
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(message);
+  });
+
+  it.each([
+    ["permission grant", /Permission is hereby granted[^\n]+\n\n/],
+    ["warranty disclaimer", /THE SOFTWARE IS PROVIDED[^\n]+\n/],
+  ])("rejects an MIT license without its %s", (_name, clause) => {
+    const values = fixture();
+    values.releaseDocuments.license = values.releaseDocuments.license.replace(
+      clause,
+      "",
+    );
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(/LICENSE must contain the MIT/);
+  });
+
+  it.each([
+    ["architecture", "## 0.1 boundary", "## Design notes"],
+    ["compatibility", "## Supported protocol surface", "## Notes"],
+    ["conduct", "## Reporting and enforcement", "## Contact"],
+    ["contributing", "## Development setup", "## Workflow"],
+    ["releasing", "## Authorization boundary", "## Process"],
+    ["roadmap", "## Public Preview", "## Current work"],
+    ["security", "## Reporting a vulnerability", "## Contact"],
+    ["support", "## Getting help", "## Contact"],
+  ])("rejects %s without its key contract section", (field, heading, other) => {
+    const values = fixture();
+    values.releaseDocuments[field] = values.releaseDocuments[field].replace(
+      heading,
+      other,
+    );
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(new RegExp(field === "conduct" ? "CODE_OF_CONDUCT" : field, "i"));
+  });
+
+  it("rejects an empty key contract section", () => {
+    const values = fixture();
+    values.releaseDocuments.architecture =
+      "# Architecture\n\nThe SDK reuses the official client.\n\n## 0.1 boundary\n";
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(/ARCHITECTURE\.md.*substantive contract content/);
+  });
+
+  it("does not count README requirements hidden in HTML comments", () => {
+    const values = fixture();
+    values.releaseDocuments.readme = `# CometAPI SDK\n\n<!--\n${values.releaseDocuments.readme}\n-->\n`;
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(/pre-release near the top/);
+  });
+
+  it.each(["`", "~"])(
+    "does not count Architecture requirements in %s fenced code",
+    (character) => {
+      const values = fixture();
+      const fence = character.repeat(3);
+      values.releaseDocuments.architecture = `# Architecture\n\n${fence}markdown\n## 0.1 boundary\n\nOnly the documented operations are supported.\n${fence}\n`;
+      expect(() =>
+        validatePublicPreviewDocuments({
+          documents: values.releaseDocuments,
+          sourceManifest: values.sourceManifest,
+        }),
+      ).toThrow(/ARCHITECTURE\.md.*0\.1 boundary/);
+    },
+  );
+
+  it("does not count a required section in a CR-only fenced block", () => {
+    const values = fixture();
+    values.releaseDocuments.architecture =
+      "# Architecture\r\r```markdown\r## 0.1 boundary\r\rOnly the documented operations are supported.\r```\r";
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(/ARCHITECTURE\.md.*0\.1 boundary/);
+  });
+
+  it("does not turn a comment-prefixed line into a heading", () => {
+    const values = fixture();
+    values.releaseDocuments.architecture =
+      "# Architecture\n\nThe SDK reuses the official client.\n\n<!-- -->## 0.1 boundary\n\nOnly the documented operations are supported.\n";
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(/ARCHITECTURE\.md.*0\.1 boundary/);
+  });
+
+  it("keeps visible text around inline and multiline comments", () => {
+    expect(
+      visibleMarkdownText(
+        "Before <!-- hidden --> after\nStart <!-- hidden\nstill hidden --> end",
+      ),
+    ).toBe("Before  after\nStart  end");
+  });
+
+  it("accepts a canonical contact supplied as a Markdown link target", () => {
+    const values = fixture();
+    values.releaseDocuments.security = `# Security Policy\n\nNever disclose credentials publicly.\n\n## Reporting a vulnerability\n\n[Open a private security advisory](${CANONICAL_IDENTITY.securityUrl}).\n`;
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    [
+      "TypeScript keyword",
+      (manifest) => {
+        manifest.keywords = manifest.keywords.filter(
+          (keyword) => keyword !== "typescript",
+        );
+      },
+      /keywords must contain typescript/,
+    ],
+    [
+      "Node.js keyword",
+      (manifest) => {
+        manifest.keywords = manifest.keywords.filter(
+          (keyword) => keyword !== "nodejs",
+        );
+      },
+      /keywords must contain nodejs/,
+    ],
+    [
+      "Node.js runtime range",
+      (manifest) => {
+        manifest.engines.node = ">=22";
+      },
+      /engines\.node/,
+    ],
+    [
+      "OpenAI runtime dependency range",
+      (manifest) => {
+        manifest.dependencies.openai = "^7.0.0";
+      },
+      /dependencies\.openai/,
+    ],
+  ])(
+    "rejects package metadata without the %s contract",
+    (_name, mutate, message) => {
+      const values = fixture();
+      mutate(values.sourceManifest);
+      expect(() =>
+        validatePublicPreviewDocuments({
+          documents: values.releaseDocuments,
+          sourceManifest: values.sourceManifest,
+        }),
+      ).toThrow(message);
+    },
+  );
 
   it("rejects handoff narrative", () => {
     const values = fixture();
@@ -468,6 +781,66 @@ describe("release metadata validation", () => {
     expect(validateReleaseMetadata(values)).toMatchObject({
       version: values.sourceManifest.version,
     });
+  });
+
+  it("does not accept a release approval hidden in a comment", () => {
+    const values = fixture();
+    values.changelog = `## [${values.sourceManifest.version}] - 2026-07-17\n`;
+    values.releaseDocuments.readme = `# CometAPI SDK\n\n<!-- ${values.sourceManifest.version} is approved for npm publication. -->\n`;
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        requireDatedChangelog: true,
+        requireFinalReleaseState: true,
+        requireReleasableDocs: true,
+      }),
+    ).toThrow(/README/);
+  });
+
+  it.each([
+    [
+      "README",
+      (values) => {
+        values.releaseDocuments.readme = `# CometAPI SDK\r\r\`\`\`text\r${values.sourceManifest.version} is approved for npm publication.\r\`\`\`\r`;
+      },
+    ],
+    [
+      "SECURITY",
+      (values) => {
+        values.releaseDocuments.security =
+          "# Security Policy\r\r```text\rsecurity@cometapi.com\r```\r";
+      },
+    ],
+    [
+      "SUPPORT",
+      (values) => {
+        values.releaseDocuments.support =
+          "# Support\r\r```text\rsupport@cometapi.com\r```\r";
+      },
+    ],
+  ])("does not accept %s evidence in a CR-only code fence", (label, mutate) => {
+    const values = fixture();
+    values.changelog = `## [${values.sourceManifest.version}] - 2026-07-17\n`;
+    mutate(values);
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        requireDatedChangelog: true,
+        requireFinalReleaseState: true,
+        requireReleasableDocs: true,
+      }),
+    ).toThrow(new RegExp(label));
+  });
+
+  it("does not turn a comment-prefixed changelog line into a heading", () => {
+    const values = fixture();
+    values.changelog = `# Changelog\n\n<!-- -->## [${values.sourceManifest.version}] - 2026-07-17\n`;
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        requireDatedChangelog: true,
+      }),
+    ).toThrow(/CHANGELOG\.md must contain exactly one heading/);
   });
 
   it("keeps the releasable-document gate in the publish workflow", () => {

@@ -36,11 +36,14 @@ npm test
 npm run typecheck
 npm run lint
 npm run format:check
+npm run test:secrets
 npm run test:package
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat
+npm run check:standalone-content
 npm run check:self-contained
+npm run check:public-preview
 npm run actionlint
 npm run verify
 ```
@@ -49,7 +52,9 @@ npm run verify
 transport and must not require `COMETAPI_KEY` or access the production API.
 `npm run actionlint` obtains the checksum-pinned tool when it is not already
 installed, then validates workflow syntax and static policy locally. It is not
-evidence that GitHub Actions ran the workflows.
+evidence that GitHub Actions ran the workflows. Run the self-containment gate
+from a clean tracked worktree; it materializes the exact `HEAD` tree and excludes
+untracked local files from the isolated verification copy.
 
 ## Tests and compatibility claims
 

@@ -183,11 +183,14 @@ npm test
 npm run typecheck
 npm run lint
 npm run format:check
+npm run test:secrets
 npm run test:package
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat
+npm run check:standalone-content
 npm run check:self-contained
+npm run check:public-preview
 npm run actionlint
 npm run verify
 ```
@@ -196,7 +199,11 @@ npm run verify
 use mocked transport and require no production credential. `npm run actionlint`
 downloads and checksum-verifies the repository-pinned version when needed, then
 performs static workflow validation. It does not prove that a workflow ran
-successfully on GitHub Actions.
+successfully on GitHub Actions. The secret gate scans the current tracked tree
+plus reachable Git blobs, commit and tag messages, and historical paths without
+printing matched values. The self-containment gate requires a clean tracked
+worktree and verifies an exact materialized copy of `HEAD` in an empty temporary
+parent.
 
 ## Project status
 
