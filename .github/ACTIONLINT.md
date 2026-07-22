@@ -14,8 +14,9 @@ directory and verifies it against `.github/actionlint-checksums.txt` before
 execution. Set `ACTIONLINT_BIN` to use a separately installed exact-version
 binary.
 
-`actionlint` statically validates workflow syntax, expressions, and embedded
-shell. A passing local run does not emulate GitHub-hosted runners, exercise
-repository settings, prove secret or environment configuration, perform a live
-CometAPI request, or prove npm Trusted Publishing. Those remain separate remote
-evidence.
+`actionlint` statically validates workflow syntax and expressions. Its optional
+ShellCheck integration supplies additional embedded-shell diagnostics only when
+ShellCheck is available on the host. A passing local run does not emulate
+GitHub-hosted runners, exercise repository settings, prove secret or environment
+configuration, perform a live CometAPI request, or prove npm Trusted Publishing.
+Those remain separate remote evidence.

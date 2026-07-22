@@ -7,6 +7,7 @@ const offlineChecks = [
   "typecheck",
   "test",
   "test:secrets",
+  "check:standalone-content",
   "check:public-preview",
   "test:package",
   "test:live-contract",

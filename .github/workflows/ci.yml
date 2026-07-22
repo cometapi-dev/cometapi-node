@@ -69,6 +69,7 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -87,6 +88,8 @@ jobs:
         run: npm test
       - name: Scan tracked material for secret patterns
         run: npm run test:secrets
+      - name: Scan current and historical standalone content
+        run: npm run check:standalone-content
       - name: Build ESM and CommonJS outputs
         run: npm run build
       - name: Validate the package shape

@@ -99,12 +99,14 @@ npm test
 npm run typecheck
 npm run lint
 npm run format:check
+npm run test:secrets
 npm run test:package
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat
 npm run check:standalone-content
 npm run check:self-contained
+npm run check:public-preview
 npm run actionlint
 npm run verify
 ```
@@ -122,9 +124,22 @@ install the exact artifact, then upload that same file. `npm run test:compat`
 covers the minimum, locked, and applicable canary dependency lanes with ESM and
 CommonJS runtime checks plus `.mts` and `.cts` consumer type checks.
 
-`npm run check:self-contained` copies repository files into an empty temporary
-parent, scans documentation and configuration for outside-root dependencies, and
-runs the documented offline setup and tests from the copied root.
+`npm run test:secrets` fails on a shallow Git clone and scans the current tracked
+tree plus reachable Git blobs, commit and tag messages, and historical paths.
+It reports only the rule and a safe object identifier or path hash rather than a
+matched value.
+
+`npm run check:standalone-content` fails on a shallow Git clone, materializes
+every unique tracked tree reachable from all local refs and `HEAD` without
+honoring export exclusions, and reports the commit and tree for every
+outside-root or private-content violation. In the isolated self-containment copy
+it scans that exact file tree because Git metadata is intentionally absent.
+
+`npm run check:self-contained` requires a clean tracked worktree, materializes
+the exact `HEAD` tree into an empty temporary parent, scans documentation and
+configuration for outside-root dependencies, and runs the documented offline
+setup and tests from the copied root. Untracked local files cannot satisfy a
+missing repository dependency.
 
 `npm run test:live-contract` uses mocked transport to prove the bounded live
 runner rejects empty Chat results and failed, incomplete, or unterminated
@@ -365,5 +380,15 @@ Every release candidate records these evidence layers separately:
 - Trusted live API evidence
 - npm ownership and Trusted Publisher evidence
 - Tag, release, provenance, publication, and post-publication evidence
+
+For a pre-visibility closeout, use the merged private pull request as the
+durable evidence record because a commit cannot contain its own final object
+ID. After merge, add one timeline comment that records the exact final `main`
+commit, the complete local gate results for that commit, pull-request and
+default-branch Node.js 22/24 CI URLs, failed dependency-update dispositions,
+the read-only private/public-only configuration audit, and every skipped or
+unknown boundary. The comment must explicitly confirm that no visibility,
+repository-rule, environment, secret, live API, tag, release, or registry state
+was changed.
 
 Only a publicly installed and verified npm artifact may be called released.

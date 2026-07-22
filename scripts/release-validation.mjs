@@ -1,3 +1,5 @@
+import { fromMarkdown } from "mdast-util-from-markdown";
+
 const NUMERIC_IDENTIFIER = "(?:0|[1-9]\\d*)";
 const NON_NUMERIC_IDENTIFIER = "(?:\\d*[A-Za-z-][0-9A-Za-z-]*)";
 const PRERELEASE_IDENTIFIER = `(?:${NUMERIC_IDENTIFIER}|${NON_NUMERIC_IDENTIFIER})`;
@@ -9,6 +11,7 @@ const SEMVER_PATTERN = new RegExp(
 );
 
 export const SUPPORTED_NODE_ENGINES = "^22.0.0 || ^24.0.0";
+export const SUPPORTED_OPENAI_RANGE = "^6.47.0";
 
 export const CANONICAL_IDENTITY = Object.freeze({
   author: "CometAPI",
@@ -63,6 +66,12 @@ const PREPARATION_NARRATIVE_PATTERNS = [
   /cometapi-worksapce/i,
   /\b(?:Claude|Codex)\b/i,
 ];
+const MARKDOWN_BLOCK_CONTAINERS = new Set([
+  "blockquote",
+  "list",
+  "listItem",
+  "root",
+]);
 
 export function escapeRegularExpression(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -138,17 +147,68 @@ function assertNoStaticDistTag(manifest, label) {
   }
 }
 
+function markdownNodeText(node, { includeLinkTargets = false } = {}) {
+  if (node.type === "text" || node.type === "inlineCode") return node.value;
+  if (node.type === "break") return "\n";
+  if (
+    node.type === "code" ||
+    node.type === "definition" ||
+    node.type === "html" ||
+    node.type === "image" ||
+    node.type === "imageReference" ||
+    node.type === "thematicBreak"
+  ) {
+    return "";
+  }
+
+  const separator = MARKDOWN_BLOCK_CONTAINERS.has(node.type) ? "\n" : "";
+  const text = Array.isArray(node.children)
+    ? node.children
+        .map((child) => markdownNodeText(child, { includeLinkTargets }))
+        .join(separator)
+    : "";
+  if (node.type === "link" && includeLinkTargets) {
+    return `${text} ${node.url}`.trim();
+  }
+  return text;
+}
+
+function parseMarkdownDocument(text) {
+  const root = fromMarkdown(text);
+  const headings = [];
+  for (const [nodeIndex, node] of root.children.entries()) {
+    if (node.type !== "heading") continue;
+    headings.push({
+      level: node.depth,
+      nodeIndex,
+      title: markdownNodeText(node).trim(),
+    });
+  }
+  return {
+    headings,
+    referenceText: markdownNodeText(root, { includeLinkTargets: true }),
+    root,
+    text: markdownNodeText(root),
+  };
+}
+
+export function visibleMarkdownText(text) {
+  return parseMarkdownDocument(text).text;
+}
+
 function validateChangelog(changelog, version, requireDatedChangelog) {
   const escapedVersion = escapeRegularExpression(version);
-  const headingPattern = new RegExp(`^## \\[${escapedVersion}\\](.*)$`, "gm");
-  const headings = [...changelog.matchAll(headingPattern)];
+  const headingPattern = new RegExp(`^\\[${escapedVersion}\\](.*)$`);
+  const headings = markdownHeadings(parseMarkdownDocument(changelog)).filter(
+    ({ level, title }) => level === 2 && headingPattern.test(title),
+  );
   if (headings.length !== 1) {
     throw new Error(
       `CHANGELOG.md must contain exactly one heading for ${version}; found ${String(headings.length)}.`,
     );
   }
 
-  const suffix = headings[0][1];
+  const suffix = headingPattern.exec(headings[0].title)[1];
   const suffixMatch = /^ - (Unreleased|\d{4}-\d{2}-\d{2})$/.exec(suffix);
   if (!suffixMatch) {
     throw new Error(
@@ -216,6 +276,109 @@ const PUBLIC_DOCUMENTS = [
   ["support", "SUPPORT.md"],
 ];
 
+const DOCUMENT_HEADING_REQUIREMENTS = [
+  [
+    "agents",
+    "AGENTS.md",
+    [
+      [
+        /\b(?:agent instructions|engineering contract)\b/i,
+        "an agent instructions title",
+      ],
+    ],
+  ],
+  [
+    "architecture",
+    "ARCHITECTURE.md",
+    [
+      [/^architecture$/i, "an Architecture title"],
+      [/^0\.1 boundary$/i, "a 0.1 boundary section"],
+    ],
+  ],
+  ["changelog", "CHANGELOG.md", [[/^changelog$/i, "a Changelog title"]]],
+  [
+    "compatibility",
+    "COMPATIBILITY.md",
+    [
+      [/^compatibility$/i, "a Compatibility title"],
+      [/^supported protocol surface$/i, "a supported protocol surface section"],
+    ],
+  ],
+  [
+    "conduct",
+    "CODE_OF_CONDUCT.md",
+    [
+      [/^code of conduct$/i, "a Code of Conduct title"],
+      [
+        /^reporting(?: and enforcement)?$/i,
+        "a reporting and enforcement section",
+      ],
+    ],
+  ],
+  [
+    "contributing",
+    "CONTRIBUTING.md",
+    [
+      [/^contributing$/i, "a Contributing title"],
+      [
+        /^(?:development setup|required checks)$/i,
+        "a development setup or required checks section",
+      ],
+    ],
+  ],
+  [
+    "releasing",
+    "RELEASING.md",
+    [
+      [/^releasing$/i, "a Releasing title"],
+      [/^authorization boundary$/i, "an authorization boundary section"],
+    ],
+  ],
+  [
+    "roadmap",
+    "ROADMAP.md",
+    [
+      [/\broadmap$/i, "a Roadmap title"],
+      [/^public preview$/i, "a Public Preview section"],
+    ],
+  ],
+  [
+    "security",
+    "SECURITY.md",
+    [
+      [/^security policy$/i, "a Security Policy title"],
+      [/^reporting a vulnerability$/i, "a vulnerability reporting section"],
+    ],
+  ],
+  [
+    "support",
+    "SUPPORT.md",
+    [
+      [/^support$/i, "a Support title"],
+      [/^getting help$/i, "a getting help section"],
+    ],
+  ],
+];
+
+const MIT_LICENSE_REQUIREMENTS = [
+  [/^MIT License\s*$/im, "the MIT License title"],
+  [
+    /permission\s+is\s+hereby\s+granted,\s+free\s+of\s+charge,\s+to\s+any\s+person\s+obtaining\s+a\s+copy/i,
+    "the MIT permission grant",
+  ],
+  [
+    /the\s+software\s+is\s+provided\s+["']AS IS["']/i,
+    'the MIT "AS IS" warranty disclaimer',
+  ],
+];
+
+const README_OPERATIONS = [
+  "chat.completions.create",
+  "responses.create",
+  "models.list",
+];
+const README_STREAMING_OPERATIONS = README_OPERATIONS.slice(0, 2);
+
 function collectViolation(violations, validation) {
   try {
     validation();
@@ -232,16 +395,112 @@ function requireExact(actual, expected, label) {
   }
 }
 
+function markdownHeadings(document) {
+  return document.headings;
+}
+
+function hasMarkdownHeading(document, titlePattern) {
+  return markdownHeadings(document).some(({ title }) =>
+    titlePattern.test(title),
+  );
+}
+
+function findMarkdownSection(document, titlePattern) {
+  const headings = markdownHeadings(document);
+  const headingIndex = headings.findIndex(({ title }) =>
+    titlePattern.test(title),
+  );
+  if (headingIndex === -1) return undefined;
+
+  const heading = headings[headingIndex];
+  const nextHeading = headings
+    .slice(headingIndex + 1)
+    .find(({ level }) => level <= heading.level);
+  const nodes = document.root.children.slice(
+    heading.nodeIndex + 1,
+    nextHeading?.nodeIndex,
+  );
+  return {
+    nodes,
+    text: nodes.map((node) => markdownNodeText(node)).join("\n"),
+  };
+}
+
+function containsSubstantiveProse(text) {
+  const prose = text.replace(/^\s{0,3}#{1,6}[ \t]+.*$/gm, "");
+  return (prose.match(/[A-Za-z][A-Za-z'-]+/g) ?? []).length >= 3;
+}
+
+function markdownStatements(nodes) {
+  const statements = [];
+  const visit = (node) => {
+    if (node.type === "code" || node.type === "html") return;
+    if (node.type === "paragraph") {
+      statements.push(markdownNodeText(node));
+      return;
+    }
+    if (Array.isArray(node.children)) node.children.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return statements;
+}
+
+function containsExactOperation(text, operation) {
+  const operationPattern = new RegExp(
+    `(?:^|[^A-Za-z0-9_$.])${escapeRegularExpression(operation)}(?![A-Za-z0-9_$.])`,
+  );
+  return operationPattern.test(text);
+}
+
+function containsStreamingModes(text) {
+  const nonStreamingPattern = /\bnon(?:-|\s)?streaming\b/i;
+  return (
+    nonStreamingPattern.test(text) &&
+    /\bstreaming\b/i.test(text.replace(/\bnon(?:-|\s)?streaming\b/gi, ""))
+  );
+}
+
+function containsOperationModes(section, operation) {
+  return markdownStatements(section.nodes).some(
+    (statement) =>
+      containsExactOperation(statement, operation) &&
+      containsStreamingModes(statement),
+  );
+}
+
+function assertManifestKeyword(manifest, keyword) {
+  const keywords = manifest?.keywords;
+  if (
+    !Array.isArray(keywords) ||
+    !keywords.some(
+      (value) => typeof value === "string" && value.toLowerCase() === keyword,
+    )
+  ) {
+    throw new Error(`package.json keywords must contain ${keyword}.`);
+  }
+}
+
 export function collectPublicPreviewViolations({
   documents = {},
   sourceManifest,
 } = {}) {
   const violations = [];
+  const markdownDocuments = new Map();
+  const documentReferences = new Map();
   const documentText = new Map();
 
   for (const [field, filename] of PUBLIC_DOCUMENTS) {
     collectViolation(violations, () => {
-      documentText.set(field, assertDocumentText(documents, field, filename));
+      const text = assertDocumentText(documents, field, filename);
+      if (filename.endsWith(".md")) {
+        const document = parseMarkdownDocument(text);
+        markdownDocuments.set(field, document);
+        documentReferences.set(field, document.referenceText);
+        documentText.set(field, document.text);
+      } else {
+        documentReferences.set(field, text);
+        documentText.set(field, text);
+      }
     });
   }
 
@@ -287,6 +546,46 @@ export function collectPublicPreviewViolations({
       "package.json bugs.url",
     ),
   );
+  for (const keyword of ["typescript", "nodejs"]) {
+    collectViolation(violations, () =>
+      assertManifestKeyword(sourceManifest, keyword),
+    );
+  }
+  collectViolation(violations, () =>
+    assertSupportedNodeEngines(sourceManifest, "package.json"),
+  );
+  collectViolation(violations, () =>
+    requireExact(
+      sourceManifest?.dependencies?.openai,
+      SUPPORTED_OPENAI_RANGE,
+      "package.json dependencies.openai",
+    ),
+  );
+
+  for (const [field, filename, requirements] of DOCUMENT_HEADING_REQUIREMENTS) {
+    const document = markdownDocuments.get(field);
+    if (document === undefined) continue;
+    for (const [
+      requirementIndex,
+      [titlePattern, description],
+    ] of requirements.entries()) {
+      collectViolation(violations, () => {
+        if (!hasMarkdownHeading(document, titlePattern)) {
+          throw new Error(`${filename} must contain ${description}.`);
+        }
+        if (
+          requirementIndex > 0 &&
+          !containsSubstantiveProse(
+            findMarkdownSection(document, titlePattern)?.text ?? "",
+          )
+        ) {
+          throw new Error(
+            `${filename} must give ${description} substantive contract content.`,
+          );
+        }
+      });
+    }
+  }
 
   const license = documentText.get("license");
   if (license !== undefined) {
@@ -300,6 +599,64 @@ export function collectPublicPreviewViolations({
         );
       }
     });
+    for (const [pattern, description] of MIT_LICENSE_REQUIREMENTS) {
+      collectViolation(violations, () => {
+        if (!pattern.test(license)) {
+          throw new Error(`LICENSE must contain ${description}.`);
+        }
+      });
+    }
+  }
+
+  const readmeDocument = markdownDocuments.get("readme");
+  if (readmeDocument !== undefined) {
+    const firstSection = markdownHeadings(readmeDocument).find(
+      ({ level, nodeIndex }) => nodeIndex > 0 && level >= 2,
+    );
+    const preamble = readmeDocument.root.children
+      .slice(0, firstSection?.nodeIndex)
+      .map((node) => markdownNodeText(node))
+      .join("\n");
+    collectViolation(violations, () => {
+      if (!/\bpre(?:-|\s)?release\b/i.test(preamble)) {
+        throw new Error(
+          "README.md must label the project as a pre-release near the top of the document.",
+        );
+      }
+    });
+
+    const supportedSurface = findMarkdownSection(
+      readmeDocument,
+      /^(?=.*\b0\.1\b)(?=.*\bsupport(?:ed)?\b).+$/i,
+    );
+    collectViolation(violations, () => {
+      if (supportedSurface === undefined) {
+        throw new Error(
+          "README.md must contain a supported 0.1 surface section.",
+        );
+      }
+    });
+
+    if (supportedSurface !== undefined) {
+      for (const operation of README_OPERATIONS) {
+        collectViolation(violations, () => {
+          if (!containsExactOperation(supportedSurface.text, operation)) {
+            throw new Error(
+              `README.md supported 0.1 surface must contain the exact operation ${operation}.`,
+            );
+          }
+        });
+      }
+      for (const operation of README_STREAMING_OPERATIONS) {
+        collectViolation(violations, () => {
+          if (!containsOperationModes(supportedSurface, operation)) {
+            throw new Error(
+              `README.md must describe ${operation} as streaming and non-streaming.`,
+            );
+          }
+        });
+      }
+    }
   }
 
   for (const [field, filename] of [
@@ -307,7 +664,7 @@ export function collectPublicPreviewViolations({
     ["security", "SECURITY.md"],
     ["support", "SUPPORT.md"],
   ]) {
-    const text = documentText.get(field);
+    const text = documentReferences.get(field);
     if (text === undefined) continue;
     collectViolation(violations, () =>
       assertNoOwnerPlaceholder(text, filename),
@@ -320,7 +677,7 @@ export function collectPublicPreviewViolations({
     ["support", "SUPPORT.md", CANONICAL_IDENTITY.supportEmail],
     ["support", "SUPPORT.md", CANONICAL_IDENTITY.bugsUrl],
   ]) {
-    const text = documentText.get(field);
+    const text = documentReferences.get(field);
     if (text === undefined) continue;
     collectViolation(violations, () => {
       if (!text.includes(expected)) {
@@ -330,7 +687,7 @@ export function collectPublicPreviewViolations({
   }
 
   for (const [field, filename] of PUBLIC_DOCUMENTS) {
-    const text = documentText.get(field);
+    const text = documentReferences.get(field);
     if (text === undefined) continue;
     collectViolation(violations, () => {
       if (
@@ -359,17 +716,17 @@ export function validatePublicPreviewDocuments(input) {
 }
 
 function releaseChangelogSection(changelog, version) {
+  const document = parseMarkdownDocument(changelog);
   const headingPattern = new RegExp(
-    `^## \\[${escapeRegularExpression(version)}\\].*$`,
-    "m",
+    `^\\[${escapeRegularExpression(version)}\\].*$`,
   );
-  const heading = headingPattern.exec(changelog);
+  const heading = markdownHeadings(document).find(
+    ({ level, title }) => level === 2 && headingPattern.test(title),
+  );
   if (!heading) {
     throw new Error(`CHANGELOG.md has no release section for ${version}.`);
   }
-  const remainder = changelog.slice(heading.index + heading[0].length);
-  const nextHeading = /^## /m.exec(remainder);
-  return nextHeading ? remainder.slice(0, nextHeading.index) : remainder;
+  return findMarkdownSection(document, headingPattern)?.text ?? "";
 }
 
 export function validateReleasableDocuments({ changelog, documents, version }) {
@@ -381,26 +738,32 @@ export function validateReleasableDocuments({ changelog, documents, version }) {
     );
   }
 
-  const readme = assertDocumentText(documents, "readme", "README.md");
-  assertNoOwnerPlaceholder(readme, "README.md");
-  assertNoStalePublicationState(readme, "README.md");
+  const readmeDocument = parseMarkdownDocument(
+    assertDocumentText(documents, "readme", "README.md"),
+  );
+  assertNoOwnerPlaceholder(readmeDocument.referenceText, "README.md");
+  assertNoStalePublicationState(readmeDocument.text, "README.md");
   const approvalPattern = new RegExp(
     `\\b${escapeRegularExpression(version)}\\s+is\\s+approved\\s+for\\s+npm\\s+publication\\b`,
     "i",
   );
-  if (!approvalPattern.test(readme)) {
+  if (!approvalPattern.test(readmeDocument.text)) {
     throw new Error(
       "README.md must explicitly state '<version> is approved for npm publication' before tagging.",
     );
   }
 
-  const security = assertDocumentText(documents, "security", "SECURITY.md");
-  assertCanonicalContact(security, "SECURITY.md");
-  assertNoStalePublicationState(security, "SECURITY.md");
+  const securityDocument = parseMarkdownDocument(
+    assertDocumentText(documents, "security", "SECURITY.md"),
+  );
+  assertCanonicalContact(securityDocument.referenceText, "SECURITY.md");
+  assertNoStalePublicationState(securityDocument.text, "SECURITY.md");
 
-  const support = assertDocumentText(documents, "support", "SUPPORT.md");
-  assertCanonicalContact(support, "SUPPORT.md");
-  assertNoStalePublicationState(support, "SUPPORT.md");
+  const supportDocument = parseMarkdownDocument(
+    assertDocumentText(documents, "support", "SUPPORT.md"),
+  );
+  assertCanonicalContact(supportDocument.referenceText, "SUPPORT.md");
+  assertNoStalePublicationState(supportDocument.text, "SUPPORT.md");
 
   const releaseSection = releaseChangelogSection(changelog, version);
   if (
