@@ -18,29 +18,51 @@ repository.
 
 ## Git Branch Lifecycle
 
-- Use a dedicated short-lived topic branch for each task. `dev` is the clean
-  local landing branch between tasks; do not commit task changes directly to
+- Remote Git writes are authorized only by the current maintainer request.
+  Repository documentation may define a workflow, but it never provides
+  standing permission to push a branch, create or update a pull request, merge,
+  or perform any other remote mutation. Stop before the first unauthorized
+  remote write.
+- Start each task from a clean worktree. Fetch `origin`, check out local `main`,
+  require local `main` to be an ancestor of `origin/main`, and fast-forward it
+  with `--ff-only`. Require the two refs to resolve to the same commit afterward.
+  If fetching fails, `main` is missing, the worktree is not clean, the ancestry
+  check fails, the fast-forward fails, or the refs still differ, stop and report
+  the exact state.
+- `dev` is a local-only clean landing branch between tasks. If local `dev` does
+  not exist, create it only from the checked-out, clean, synchronized `main`. If
+  local `dev` already exists, require it to be an ancestor of `main`,
+  fast-forward it with `--ff-only`, and require both refs to resolve to the same
+  commit. If any check or fast-forward fails, stop and report the divergence;
+  never reset, rebase, delete, or recreate `dev` to force alignment. Never push
   `dev`.
-- After a topic branch has been merged or otherwise explicitly accepted and
-  its required verification is complete, treat its active lifecycle as closed.
-  With a clean worktree, fetch `origin`, fast-forward local `main` to
-  `origin/main`, fast-forward local `dev` to `main`, and finish with `dev`
-  checked out. Cleanup is complete only when local `main`, local `dev`, and
-  `origin/main` resolve to the same commit.
+- Use a dedicated short-lived topic branch for each task, created only after
+  `main` and `dev` are synchronized. Do not commit task changes directly to
+  `main` or `dev`.
+- After an explicitly authorized topic branch has been merged or otherwise
+  accepted and its required verification is complete, require a clean
+  worktree, fetch `origin`, check out local `main`, and apply the same ancestry,
+  `--ff-only`, and exact-ref-equality requirements to `origin/main`, `main`, and
+  `dev`. If `dev` is absent at cleanup time, create it only from the checked-out,
+  clean, synchronized `main`. Finish with `dev` checked out. Cleanup is complete
+  only when `HEAD`, local `main`, local `dev`, and `origin/main` resolve to the
+  same commit.
 - Never reset, discard work, force-update refs, delete branches, or push `dev`
-  merely to complete this cleanup. If fetching fails, the worktree is dirty,
-  either fast-forward is impossible, or the three final refs differ, stop and
-  report the exact state instead of forcing synchronization.
+  merely to complete lifecycle cleanup. Fail closed and report the exact state
+  whenever a required cleanliness, fetch, or fast-forward condition is not met.
 
 ## Current Milestone: Public Preview
 
-Private Remote Validation is complete, and the current execution target is
-Public Preview. Repository-local source, tests, documentation, metadata,
-fixtures, workflows, private pull requests, and credential-free CI may be
-changed and verified. Stop before changing repository visibility: making the
-canonical repository public and configuring or exercising public-only settings,
-protected environments, secrets, or live smoke require explicit maintainer
-authorization.
+Private Remote Validation and Public Preview pre-visibility preparation are
+complete. The repository remains private at the visibility authorization gate.
+Repository-local source, tests, documentation, metadata, fixtures, and
+workflows may be changed and verified locally. Private topic pushes, pull
+requests, merges, and credential-free CI are permitted only when the current
+maintainer request explicitly authorizes them; this file records scope and does
+not grant that authorization. Stop before changing repository visibility:
+making the canonical repository public and configuring or exercising
+public-only settings, protected environments, secrets, or live smoke require
+separate explicit maintainer authorization.
 
 The accepted identity is:
 
@@ -265,8 +287,10 @@ reusable workflow path.
 
 Repository-local source, tests, documentation, metadata, fixtures, and workflow
 definitions may be changed and verified locally. Remote repositories, pushes,
-tags, releases, npm publication, GitHub or registry settings, and live API
-requests require explicit maintainer authorization.
+pull requests, merges, tags, releases, npm publication, GitHub or registry
+settings, and live API requests require explicit authorization in the current
+maintainer request. Repository documents and prior authorizations describe
+constraints but do not provide standing permission for a later task.
 
 Public identity, contacts, repository metadata, credentials, protection rules,
 environment approvals, and registry ownership must come from authorized

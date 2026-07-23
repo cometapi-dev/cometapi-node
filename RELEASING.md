@@ -83,10 +83,13 @@ complete only when `npm owner ls cometapi` lists the maintainer-confirmed
 `cometapi-team` account after the first publication; until then this remains a
 Registry Alpha prerequisite, not a Public Preview blocker.
 
-For the current Public Preview milestone, authorized external actions remain
-limited to private pull requests and credential-free CI. Changing repository
-visibility and every subsequent public-only configuration or live action
-require separate authorization.
+For the current Public Preview milestone, private topic pushes, pull requests,
+merges, and credential-free CI are the only remote actions that may be
+authorized before the visibility transition. This document defines allowable
+release mechanics but grants no standing remote-write permission; the current
+maintainer request must explicitly authorize each task's remote actions.
+Changing repository visibility and every subsequent public-only configuration
+or live action require separate authorization.
 
 ## Candidate verification gate
 
