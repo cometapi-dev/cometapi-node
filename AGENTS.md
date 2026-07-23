@@ -16,6 +16,22 @@ repository.
 - Record repository-specific product and release decisions locally in
   `ROADMAP.md`, `ARCHITECTURE.md`, `RELEASING.md`, and this file.
 
+## Git Branch Lifecycle
+
+- Use a dedicated short-lived topic branch for each task. `dev` is the clean
+  local landing branch between tasks; do not commit task changes directly to
+  `dev`.
+- After a topic branch has been merged or otherwise explicitly accepted and
+  its required verification is complete, treat its active lifecycle as closed.
+  With a clean worktree, fetch `origin`, fast-forward local `main` to
+  `origin/main`, fast-forward local `dev` to `main`, and finish with `dev`
+  checked out. Cleanup is complete only when local `main`, local `dev`, and
+  `origin/main` resolve to the same commit.
+- Never reset, discard work, force-update refs, delete branches, or push `dev`
+  merely to complete this cleanup. If fetching fails, the worktree is dirty,
+  either fast-forward is impossible, or the three final refs differ, stop and
+  report the exact state instead of forcing synchronization.
+
 ## Current Milestone: Public Preview
 
 Private Remote Validation is complete, and the current execution target is
