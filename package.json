@@ -1,6 +1,6 @@
 {
   "name": "cometapi",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Official TypeScript and Node.js client for the CometAPI OpenAI-compatible API",
   "author": "CometAPI",
   "license": "MIT",
