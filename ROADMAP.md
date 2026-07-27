@@ -1,6 +1,6 @@
 # CometAPI TypeScript and Node.js SDK Roadmap
 
-Status: Public Preview complete; Registry Alpha OIDC closeout in progress
+Status: Public Preview and Registry Alpha complete; 0.1.0 stable planned
 Last updated: 2026-07-27
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
@@ -17,22 +17,22 @@ tag rules, Private Vulnerability Reporting, protected environments, and
 authorized live-smoke evidence. The functional `0.1.0-alpha.1` prerelease is
 available from npm. The immutable `0.1.0-alpha.2` GitHub release failed locally
 before invoking npm because its publication guard rejected the fixed
-`actions/setup-node` authentication placeholder. Registry Alpha remains open
-until `0.1.0-alpha.3` completes the OIDC, provenance, ownership, and
-public-install verification sequence.
+`actions/setup-node` authentication placeholder. `0.1.0-alpha.3` completed the
+OIDC, provenance, ownership, and public-install verification sequence and is
+available from npm's `next` channel.
 
 ## Milestones
 
-| Milestone                  | Status      | User outcome                                                                                                                             |
-| -------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository foundation      | In progress | The repository has reproducible development, contribution, security, and release processes.                                              |
-| Private Remote Validation  | Complete    | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.     |
-| Public Preview             | Complete    | The public repository has blocking CI, repository rules, security reporting, protected environments, and authorized live-smoke evidence. |
-| 0.1.x Registry Alpha       | In progress | Early adopters can install a functional prerelease from npm's `next` channel; alpha.3 must prove the OIDC-only publication path.         |
-| 0.1.0 Stable               | Planned     | Users can install a fully verified package from npm's default channel.                                                                   |
-| 0.2.0 provider-native text | Planned     | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                         |
-| 0.3.0 CometAPI resources   | Planned     | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                          |
-| Media and task APIs        | Later       | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                   |
+| Milestone                  | Status      | User outcome                                                                                                                              |
+| -------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository foundation      | In progress | The repository has reproducible development, contribution, security, and release processes.                                               |
+| Private Remote Validation  | Complete    | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.      |
+| Public Preview             | Complete    | The public repository has blocking CI, repository rules, security reporting, protected environments, and authorized live-smoke evidence.  |
+| 0.1.x Registry Alpha       | Complete    | Early adopters can install a functional, provenance-verified prerelease from npm's `next` channel through the OIDC-only publication path. |
+| 0.1.0 Stable               | Planned     | Users can install a fully verified package from npm's default channel.                                                                    |
+| 0.2.0 provider-native text | Planned     | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                          |
+| 0.3.0 CometAPI resources   | Planned     | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                           |
+| Media and task APIs        | Later       | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                    |
 
 ## Repository Foundation
 
@@ -347,10 +347,10 @@ npm does not allow configuration before the first package publication, only
    local publication guard rejected the fixed `actions/setup-node`
    authentication placeholder before npm was invoked; no alpha.2 registry
    artifact exists.
-6. The project preserves that immutable failure record, publishes
-   `0.1.0-alpha.3` through OIDC with regression coverage for the placeholder,
-   verifies provenance and installation, and confirms that `next` resolves to
-   `0.1.0-alpha.3`.
+6. The project preserved that immutable failure record and published
+   `0.1.0-alpha.3` through OIDC with regression coverage for the placeholder.
+   Provenance, registry signatures, independent installation, ownership, and
+   the `next` dist-tag were verified.
 
 This exception must be recorded in the release evidence and must never become
 a reusable publication path.

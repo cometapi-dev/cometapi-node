@@ -351,6 +351,44 @@ one-time exception:
 
 This exception must never become a reusable source-controlled publishing path.
 
+## Registry Alpha release evidence
+
+Registry Alpha completed on 2026-07-27 with these independently auditable
+layers:
+
+- The one-time `0.1.0-alpha.1` bootstrap recovery published the exact artifact
+  with provenance in [GitHub Actions run 30251436832](https://github.com/cometapi-dev/cometapi-node/actions/runs/30251436832).
+- npm ownership lists both `tensornull <tensor.null@gmail.com>` and the
+  company-controlled `cometapi_dev <dev@cometapi.com>` account. The bootstrap
+  token was revoked, local npm authentication was removed, the protected `npm`
+  environment has no secrets or variables, and npm disallows token publishing.
+- The immutable `0.1.0-alpha.2` release passed exact-artifact verification and
+  protected live smoke in [run 30270656080](https://github.com/cometapi-dev/cometapi-node/actions/runs/30270656080),
+  then failed before invoking npm because the local publication guard rejected
+  the fixed `actions/setup-node` authentication placeholder. No alpha.2
+  registry artifact exists.
+- Pull request [#23](https://github.com/cometapi-dev/cometapi-node/pull/23)
+  added regression coverage for that placeholder while preserving rejection of
+  real registry credentials. Default-branch [CI run 30272606126](https://github.com/cometapi-dev/cometapi-node/actions/runs/30272606126)
+  passed before tagging.
+- The immutable [`v0.1.0-alpha.3` release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.0-alpha.3)
+  completed exact-artifact verification, the bounded three-request live smoke,
+  OIDC publication, registry convergence, signature verification, dependency
+  deduplication, and public installation in [run 30272764488](https://github.com/cometapi-dev/cometapi-node/actions/runs/30272764488).
+- npm identifies the publisher as GitHub Actions using
+  `npm-oidc-no-reply@github.com`. The registry reports SLSA provenance v1 and
+  integrity
+  `sha512-dtzQOz0dxif74jJpu2fhfUVjiq6TLm3YkPydtsryHGxuU6usaLWTpcblky854T42TG+SbTApCgOoNJDMkEYIOg==`,
+  and Sigstore transparency-log index
+  [`2257566579`](https://search.sigstore.dev/?logIndex=2257566579).
+- Independent installs from the public registry passed for ESM, CommonJS, and a
+  host already declaring `openai@6.47.0`. The host resolved one effective
+  OpenAI installation and preserved `APIError instanceof` identity. Registry
+  signatures and attestations were verified with `npm audit signatures`.
+- The `next` dist-tag resolves to `0.1.0-alpha.3`. The registry-created `latest`
+  tag remains on `0.1.0-alpha.1`; it is outside the prerelease installation path
+  and remains explicit residual cleanup before stable publication.
+
 ## Stable 0.1.0 sequence
 
 ```text
