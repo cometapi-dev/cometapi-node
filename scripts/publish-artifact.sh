@@ -6,11 +6,9 @@ set -euo pipefail
 : "${VERSION:?VERSION is required}"
 
 artifact_directory="${ARTIFACT_DIRECTORY:-release-artifacts}"
-bootstrap_enabled="${ALPHA1_BOOTSTRAP_ENABLED:-}"
 
-if [[ "$bootstrap_enabled" == "true" && \
-  ( "$VERSION" != "0.1.0-alpha.1" || "$DIST_TAG" != "next" ) ]]; then
-  echo "The token bootstrap is restricted to cometapi@0.1.0-alpha.1 on the next dist-tag." >&2
+if [[ -n "${NODE_AUTH_TOKEN:-}" || -n "${NPM_TOKEN:-}" ]]; then
+  echo "Registry tokens are forbidden; publication must use npm Trusted Publishing." >&2
   exit 1
 fi
 
@@ -40,10 +38,6 @@ if (dist.integrity !== process.env.LOCAL_INTEGRITY) {
 EOF
   echo "cometapi@${VERSION} already matches the verified artifact; resuming checks."
 elif grep -q "E404" "$view_error"; then
-  if [[ "$bootstrap_enabled" == "true" && -z "${NODE_AUTH_TOKEN:-}" ]]; then
-    echo "NPM_ALPHA1_BOOTSTRAP_TOKEN is required when the alpha.1 bootstrap is enabled." >&2
-    exit 1
-  fi
   npm publish "${tarballs[0]}" --access public --provenance --tag "$DIST_TAG"
 else
   echo "Unable to determine whether cometapi@${VERSION} already exists." >&2

@@ -5,6 +5,15 @@ follows Keep a Changelog, and versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-07-27
+
+### Changed
+
+- Removed the one-time alpha.1 token bootstrap and manual recovery workflow
+  after configuring npm Trusted Publishing.
+- Required the release workflow to publish through OIDC without registry token
+  credentials while preserving exact-artifact and provenance verification.
+
 ## [0.1.0-alpha.1] - 2026-07-27
 
 ### Added
