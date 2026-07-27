@@ -67,7 +67,7 @@ artifacts. Authorized maintainers must supply or approve:
 - Changes to the canonical identity and contact values listed above
 - Repository creation and visibility, branch/tag protections, environments,
   secrets, and environment approval policies
-- npm package ownership for the maintainer-confirmed `cometapi-team` account
+- npm package ownership for the maintainer-confirmed `cometapi_dev` account
   and Trusted Publisher configuration
 - A `COMETAPI_KEY`, request budget, and explicit authorization for live smoke
   tests
@@ -79,7 +79,7 @@ corresponding release gate. Do not invent it or replace it with a mock.
 
 The `cometapi` package exists in the public registry. Registry Alpha owner
 evidence is complete only when `npm owner ls cometapi` lists the
-maintainer-confirmed `cometapi-team` account; until then this remains a Registry
+maintainer-confirmed `cometapi_dev` account; until then this remains a Registry
 Alpha prerequisite.
 
 For the current Public Preview milestone, private topic pushes, pull requests,
@@ -302,11 +302,11 @@ dist-tag. Before authorizing release:
     company-controlled owner and verifies the resulting owner list:
 
     ```bash
-    npm owner add cometapi-team cometapi
+    npm owner add cometapi_dev cometapi
     npm owner ls cometapi
     ```
 
-    Record evidence that the output lists `cometapi-team`; Registry Alpha owner
+    Record evidence that the output lists `cometapi_dev`; Registry Alpha owner
     setup is incomplete until it does.
 
 12. Install `cometapi@next` from npm and run an independent import and mocked
