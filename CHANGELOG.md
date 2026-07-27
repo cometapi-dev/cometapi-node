@@ -5,7 +5,8 @@ follows Keep a Changelog, and versions follow Semantic Versioning.
 
 ## [Unreleased]
 
-No user-visible changes are currently recorded beyond the initial alpha scope.
+- Completed the Public Preview repository transition, protected configuration,
+  and authorized live-smoke verification. Registry Alpha remains unpublished.
 
 ## [0.1.0-alpha.1] - Unreleased
 
