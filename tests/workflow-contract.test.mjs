@@ -121,7 +121,28 @@ describe("GitHub Actions workflow contract", () => {
     expect(publish).toContain("run: bash scripts/publish-artifact.sh");
     expect(
       matches(publishWorkflow, /secrets\.NPM_ALPHA1_BOOTSTRAP_TOKEN/g),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+  });
+
+  it("limits manual publication recovery to the failed immutable alpha.1 run", () => {
+    const publishWorkflow = workflow("publish.yml");
+    const recoveryVerify = job(publishWorkflow, "recover-verify");
+    const recoveryPublish = job(publishWorkflow, "recover-publish");
+
+    expect(recoveryVerify).toContain("EXPECTED_TAG: v0.1.0-alpha.1");
+    expect(recoveryVerify).toContain(
+      'run.path !== ".github/workflows/publish.yml"',
+    );
+    expect(recoveryVerify).toContain("release.immutable !== true");
+    expect(recoveryVerify).toContain(
+      'conclusions.get("Verify the release tag against CometAPI") !== "success"',
+    );
+    expect(recoveryVerify).toContain(
+      'artifact.name === "npm-package-0.1.0-alpha.1"',
+    );
+    expect(recoveryPublish).toContain("environment:\n      name: npm");
+    expect(recoveryPublish).toContain("id-token: write");
+    expect(recoveryPublish).toContain("run: bash scripts/publish-artifact.sh");
   });
 
   it("pins third-party actions and disables checkout credential persistence", () => {
@@ -164,9 +185,15 @@ describe("GitHub Actions workflow contract", () => {
     expect(releasePlease).toMatch(/^ {6}pull-requests: write$/m);
 
     const publishWorkflow = workflow("publish.yml");
-    expect(matches(publishWorkflow, /^\s+id-token: write$/gm)).toHaveLength(1);
+    expect(matches(publishWorkflow, /^\s+id-token: write$/gm)).toHaveLength(2);
     expect(job(publishWorkflow, "verify")).not.toContain("id-token: write");
     expect(job(publishWorkflow, "live-smoke")).not.toContain("id-token: write");
     expect(job(publishWorkflow, "publish")).toContain("id-token: write");
+    expect(job(publishWorkflow, "recover-verify")).not.toContain(
+      "id-token: write",
+    );
+    expect(job(publishWorkflow, "recover-publish")).toContain(
+      "id-token: write",
+    );
   });
 });
