@@ -4,8 +4,8 @@ The official CometAPI entry point for the OpenAI-compatible API. The SDK keeps
 the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
-> **Pre-release:** the SDK is under active 0.1 development. The package is not
-> yet available from npm, and its API may change before `0.1.0`.
+> **Public Preview pre-release:** the SDK is under active 0.1 development. The
+> package is not yet available from npm, and its API may change before `0.1.0`.
 
 ## Supported 0.1 surface
 
@@ -207,16 +207,18 @@ parent.
 
 ## Project status
 
-The repository is preparing for Public Preview and the first Registry Alpha.
-Mocked responses, packed artifacts, GitHub Actions, trusted live tests, and npm
-publication are separate evidence layers; one must not be represented as
+The repository is in Public Preview. Blocking CI, protected repository rules,
+security reporting, protected environments, and the authorized live smoke have
+passed. The first Registry Alpha remains a separate release gate; mocked
+responses, packed artifacts, GitHub Actions, trusted live tests, and npm
+publication are separate evidence layers and must not be represented as
 another.
 
 See:
 
 - [Canonical repository](https://github.com/cometapi-dev/cometapi-node)
 - Support and conduct: `support@cometapi.com`
-- [Private vulnerability reporting](https://github.com/cometapi-dev/cometapi-node/security/advisories/new), activated during Public Preview
+- [Private vulnerability reporting](https://github.com/cometapi-dev/cometapi-node/security/advisories/new), enabled for Public Preview
 - [COMPATIBILITY.md](./COMPATIBILITY.md) for the supported protocol matrix
 - [ARCHITECTURE.md](./ARCHITECTURE.md) for design constraints
 - [CONTRIBUTING.md](./CONTRIBUTING.md) for contributor checks

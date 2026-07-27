@@ -17,10 +17,8 @@ issue.
 
 The canonical confidential reporting URL is
 <https://github.com/cometapi-dev/cometapi-node/security/advisories/new>.
-Private Vulnerability Reporting is activated during Public Preview, after
-Private Remote Validation. Until it is active, contact `support@cometapi.com`
-to arrange confidential reporting. Do not make the repository public without a
-working confidential reporting path.
+Private Vulnerability Reporting is enabled for Public Preview. Contact
+`support@cometapi.com` if the reporting URL is unavailable.
 
 Include:
 
