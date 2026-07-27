@@ -59,10 +59,10 @@ function fixture() {
 }
 
 function runPublish({
-  bootstrapEnabled = "",
   distTag = "next",
-  token = "",
-  version = "0.1.0-alpha.1",
+  nodeAuthToken = "",
+  npmToken = "",
+  version = "0.1.0-alpha.2",
 } = {}) {
   const { bin, log, root } = fixture();
   const result = spawnSync("bash", [script], {
@@ -70,11 +70,11 @@ function runPublish({
     encoding: "utf8",
     env: {
       ...process.env,
-      ALPHA1_BOOTSTRAP_ENABLED: bootstrapEnabled,
       ARTIFACT_DIRECTORY: "artifacts",
       DIST_TAG: distTag,
-      NODE_AUTH_TOKEN: token,
+      NODE_AUTH_TOKEN: nodeAuthToken,
       NPM_CALL_LOG: log,
+      NPM_TOKEN: npmToken,
       PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
       VERSION: version,
     },
@@ -87,33 +87,24 @@ function runPublish({
 }
 
 describe("publish artifact authentication", () => {
-  it("uses Trusted Publishing without injecting a registry token by default", () => {
-    const { log, result } = runPublish({ version: "0.1.0-alpha.2" });
+  it("uses Trusted Publishing with the absolute artifact path", () => {
+    const { log, result, root } = runPublish();
     expect(result.status, result.stderr).toBe(0);
     expect(log).toMatch(/^\npublish .* --provenance --tag next\n$/);
-  });
-
-  it("allows the protected token bootstrap for alpha.1 on next", () => {
-    const { log, result, root } = runPublish({
-      bootstrapEnabled: "true",
-      token: "opaque",
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(log).toMatch(
-      /^token-present\npublish .* --provenance --tag next\n$/,
-    );
     expect(log).toContain(
       `publish ${join(realpathSync(root), "artifacts", "cometapi.tgz")} --access public --provenance --tag next`,
     );
   });
 
   it.each([
-    ["another version", { bootstrapEnabled: "true", version: "0.1.0-alpha.2" }],
-    ["another dist-tag", { bootstrapEnabled: "true", distTag: "latest" }],
-    ["a missing token", { bootstrapEnabled: "true" }],
-  ])("rejects bootstrap mode for %s", (_name, options) => {
+    ["NODE_AUTH_TOKEN", { nodeAuthToken: "opaque" }],
+    ["NPM_TOKEN", { npmToken: "opaque" }],
+  ])("rejects the %s registry credential", (_name, options) => {
     const { log, result } = runPublish(options);
     expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "publication must use npm Trusted Publishing",
+    );
     expect(log).toBe("");
   });
 });

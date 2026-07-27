@@ -9,7 +9,7 @@ Release status is evidence-based:
 | Local code-complete             | Required source, tests, documentation, metadata, fixtures, and workflows exist, and every applicable offline check passes.                                                   |
 | Private Remote Validation ready | Local gates pass, the sanitized history and maintainer-confirmed identity are complete, and real credential-free private default-branch CI passes.                           |
 | Public Preview ready            | After visibility changes, public-only repository rules, security reporting, environments, default-branch CI, the content gate, and authorized protected live smoke all pass. |
-| Registry Alpha candidate        | The exact `0.1.0-alpha.1` artifact passes package and clean-install gates.                                                                                                   |
+| Registry Alpha candidate        | The exact `0.1.0-alpha.2` artifact passes package and clean-install gates.                                                                                                   |
 | Registry Alpha released         | The public npm artifact installs from the `next` channel, passes post-publication verification, and has verified provenance plus any documented one-time bootstrap evidence. |
 | Stable released                 | Every stable 0.1.0 local, remote, live, review, provenance, and registry gate has recorded evidence.                                                                         |
 
@@ -77,11 +77,10 @@ artifacts. Authorized maintainers must supply or approve:
 Missing identity, credentials, ownership, or authorization blocks the
 corresponding release gate. Do not invent it or replace it with a mock.
 
-The `cometapi` package does not exist in the public registry yet, so npm cannot
-verify its owner before the first publication. Registry Alpha owner evidence is
-complete only when `npm owner ls cometapi` lists the maintainer-confirmed
-`cometapi-team` account after the first publication; until then this remains a
-Registry Alpha prerequisite, not a Public Preview blocker.
+The `cometapi` package exists in the public registry. Registry Alpha owner
+evidence is complete only when `npm owner ls cometapi` lists the
+maintainer-confirmed `cometapi-team` account; until then this remains a Registry
+Alpha prerequisite.
 
 For the current Public Preview milestone, private topic pushes, pull requests,
 merges, and credential-free CI are the only remote actions that may be
@@ -236,13 +235,12 @@ The repository maintains four independently auditable workflows:
   `release.published` event can trigger publication.
 - `publish.yml`: rejects mutable releases and tag commits outside `main`, packs
   and tests one exact artifact, requires a protected live smoke for that release
-  tag, and publishes the same file through npm OIDC by default. Only
-  `0.1.0-alpha.1` may use the one-time protected-token bootstrap when npm does
-  not permit Trusted Publisher configuration before the package exists. The
-  workflow verifies the dist-tag, integrity, provenance attestation, signatures,
-  deduplication, and public installation. A rerun resumes after an already
-  accepted version only when its registry integrity matches the downloaded
-  artifact, then repeats all bounded registry-state and signature checks.
+  tag, and publishes the same file through npm OIDC. Registry token credentials
+  are rejected. The workflow verifies the dist-tag, integrity, provenance
+  attestation, signatures, deduplication, and public installation. A rerun
+  resumes after an already accepted version only when its registry integrity
+  matches the downloaded artifact, then repeats all bounded registry-state and
+  signature checks.
 
 Third-party actions are pinned to full commit SHAs. Workflow permissions remain
 read-only except where a documented job requires more; `id-token: write` belongs
@@ -253,14 +251,11 @@ The supported package `engines` range contains Node.js 22 and 24 only. Node.js
 26 remains an advisory workflow target until it enters LTS; Node.js 18 and 20
 remain unsupported.
 
-The repository has no prior release, so the manifest is intentionally empty and
-`release-please-config.json` temporarily sets `release-as` to
-`0.1.0-alpha.1`. The reviewed manual alpha pull request must set the manifest to
-`0.1.0-alpha.1`, consolidate the existing candidate changelog entry, and remove
-`release-as` before merge. Leaving `release-as` in the default branch would
-incorrectly pin later releases. The publication workflow fails unless the
-manifest equals the package version, `release-as` is absent, and the version
-has exactly one dated changelog heading.
+The first manual alpha recorded `0.1.0-alpha.1` in the manifest and removed the
+temporary `release-as` configuration. Later releases advance that manifest with
+the package version. The publication workflow fails unless the manifest equals
+the package version, `release-as` is absent, and the version has exactly one
+dated changelog heading.
 
 ## Registry Alpha (`0.1.0-alpha.1`)
 

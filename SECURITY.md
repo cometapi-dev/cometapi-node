@@ -54,8 +54,7 @@ Users are responsible for all usage and charges incurred with their keys.
 
 npm publication normally uses GitHub OIDC Trusted Publishing, a protected npm
 environment, provenance, an immutable reviewed tag, and post-publication
-installation verification. Long-lived registry tokens are forbidden. The sole
-conditional bootstrap for the first alpha is documented in
-[RELEASING.md](./RELEASING.md) and is owner-controlled, one-time, and immediately
-revoked. The workflow keeps this fallback disabled by default and rejects it
-for every version other than `0.1.0-alpha.1`.
+installation verification. Registry tokens are forbidden by the publication
+workflow. The completed one-time first-alpha bootstrap is documented in
+[RELEASING.md](./RELEASING.md) as historical release evidence and is not a
+reusable source-controlled publication path.
