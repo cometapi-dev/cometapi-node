@@ -14,6 +14,7 @@ if [[ "$bootstrap_enabled" == "true" && \
   exit 1
 fi
 
+artifact_directory="$(cd "$artifact_directory" && pwd -P)"
 shopt -s nullglob
 tarballs=("$artifact_directory"/*.tgz)
 if [[ "${#tarballs[@]}" -ne 1 ]]; then

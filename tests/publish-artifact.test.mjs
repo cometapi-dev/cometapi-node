@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -54,7 +55,7 @@ function fixture() {
     ].join("\n"),
   );
   chmodSync(npm, 0o755);
-  return { artifacts, bin, log };
+  return { artifacts, bin, log, root };
 }
 
 function runPublish({
@@ -63,13 +64,14 @@ function runPublish({
   token = "",
   version = "0.1.0-alpha.1",
 } = {}) {
-  const { artifacts, bin, log } = fixture();
+  const { bin, log, root } = fixture();
   const result = spawnSync("bash", [script], {
+    cwd: root,
     encoding: "utf8",
     env: {
       ...process.env,
       ALPHA1_BOOTSTRAP_ENABLED: bootstrapEnabled,
-      ARTIFACT_DIRECTORY: artifacts,
+      ARTIFACT_DIRECTORY: "artifacts",
       DIST_TAG: distTag,
       NODE_AUTH_TOKEN: token,
       NPM_CALL_LOG: log,
@@ -80,6 +82,7 @@ function runPublish({
   return {
     log: existsSync(log) ? readFileSync(log, "utf8") : "",
     result,
+    root,
   };
 }
 
@@ -91,13 +94,16 @@ describe("publish artifact authentication", () => {
   });
 
   it("allows the protected token bootstrap for alpha.1 on next", () => {
-    const { log, result } = runPublish({
+    const { log, result, root } = runPublish({
       bootstrapEnabled: "true",
       token: "opaque",
     });
     expect(result.status, result.stderr).toBe(0);
     expect(log).toMatch(
       /^token-present\npublish .* --provenance --tag next\n$/,
+    );
+    expect(log).toContain(
+      `publish ${join(realpathSync(root), "artifacts", "cometapi.tgz")} --access public --provenance --tag next`,
     );
   });
 
