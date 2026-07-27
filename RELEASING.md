@@ -9,7 +9,7 @@ Release status is evidence-based:
 | Local code-complete             | Required source, tests, documentation, metadata, fixtures, and workflows exist, and every applicable offline check passes.                                                   |
 | Private Remote Validation ready | Local gates pass, the sanitized history and maintainer-confirmed identity are complete, and real credential-free private default-branch CI passes.                           |
 | Public Preview ready            | After visibility changes, public-only repository rules, security reporting, environments, default-branch CI, the content gate, and authorized protected live smoke all pass. |
-| Registry Alpha candidate        | The exact `0.1.0-alpha.2` artifact passes package and clean-install gates.                                                                                                   |
+| Registry Alpha candidate        | The exact `0.1.0-alpha.3` artifact passes package and clean-install gates after preserving the unpublished immutable alpha.2 failure record.                                 |
 | Registry Alpha released         | The public npm artifact installs from the `next` channel, passes post-publication verification, and has verified provenance plus any documented one-time bootstrap evidence. |
 | Stable released                 | Every stable 0.1.0 local, remote, live, review, provenance, and registry gate has recorded evidence.                                                                         |
 
@@ -337,11 +337,17 @@ one-time exception:
    publication; the bootstrap does not change or defer that requirement.
 5. A maintainer immediately configures OIDC, removes the environment variable
    and secret, revokes the token, and restricts token-based publishing.
-6. The project immediately prepares and publishes `0.1.0-alpha.2` through
-   OIDC, verifies its provenance and public installation, and confirms that
-   `next` resolves to `0.1.0-alpha.2`.
-7. The release record documents the exception and both public-install evidence
-   layers.
+6. The project prepared the immutable `0.1.0-alpha.2` GitHub release through
+   OIDC. Exact-artifact verification and the protected live smoke passed, but
+   the local publication guard rejected the fixed `actions/setup-node`
+   authentication placeholder before npm was invoked. No alpha.2 registry
+   artifact was published.
+7. Preserve that immutable failure record, prepare and publish
+   `0.1.0-alpha.3` through OIDC with regression coverage for the placeholder,
+   verify its provenance and public installation, and confirm that `next`
+   resolves to `0.1.0-alpha.3`.
+8. The release record documents the exception, the unpublished alpha.2
+   attempt, and both public-install evidence layers.
 
 This exception must never become a reusable source-controlled publishing path.
 

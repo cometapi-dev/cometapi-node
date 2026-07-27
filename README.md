@@ -5,7 +5,7 @@ the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
 > **Registry Alpha pre-release:** the SDK is under active 0.1 development.
-> `0.1.0-alpha.2` is approved for npm publication under the `next` dist-tag,
+> `0.1.0-alpha.3` is approved for npm publication under the `next` dist-tag,
 > and its API may change before `0.1.0`.
 
 ## Supported 0.1 surface
@@ -52,8 +52,8 @@ For source-checkout testing, retain and verify one exact tarball:
 ```bash
 mkdir -p .artifacts
 npm pack --pack-destination .artifacts
-npm run test:package -- --tarball .artifacts/cometapi-0.1.0-alpha.2.tgz
-npm run test:fixtures -- --tarball .artifacts/cometapi-0.1.0-alpha.2.tgz
+npm run test:package -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
+npm run test:fixtures -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
 ```
 
 Install that path in a separate consumer when needed. Do not treat a locally
@@ -210,8 +210,9 @@ parent.
 
 The repository has completed Public Preview. Blocking CI, protected repository
 rules, security reporting, protected environments, and the authorized live
-smoke have passed. Registry Alpha `0.1.0-alpha.1` is available from npm, and
-`0.1.0-alpha.2` is approved for OIDC publication. Mocked responses, packed
+smoke have passed. Registry Alpha `0.1.0-alpha.1` is available from npm. The
+immutable `0.1.0-alpha.2` GitHub release failed before invoking npm, and
+`0.1.0-alpha.3` is approved for OIDC publication. Mocked responses, packed
 artifacts, GitHub Actions, trusted live tests, and npm publication remain
 separate evidence layers and must not be represented as another.
 
