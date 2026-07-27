@@ -3,7 +3,6 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "release-as": "0.1.0-alpha.1",
       "versioning": "prerelease",
       "prerelease-type": "alpha",
       "prerelease": true,

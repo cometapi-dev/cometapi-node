@@ -5,10 +5,7 @@ follows Keep a Changelog, and versions follow Semantic Versioning.
 
 ## [Unreleased]
 
-- Completed the Public Preview repository transition, protected configuration,
-  and authorized live-smoke verification. Registry Alpha remains unpublished.
-
-## [0.1.0-alpha.1] - Unreleased
+## [0.1.0-alpha.1] - 2026-07-27
 
 ### Added
 
@@ -47,6 +44,8 @@ follows Keep a Changelog, and versions follow Semantic Versioning.
 - Limited the trusted live smoke to exactly three sequential requests, at most
   16 output tokens per request, a 60-second timeout per request, concurrency
   one, and an immediate stop on the first failure.
+- Completed the Public Preview repository transition, protected configuration,
+  and authorized live-smoke verification before Registry Alpha publication.
 
 ### Removed
 
