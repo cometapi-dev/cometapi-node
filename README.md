@@ -4,8 +4,9 @@ The official CometAPI entry point for the OpenAI-compatible API. The SDK keeps
 the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
-> **Public Preview pre-release:** the SDK is under active 0.1 development. The
-> package is not yet available from npm, and its API may change before `0.1.0`.
+> **Registry Alpha pre-release:** the SDK is under active 0.1 development.
+> `0.1.0-alpha.1` is approved for npm publication under the `next` dist-tag,
+> and its API may change before `0.1.0`.
 
 ## Supported 0.1 surface
 
@@ -36,7 +37,7 @@ files. You are responsible for all usage and charges incurred with your key.
 
 ## Installation
 
-When a prerelease is available, install it from npm's `next` dist-tag:
+Install the prerelease from npm's `next` dist-tag:
 
 ```bash
 npm install cometapi@next
@@ -207,12 +208,12 @@ parent.
 
 ## Project status
 
-The repository is in Public Preview. Blocking CI, protected repository rules,
-security reporting, protected environments, and the authorized live smoke have
-passed. The first Registry Alpha remains a separate release gate; mocked
-responses, packed artifacts, GitHub Actions, trusted live tests, and npm
-publication are separate evidence layers and must not be represented as
-another.
+The repository has completed Public Preview. Blocking CI, protected repository
+rules, security reporting, protected environments, and the authorized live
+smoke have passed. Registry Alpha `0.1.0-alpha.1` is approved for npm
+publication; mocked responses, packed artifacts, GitHub Actions, trusted live
+tests, and npm publication remain separate evidence layers and must not be
+represented as another.
 
 See:
 
