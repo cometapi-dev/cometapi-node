@@ -5,8 +5,8 @@ the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
 > **Registry Alpha pre-release:** the SDK is under active 0.1 development.
-> `0.1.0-alpha.3` is approved for npm publication under the `next` dist-tag,
-> and its API may change before `0.1.0`.
+> `0.1.0-alpha.3` is available from npm under the `next` dist-tag, and its API
+> may change before `0.1.0`.
 
 ## Supported 0.1 surface
 
@@ -210,10 +210,12 @@ parent.
 
 The repository has completed Public Preview. Blocking CI, protected repository
 rules, security reporting, protected environments, and the authorized live
-smoke have passed. Registry Alpha `0.1.0-alpha.1` is available from npm. The
-immutable `0.1.0-alpha.2` GitHub release failed before invoking npm, and
-`0.1.0-alpha.3` is approved for OIDC publication. Mocked responses, packed
-artifacts, GitHub Actions, trusted live tests, and npm publication remain
+smoke have passed. Registry Alpha `0.1.0-alpha.3` was published from the
+immutable release artifact through GitHub Actions OIDC with provenance, and
+independent public-registry ESM, CommonJS, and compatible-OpenAI host installs
+passed. The immutable `0.1.0-alpha.2` GitHub release remains as an unpublished
+failure record because its guard stopped before invoking npm. Mocked responses,
+packed artifacts, GitHub Actions, trusted live tests, and npm publication remain
 separate evidence layers and must not be represented as another.
 
 See:
