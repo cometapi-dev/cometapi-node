@@ -84,6 +84,7 @@ streaming, and model-list return types.
 ```bash
 npm run test
 npm run test:package
+npm run test:examples
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat

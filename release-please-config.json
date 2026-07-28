@@ -4,9 +4,8 @@
     ".": {
       "release-type": "node",
       "versioning": "prerelease",
-      "prerelease-type": "alpha",
-      "prerelease": true,
-      "draft": true,
+      "prerelease": false,
+      "skip-github-release": true,
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "include-v-in-tag": true,

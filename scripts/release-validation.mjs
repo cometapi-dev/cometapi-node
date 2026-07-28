@@ -192,15 +192,51 @@ function parseMarkdownDocument(text) {
   };
 }
 
+function isISODate(value) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return (
+    !Number.isNaN(date.valueOf()) &&
+    date.toISOString().slice(0, "YYYY-MM-DD".length) === value
+  );
+}
+
+function parseChangelogVersionHeading(heading) {
+  if (heading.level !== 2 && heading.level !== 3) return undefined;
+
+  const keepAChangelog = /^\[([^\]]+)\] - (Unreleased|\d{4}-\d{2}-\d{2})$/.exec(
+    heading.title,
+  );
+  const releasePlease = /^v?(\S+) \((\d{4}-\d{2}-\d{2})\)$/.exec(heading.title);
+  const match = keepAChangelog ?? releasePlease;
+  if (!match) return undefined;
+
+  try {
+    parseSemanticVersion(match[1]);
+  } catch {
+    return undefined;
+  }
+  if (match[2] !== "Unreleased" && !isISODate(match[2])) return undefined;
+
+  return { ...heading, status: match[2], version: match[1] };
+}
+
+function parseChangelogDocument(changelog) {
+  const document = parseMarkdownDocument(changelog);
+  return {
+    document,
+    versionHeadings: markdownHeadings(document)
+      .map(parseChangelogVersionHeading)
+      .filter((heading) => heading !== undefined),
+  };
+}
+
 export function visibleMarkdownText(text) {
   return parseMarkdownDocument(text).text;
 }
 
 function validateChangelog(changelog, version, requireDatedChangelog) {
-  const escapedVersion = escapeRegularExpression(version);
-  const headingPattern = new RegExp(`^\\[${escapedVersion}\\](.*)$`);
-  const headings = markdownHeadings(parseMarkdownDocument(changelog)).filter(
-    ({ level, title }) => level === 2 && headingPattern.test(title),
+  const headings = parseChangelogDocument(changelog).versionHeadings.filter(
+    (heading) => heading.version === version,
   );
   if (headings.length !== 1) {
     throw new Error(
@@ -208,14 +244,7 @@ function validateChangelog(changelog, version, requireDatedChangelog) {
     );
   }
 
-  const suffix = headingPattern.exec(headings[0].title)[1];
-  const suffixMatch = /^ - (Unreleased|\d{4}-\d{2}-\d{2})$/.exec(suffix);
-  if (!suffixMatch) {
-    throw new Error(
-      `CHANGELOG.md heading for ${version} must be Unreleased or use a YYYY-MM-DD date.`,
-    );
-  }
-  if (requireDatedChangelog && suffixMatch[1] === "Unreleased") {
+  if (requireDatedChangelog && headings[0].status === "Unreleased") {
     throw new Error(
       `CHANGELOG.md must date ${version} and remove its Unreleased suffix.`,
     );
@@ -618,9 +647,16 @@ export function collectPublicPreviewViolations({
       .map((node) => markdownNodeText(node))
       .join("\n");
     collectViolation(violations, () => {
-      if (!/\bpre(?:-|\s)?release\b/i.test(preamble)) {
+      const { isPrerelease } = parseSemanticVersion(sourceManifest?.version);
+      const labelsPrerelease = /\bpre(?:-|\s)?release\b/i.test(preamble);
+      if (isPrerelease && !labelsPrerelease) {
         throw new Error(
           "README.md must label the project as a pre-release near the top of the document.",
+        );
+      }
+      if (!isPrerelease && labelsPrerelease) {
+        throw new Error(
+          "README.md must not label a stable package as a pre-release near the top of the document.",
         );
       }
     });
@@ -716,17 +752,29 @@ export function validatePublicPreviewDocuments(input) {
 }
 
 function releaseChangelogSection(changelog, version) {
-  const document = parseMarkdownDocument(changelog);
-  const headingPattern = new RegExp(
-    `^\\[${escapeRegularExpression(version)}\\].*$`,
+  const { document, versionHeadings } = parseChangelogDocument(changelog);
+  const headings = versionHeadings.filter(
+    (heading) => heading.version === version,
   );
-  const heading = markdownHeadings(document).find(
-    ({ level, title }) => level === 2 && headingPattern.test(title),
-  );
-  if (!heading) {
-    throw new Error(`CHANGELOG.md has no release section for ${version}.`);
+  if (headings.length !== 1) {
+    throw new Error(
+      `CHANGELOG.md must contain exactly one release section for ${version}; found ${String(headings.length)}.`,
+    );
   }
-  return findMarkdownSection(document, headingPattern)?.text ?? "";
+  const heading = headings[0];
+  const nextHeading = markdownHeadings(document).find((candidate) => {
+    if (candidate.nodeIndex <= heading.nodeIndex) return false;
+    if (candidate.level < heading.level) return true;
+    if (candidate.level > heading.level) return false;
+    return (
+      heading.level === 2 ||
+      parseChangelogVersionHeading(candidate) !== undefined
+    );
+  });
+  return document.root.children
+    .slice(heading.nodeIndex + 1, nextHeading?.nodeIndex)
+    .map((node) => markdownNodeText(node))
+    .join("\n");
 }
 
 export function validateReleasableDocuments({ changelog, documents, version }) {
@@ -764,6 +812,18 @@ export function validateReleasableDocuments({ changelog, documents, version }) {
   );
   assertCanonicalContact(supportDocument.referenceText, "SUPPORT.md");
   assertNoStalePublicationState(supportDocument.text, "SUPPORT.md");
+  if (!parseSemanticVersion(version).isPrerelease) {
+    for (const [document, filename] of [
+      [securityDocument, "SECURITY.md"],
+      [supportDocument, "SUPPORT.md"],
+    ]) {
+      if (/\bpre(?:-|\s)?release(?:s)?\b/i.test(document.text)) {
+        throw new Error(
+          `${filename} must remove prerelease-only policy before a stable release.`,
+        );
+      }
+    }
+  }
 
   const releaseSection = releaseChangelogSection(changelog, version);
   if (
@@ -777,15 +837,125 @@ export function validateReleasableDocuments({ changelog, documents, version }) {
 }
 
 function validateReleasePleaseState({
+  isPrerelease,
+  prerelease,
   releaseConfig,
   releaseManifest,
   requireFinalReleaseState,
   version,
 }) {
   const packageConfig = releaseConfig?.packages?.["."] ?? {};
+  const packageKeys = Object.keys(releaseConfig?.packages ?? {});
+  if (packageKeys.length !== 1 || packageKeys[0] !== ".") {
+    throw new Error(
+      "Release Please must configure exactly the single root package.",
+    );
+  }
+  const manifestKeys = Object.keys(releaseManifest ?? {});
+  if (
+    manifestKeys.length > 1 ||
+    (manifestKeys.length === 1 && manifestKeys[0] !== ".")
+  ) {
+    throw new Error(
+      "Release Please manifest must contain exactly the single root package.",
+    );
+  }
   const manifestVersion = releaseManifest?.["."];
   const hasBootstrapVersion = Object.hasOwn(packageConfig, "release-as");
   const bootstrapVersion = packageConfig["release-as"];
+
+  requireExact(
+    packageConfig["release-type"],
+    "node",
+    "Release Please release-type",
+  );
+  requireExact(
+    packageConfig.versioning,
+    "prerelease",
+    "Release Please versioning",
+  );
+  requireExact(
+    packageConfig["changelog-path"],
+    "CHANGELOG.md",
+    "Release Please changelog-path",
+  );
+  requireExact(
+    packageConfig["include-component-in-tag"],
+    false,
+    "Release Please include-component-in-tag",
+  );
+  requireExact(
+    packageConfig["include-v-in-tag"],
+    true,
+    "Release Please include-v-in-tag",
+  );
+  requireExact(
+    packageConfig["include-v-in-release-name"],
+    true,
+    "Release Please include-v-in-release-name",
+  );
+  if (packageConfig["skip-changelog"] === true) {
+    throw new Error("Release Please must not skip CHANGELOG.md updates.");
+  }
+
+  let releaseState;
+  if (isPrerelease && packageConfig.prerelease === true) {
+    if (prerelease?.split(".")[0] !== "alpha") {
+      throw new Error(
+        "Release Please alpha-active state requires alpha prereleases.",
+      );
+    }
+    requireExact(
+      packageConfig["prerelease-type"],
+      prerelease?.split(".")[0],
+      "Release Please prerelease-type",
+    );
+    releaseState = "alpha-active";
+  } else if (isPrerelease && packageConfig.prerelease === false) {
+    if (!/^0\.1\.0-alpha\.(?:0|[1-9]\d*)$/.test(version)) {
+      throw new Error(
+        "Release Please stable promotion requires a 0.1.0-alpha.N package version.",
+      );
+    }
+    if (Object.hasOwn(packageConfig, "prerelease-type")) {
+      throw new Error(
+        "Release Please stable promotion must remove prerelease-type.",
+      );
+    }
+    requireExact(
+      packageConfig["skip-github-release"],
+      true,
+      "Release Please skip-github-release",
+    );
+    if (Object.hasOwn(packageConfig, "draft")) {
+      throw new Error("Release Please stable promotion must remove draft.");
+    }
+    releaseState = "stable-promotion";
+  } else if (!isPrerelease && packageConfig.prerelease === false) {
+    if (version !== "0.1.0") {
+      throw new Error(
+        "Release Please stable candidate must be exactly version 0.1.0.",
+      );
+    }
+    if (Object.hasOwn(packageConfig, "prerelease-type")) {
+      throw new Error(
+        "Release Please stable candidate must remove prerelease-type.",
+      );
+    }
+    requireExact(
+      packageConfig["skip-github-release"],
+      true,
+      "Release Please skip-github-release",
+    );
+    if (Object.hasOwn(packageConfig, "draft")) {
+      throw new Error("Release Please stable candidate must remove draft.");
+    }
+    releaseState = "stable-candidate";
+  } else {
+    throw new Error(
+      "Release Please prerelease settings do not match the package release channel.",
+    );
+  }
 
   if (manifestVersion !== undefined) {
     assertVersion("Release Please manifest", manifestVersion, version);
@@ -795,6 +965,11 @@ function validateReleasePleaseState({
   }
 
   if (requireFinalReleaseState) {
+    if (releaseState === "stable-promotion") {
+      throw new Error(
+        "A stable-promotion configuration cannot pass final release validation while the package version is still a prerelease.",
+      );
+    }
     if (manifestVersion !== version) {
       throw new Error(
         "Release Please manifest must record the release version before publication.",
@@ -810,6 +985,8 @@ function validateReleasePleaseState({
       "Release Please must track the source version or explicitly bootstrap it with release-as.",
     );
   }
+
+  return releaseState;
 }
 
 export function validateReleaseMetadata({
@@ -877,6 +1054,8 @@ export function validateReleaseMetadata({
 
   validateChangelog(changelog, version, requireDatedChangelog);
   validateReleasePleaseState({
+    isPrerelease,
+    prerelease: parsedVersion.prerelease,
     releaseConfig,
     releaseManifest,
     requireFinalReleaseState,

@@ -82,13 +82,11 @@ evidence is complete only when `npm owner ls cometapi` lists the
 maintainer-confirmed `cometapi_dev` account; until then this remains a Registry
 Alpha prerequisite.
 
-For the current Public Preview milestone, private topic pushes, pull requests,
-merges, and credential-free CI are the only remote actions that may be
-authorized before the visibility transition. This document defines allowable
-release mechanics but grants no standing remote-write permission; the current
-maintainer request must explicitly authorize each task's remote actions.
-Changing repository visibility and every subsequent public-only configuration
-or live action require separate authorization.
+Public Preview and Registry Alpha are complete. For the current stable
+milestone, topic pushes, pull requests, merges, the immutable GitHub Release,
+the bounded live smoke, npm publication, and environment approvals still
+require authorization from the current maintainer request. This document
+defines allowable mechanics but grants no standing remote-write permission.
 
 ## Candidate verification gate
 
@@ -103,6 +101,7 @@ npm run lint
 npm run format:check
 npm run test:secrets
 npm run test:package
+npm run test:examples
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat
@@ -119,7 +118,10 @@ failures, skipped checks, and unavailable runtime/tool checks.
 
 `npm run test:package` builds and inspects a candidate tarball and runs package
 metadata, export, declaration, `publint`, Are the Types Wrong, and dry-run pack
-checks. `npm run test:fixtures` installs a candidate tarball into clean ESM,
+checks. `npm run test:examples` installs one exact tarball with the locked OpenAI
+version, checks dependency deduplication, and executes the canonical README ESM
+and CommonJS examples with fail-closed mocked transport.
+`npm run test:fixtures` installs a candidate tarball into clean ESM,
 CommonJS, and compatible-OpenAI host applications. Both commands accept
 `--tarball <path>` so the publication workflow can pack once, inspect and
 install the exact artifact, then upload that same file. `npm run test:compat`
@@ -206,8 +208,8 @@ or publishing the immutable release. Validate the exact committed state with:
 
 ```bash
 node scripts/validate-release.mjs \
-  --tag v0.1.0-alpha.1 \
-  --release-prerelease true \
+  --tag v0.1.0 \
+  --release-prerelease false \
   --require-final \
   --require-releasable-docs
 ```
@@ -229,10 +231,16 @@ The repository maintains four independently auditable workflows:
   concurrency group. Scheduled and manual live execution requires
   `LIVE_SMOKE_ENABLED=true`.
 - `release-please.yml`: a human-reviewed version and changelog PR from
-  Conventional Commits and requires `RELEASE_PLEASE_ENABLED=true`. It remains
-  disabled through the initial manual alpha. Merging a later release PR prepares
-  a draft GitHub release; a maintainer must review and publish the draft so its
-  `release.published` event can trigger publication.
+  Conventional Commits and requires `RELEASE_PLEASE_ENABLED=true`. It uses the
+  default `GITHUB_TOKEN` and deliberately skips tag and GitHub Release creation.
+  Because that token does not trigger CI for its generated PR, a maintainer
+  commits the stable README, security, support, compatibility, and roadmap
+  state to the generated branch, then manually dispatches `ci.yml` with that
+  branch as `ref`. Merge is forbidden unless `gh pr checks` reports every
+  required context on the exact final PR head; if GitHub does not associate the
+  dispatched checks with that commit, stop rather than bypass protection.
+  The manual dispatch also runs the latest-compatible OpenAI 6.x lane so the
+  candidate head has minimum, locked, and latest-within-major evidence.
 - `publish.yml`: rejects mutable releases and tag commits outside `main`, packs
   and tests one exact artifact, requires a protected live smoke for that release
   tag, and publishes the same file through npm OIDC. Registry token credentials
@@ -409,6 +417,22 @@ Stable release additionally requires the complete supported-runtime matrix,
 executed README examples against the packed artifact, release-PR/tag/changelog/
 manifest version agreement, reviewed security and compatibility status, and
 post-publication registry evidence.
+
+Release Please is limited to the stable PR because its v5 single-package path
+has an open upstream tagging defect when component names are omitted from tags.
+After the reviewed release PR merges, create a draft `v0.1.0` GitHub Release
+manually against the exact merge commit, review it with `prerelease=false`, and
+publish it only once immutable releases are enabled. After successful manual
+tagging, change the merged Release Please PR label from `autorelease: pending`
+to `autorelease: tagged` so future release PRs are not blocked.
+
+Release Please does not author the final public status text. After it opens the
+`0.1.0` PR, a maintainer pushes a focused documentation commit to that same
+branch: README switches from `next`/prerelease to `latest`/stable and records
+the exact publication approval; SECURITY and SUPPORT remove prerelease-only
+policy; COMPATIBILITY and ROADMAP identify the stable candidate without
+claiming it is already released. If Release Please updates the branch again,
+repeat the review and CI dispatch against the new final head.
 
 ## Verification record
 

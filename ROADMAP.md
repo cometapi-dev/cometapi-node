@@ -1,7 +1,7 @@
 # CometAPI TypeScript and Node.js SDK Roadmap
 
-Status: Public Preview and Registry Alpha complete; 0.1.0 stable planned
-Last updated: 2026-07-27
+Status: Public Preview and Registry Alpha complete; 0.1.0 stable in progress
+Last updated: 2026-07-28
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
@@ -29,7 +29,7 @@ available from npm's `next` channel.
 | Private Remote Validation  | Complete    | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.      |
 | Public Preview             | Complete    | The public repository has blocking CI, repository rules, security reporting, protected environments, and authorized live-smoke evidence.  |
 | 0.1.x Registry Alpha       | Complete    | Early adopters can install a functional, provenance-verified prerelease from npm's `next` channel through the OIDC-only publication path. |
-| 0.1.0 Stable               | Planned     | Users can install a fully verified package from npm's default channel.                                                                    |
+| 0.1.0 Stable               | In progress | Users can install a fully verified package from npm's default channel.                                                                    |
 | 0.2.0 provider-native text | Planned     | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                          |
 | 0.3.0 CometAPI resources   | Planned     | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                           |
 | Media and task APIs        | Later       | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                    |
@@ -310,6 +310,11 @@ alpha. These controls are in place before the first remote push.
 Stable publication requires a human-reviewed release PR and protected npm
 environment approval while the SDK remains pre-1.0. Manual workflows may build
 or dry-run packages but may not publish an arbitrary commit.
+
+For the 0.1.0 promotion, Release Please creates only the reviewed PR and skips
+tag and Release creation. After that PR merges, a maintainer manually creates
+the immutable `v0.1.0` Release against its exact merge commit; publishing the
+Release triggers the existing verified OIDC pipeline.
 
 Public Preview needs no registry workflow. Registry Alpha publishes from a
 human-reviewed immutable prerelease tag under the `next` dist-tag through OIDC

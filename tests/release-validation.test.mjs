@@ -45,6 +45,7 @@ function repositoryPublicPreviewFixture() {
 }
 
 function fixture(version = "0.1.0-alpha.1") {
+  const isPrerelease = version.includes("-");
   const sourceManifest = {
     author: "CometAPI",
     bugs: {
@@ -94,7 +95,7 @@ function fixture(version = "0.1.0-alpha.1") {
         "# Contributing\n\nContributions must include tests.\n\n## Development setup\n\nInstall from the lock file before running checks.\n",
       license:
         'MIT License\n\nCopyright (c) 2026 CometAPI\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software, to use the Software subject to the MIT conditions.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.\n',
-      readme: `# CometAPI SDK\n\n**Pre-release:** the SDK is under active development. ${version} is approved for npm publication.\n\n## Supported 0.1 surface\n\n- \`chat.completions.create\`, streaming and non-streaming\n- \`responses.create\`, streaming and non-streaming\n- \`models.list\`\n`,
+      readme: `# CometAPI SDK\n\n${isPrerelease ? "**Pre-release:** the SDK is under active development." : "**Stable:** the SDK is supported for the documented 0.1 surface."} ${version} is approved for npm publication.\n\n## Supported 0.1 surface\n\n- \`chat.completions.create\`, streaming and non-streaming\n- \`responses.create\`, streaming and non-streaming\n- \`models.list\`\n`,
       releasing:
         "# Releasing\n\nRelease status is evidence-based.\n\n## Authorization boundary\n\nRemote publication requires maintainer authorization.\n",
       roadmap:
@@ -104,7 +105,31 @@ function fixture(version = "0.1.0-alpha.1") {
       support:
         "# Support\n\nSupport covers the tested SDK surface.\n\n## Getting help\n\nEmail support@cometapi.com or use https://github.com/cometapi-dev/cometapi-node/issues.\n",
     },
-    releaseConfig: { packages: { ".": {} } },
+    releaseConfig: {
+      packages: {
+        ".": isPrerelease
+          ? {
+              "release-type": "node",
+              versioning: "prerelease",
+              prerelease: true,
+              "prerelease-type": "alpha",
+              "changelog-path": "CHANGELOG.md",
+              "include-component-in-tag": false,
+              "include-v-in-tag": true,
+              "include-v-in-release-name": true,
+            }
+          : {
+              "release-type": "node",
+              versioning: "prerelease",
+              prerelease: false,
+              "skip-github-release": true,
+              "changelog-path": "CHANGELOG.md",
+              "include-component-in-tag": false,
+              "include-v-in-tag": true,
+              "include-v-in-release-name": true,
+            },
+      },
+    },
     releaseManifest: { ".": version },
     sourceManifest,
   };
@@ -514,6 +539,164 @@ describe("release metadata validation", () => {
     ).toThrow(/tag .* does not match/i);
   });
 
+  it("accepts stable promotion before the package version changes", () => {
+    const values = fixture("0.1.0-alpha.3");
+    values.releaseConfig.packages["."] = {
+      "release-type": "node",
+      versioning: "prerelease",
+      prerelease: false,
+      "skip-github-release": true,
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "include-v-in-release-name": true,
+    };
+    expect(validateReleaseMetadata(values)).toMatchObject({
+      version: "0.1.0-alpha.3",
+    });
+    expect(() =>
+      validateReleaseMetadata({ ...values, requireFinalReleaseState: true }),
+    ).toThrow(/stable-promotion/);
+  });
+
+  it("requires the README channel label to match a stable package", () => {
+    const values = fixture("0.1.0");
+    values.releaseDocuments.readme = values.releaseDocuments.readme.replace(
+      "**Stable:**",
+      "**Pre-release:**",
+    );
+    expect(() =>
+      validatePublicPreviewDocuments({
+        documents: values.releaseDocuments,
+        sourceManifest: values.sourceManifest,
+      }),
+    ).toThrow(/stable package as a pre-release/);
+  });
+
+  it.each([
+    [
+      "stable promotion missing skip",
+      (config) => delete config["skip-github-release"],
+    ],
+    [
+      "stable promotion with prerelease type",
+      (config) => (config["prerelease-type"] = "alpha"),
+    ],
+    ["stable promotion with draft", (config) => (config.draft = true)],
+  ])("rejects %s configuration", (_name, mutate) => {
+    const values = fixture("0.1.0-alpha.3");
+    values.releaseConfig.packages["."] = {
+      "release-type": "node",
+      versioning: "prerelease",
+      prerelease: false,
+      "skip-github-release": true,
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "include-v-in-release-name": true,
+    };
+    mutate(values.releaseConfig.packages["."]);
+    expect(() => validateReleaseMetadata(values)).toThrow(/Release Please/);
+  });
+
+  it.each([
+    [
+      "Release Please linked H3",
+      "### [0.1.0](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0-alpha.3...v0.1.0) (2026-07-28)\n\n### Bug Fixes\n\n* prepare stable\n",
+    ],
+    [
+      "Release Please plain H2",
+      "## 0.1.0 (2026-07-28)\n\n### Bug Fixes\n\n* prepare stable\n",
+    ],
+  ])("accepts %s changelog output", (_name, changelog) => {
+    const values = fixture("0.1.0");
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        changelog,
+        requireDatedChangelog: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects duplicate versions across changelog formats", () => {
+    const values = fixture("0.1.0");
+    values.changelog =
+      "## [0.1.0] - 2026-07-28\n\n### [0.1.0](https://example.invalid) (2026-07-28)\n";
+    expect(() => validateReleaseMetadata(values)).toThrow(/found 2/);
+  });
+
+  it("scans Release Please H3 subsections up to the next version", () => {
+    const values = fixture("0.1.0");
+    values.changelog =
+      "### [0.1.0](https://example.invalid) (2026-07-28)\n\n### Bug Fixes\n\nnpm publication: not performed.\n\n## [0.1.0-alpha.3] - 2026-07-27\n\nReleased.\n";
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        requireDatedChangelog: true,
+        requireReleasableDocs: true,
+      }),
+    ).toThrow(/CHANGELOG/);
+  });
+
+  it("does not let a nested semver heading truncate a release section", () => {
+    const values = fixture("0.1.0");
+    values.changelog =
+      "## [0.1.0] - 2026-07-28\n\n### 9.9.9 (2026-07-28)\n\nnpm publication: not performed.\n\n## [0.1.0-alpha.3] - 2026-07-27\n";
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        requireReleasableDocs: true,
+      }),
+    ).toThrow(/CHANGELOG/);
+  });
+
+  it.each([
+    ["include-v-in-tag", false],
+    ["include-component-in-tag", true],
+    ["changelog-path", "OTHER.md"],
+    ["skip-changelog", true],
+  ])("rejects a release-critical %s override", (field, value) => {
+    const values = fixture("0.1.0");
+    values.releaseConfig.packages["."][field] = value;
+    expect(() => validateReleaseMetadata(values)).toThrow(/Release Please/);
+  });
+
+  it.each(["0.2.0", "1.0.0"])(
+    "rejects stable version %s outside the 0.1.0 promotion",
+    (version) => {
+      const values = fixture(version);
+      expect(() => validateReleaseMetadata(values)).toThrow(
+        /exactly version 0\.1\.0/,
+      );
+    },
+  );
+
+  it("rejects additional Release Please packages", () => {
+    const values = fixture("0.1.0");
+    values.releaseConfig.packages.other = {
+      ...values.releaseConfig.packages["."],
+    };
+    values.releaseManifest.other = "0.1.0";
+    expect(() => validateReleaseMetadata(values)).toThrow(
+      /single root package/,
+    );
+  });
+
+  it("rejects prerelease-only support policy for stable publication", () => {
+    const values = fixture("0.1.0");
+    values.changelog = "## [0.1.0] - 2026-07-28\n";
+    values.releaseDocuments.support +=
+      "Response times are not guaranteed for prereleases.\n";
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        requireDatedChangelog: true,
+        requireReleasableDocs: true,
+      }),
+    ).toThrow(/SUPPORT\.md.*prerelease-only/);
+  });
+
   it("escapes every regular-expression metacharacter in versions", () => {
     expect(escapeRegularExpression("1.2.3-alpha+build.1")).toBe(
       "1\\.2\\.3-alpha\\+build\\.1",
@@ -628,7 +811,7 @@ describe("release metadata validation", () => {
       "## [0.1.0-alpha.1] - Unreleased\n## [0.1.0-alpha.1] - 2026-07-17\n",
       /found 2/,
     ],
-    ["malformed", "## [0.1.0-alpha.1] - Pending\n", /must be Unreleased/],
+    ["malformed", "## [0.1.0-alpha.1] - Pending\n", /found 0/],
   ])("rejects a %s changelog heading", (_name, changelog, message) => {
     expect(() => validateReleaseMetadata({ ...fixture(), changelog })).toThrow(
       message,

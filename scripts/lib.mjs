@@ -10,7 +10,7 @@ export function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd ?? ROOT,
     encoding: "utf8",
-    env: { ...process.env, ...options.env },
+    env: options.replaceEnv ? options.env : { ...process.env, ...options.env },
     stdio: options.capture ? "pipe" : "inherit",
   });
 

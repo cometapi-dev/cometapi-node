@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   release-please:
-    name: Prepare or publish a reviewed release
+    name: Prepare a reviewed release pull request
     if: vars.RELEASE_PLEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -27,3 +27,4 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-release: true
