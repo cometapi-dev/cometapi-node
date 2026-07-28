@@ -51,13 +51,14 @@ repository.
   merely to complete lifecycle cleanup. Fail closed and report the exact state
   whenever a required cleanliness, fetch, or fast-forward condition is not met.
 
-## Current Milestone: Stable 0.1.0
+## Current Milestone: Stable 0.1.0 Complete
 
-Private Remote Validation, Public Preview, and Registry Alpha are complete.
-The canonical repository is public, and `0.1.0-alpha.3` is available from npm's
-`next` channel with OIDC provenance and verified public-install evidence. The
-current work promotes the existing 0.1 protocol surface to `0.1.0` on npm's
-`latest` channel. Do not begin the 0.2 provider adapters during this milestone.
+Private Remote Validation, Public Preview, Registry Alpha, and stable `0.1.0`
+are complete. The canonical repository is public, `0.1.0` is available from
+npm's `latest` channel, and `0.1.0-alpha.3` remains available from `next`; both
+published lines have OIDC provenance and verified public-install evidence. No
+later milestone is active. Do not begin the 0.2 provider adapters without an
+explicit maintainer request.
 
 The accepted identity is:
 
@@ -77,13 +78,19 @@ The unscoped `cometapi` package is the primary Node SDK. `@cometapi` is the
 standard scope for future official scoped packages; do not introduce new
 official packages under `@cometapi-dev`.
 
-Stable promotion uses Release Please only for its reviewed version and
+Stable promotion used Release Please only for its reviewed version and
 changelog pull request. Because the pinned Release Please v5 path is vulnerable
-to an upstream single-package tagging defect, it must skip GitHub release
-creation. A maintainer creates and reviews the immutable `v0.1.0` release
-manually against the exact merged release commit. The publish workflow then
-performs exact-artifact verification, the bounded live smoke, npm OIDC
+to an upstream single-package tagging defect, it skipped GitHub release
+creation. A maintainer created and reviewed the immutable `v0.1.0` release
+manually against the exact merged release commit, and the publish workflow
+completed exact-artifact verification, the bounded live smoke, npm OIDC
 publication, and registry verification.
+
+Release Please is disabled after its post-merge run generated an unreviewed
+`0.2.0` temporary-branch commit and then failed to create a pull request. The
+temporary branch is failure evidence only. Do not merge it, use it as a 0.2
+starting point, or re-enable Release Please until a separately authorized task
+reviews the post-manual-release and pull-request authorization strategy.
 
 ## Product Contract
 

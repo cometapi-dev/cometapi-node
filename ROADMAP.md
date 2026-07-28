@@ -1,13 +1,13 @@
 # CometAPI TypeScript and Node.js SDK Roadmap
 
-Status: Public Preview and Registry Alpha complete; 0.1.0 stable in progress
+Status: Public Preview, Registry Alpha, and 0.1.0 stable complete
 Last updated: 2026-07-28
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
-The reviewed `0.1.0` release candidate is prepared. It becomes released only
-after the immutable GitHub Release, bounded live smoke, OIDC publication,
-provenance, signature, and public-install checks all pass.
+Stable `0.1.0` completed the immutable GitHub Release, bounded live smoke, OIDC
+publication, provenance, signature, and separate post-publication install
+checks on 2026-07-28.
 
 ## Product Target
 
@@ -23,7 +23,8 @@ available from npm. The immutable `0.1.0-alpha.2` GitHub release failed locally
 before invoking npm because its publication guard rejected the fixed
 `actions/setup-node` authentication placeholder. `0.1.0-alpha.3` completed the
 OIDC, provenance, ownership, and public-install verification sequence and is
-available from npm's `next` channel.
+available from npm's `next` channel. Stable `0.1.0` is available from npm's
+default `latest` channel with verified provenance and public-install evidence.
 
 ## Milestones
 
@@ -33,7 +34,7 @@ available from npm's `next` channel.
 | Private Remote Validation  | Complete    | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.      |
 | Public Preview             | Complete    | The public repository has blocking CI, repository rules, security reporting, protected environments, and authorized live-smoke evidence.  |
 | 0.1.x Registry Alpha       | Complete    | Early adopters can install a functional, provenance-verified prerelease from npm's `next` channel through the OIDC-only publication path. |
-| 0.1.0 Stable               | In progress | Users can install a fully verified package from npm's default channel.                                                                    |
+| 0.1.0 Stable               | Complete    | Users can install a fully verified package from npm's default channel.                                                                    |
 | 0.2.0 provider-native text | Planned     | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                          |
 | 0.3.0 CometAPI resources   | Planned     | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                           |
 | Media and task APIs        | Later       | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                    |
@@ -92,6 +93,13 @@ URL. The canonical repository is
 `git+https://github.com/cometapi-dev/cometapi-node.git` for `repository.url`
 and `https://github.com/cometapi-dev/cometapi-node/issues` for `bugs.url`.
 `CODEOWNERS` remains absent until a real multi-maintainer model exists.
+
+Foundation remains in progress after stable `0.1.0` because Release Please is
+disabled pending a separate review of its post-manual-release discovery and
+pull-request authorization strategy. Its failed post-merge run generated an
+unreviewed temporary `0.2.0` branch commit but did not create a pull request or
+change `main`; that branch is failure evidence only and is not the start of the
+0.2 milestone.
 
 ## Private Remote Validation
 
@@ -213,6 +221,13 @@ Test and package exit criteria:
   GitHub release, and packed package metadata.
 - npm publication uses OIDC trusted publishing with provenance, and the public
   artifact passes a post-publication install and mocked-call smoke test.
+
+Completion evidence is recorded in
+[RELEASING.md](./RELEASING.md#stable-010-release-evidence). It includes the
+reviewed candidate and default-branch CI, the exact immutable release commit,
+the bounded release-tag live smoke, OIDC publication, registry signatures and
+provenance, byte-identical workflow and registry artifacts, and separate
+post-publication ESM, CommonJS, and compatible-OpenAI host fixtures.
 
 Explicit non-goals:
 
