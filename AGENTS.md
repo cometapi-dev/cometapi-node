@@ -51,18 +51,13 @@ repository.
   merely to complete lifecycle cleanup. Fail closed and report the exact state
   whenever a required cleanliness, fetch, or fast-forward condition is not met.
 
-## Current Milestone: Public Preview
+## Current Milestone: Stable 0.1.0
 
-Private Remote Validation and Public Preview pre-visibility preparation are
-complete. The repository remains private at the visibility authorization gate.
-Repository-local source, tests, documentation, metadata, fixtures, and
-workflows may be changed and verified locally. Private topic pushes, pull
-requests, merges, and credential-free CI are permitted only when the current
-maintainer request explicitly authorizes them; this file records scope and does
-not grant that authorization. Stop before changing repository visibility:
-making the canonical repository public and configuring or exercising
-public-only settings, protected environments, secrets, or live smoke require
-separate explicit maintainer authorization.
+Private Remote Validation, Public Preview, and Registry Alpha are complete.
+The canonical repository is public, and `0.1.0-alpha.3` is available from npm's
+`next` channel with OIDC provenance and verified public-install evidence. The
+current work promotes the existing 0.1 protocol surface to `0.1.0` on npm's
+`latest` channel. Do not begin the 0.2 provider adapters during this milestone.
 
 The accepted identity is:
 
@@ -82,28 +77,13 @@ The unscoped `cometapi` package is the primary Node SDK. `@cometapi` is the
 standard scope for future official scoped packages; do not introduce new
 official packages under `@cometapi-dev`.
 
-Before requesting visibility-change authorization:
-
-1. Confirm the current `main` includes every approved private closeout and that
-   its blocking Node.js 22 and 24 CI checks pass.
-2. Run the complete local offline, package, fixture, compatibility,
-   self-containment, public-content, secret, workflow-static-validation, and
-   Public Preview gates from the final private `main`.
-3. Review open failing dependency-update pull requests before visibility
-   changes and repair, close, or explicitly defer them with a recorded reason;
-   do not treat their branch failures as evidence that the current `main`
-   failed validation.
-4. Confirm the repository remains private and that public-only repository or
-   tag rules, Private Vulnerability Reporting, secrets, protected environments,
-   Trusted Publishing, live smoke, tags, releases, and registry publication
-   have not been configured or exercised.
-5. Record the final private evidence and stop for explicit maintainer
-   authorization before changing repository visibility.
-
-Private repository creation, the sanitized first history, and the initial push
-are complete historical steps and must not be repeated. Their procedure and
-evidence belong in `RELEASING.md`. Keep Release Please disabled through the
-initial manual alpha.
+Stable promotion uses Release Please only for its reviewed version and
+changelog pull request. Because the pinned Release Please v5 path is vulnerable
+to an upstream single-package tagging defect, it must skip GitHub release
+creation. A maintainer creates and reviews the immutable `v0.1.0` release
+manually against the exact merged release commit. The publish workflow then
+performs exact-artifact verification, the bounded live smoke, npm OIDC
+publication, and registry verification.
 
 ## Product Contract
 
@@ -211,6 +191,7 @@ npm run lint
 npm run format:check
 npm run test:secrets
 npm run test:package
+npm run test:examples
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat
@@ -266,7 +247,7 @@ Before Public Preview, run `npm run check:public-preview`. The gate must fail
 after reporting all violations until canonical identity, contacts, repository
 metadata, and durable public-facing content are complete.
 
-### First-publication bootstrap
+### First-publication bootstrap history
 
 The normal npm release path uses Trusted Publishing on a GitHub-hosted runner
 with Node.js 22.14.0 or later, npm CLI 11.5.1 or later, and an exact
@@ -278,10 +259,9 @@ short-lived granular read/write token with the minimum available scope and
 non-interactive 2FA bypass from an owner account protected by 2FA. Expose it
 only through a protected GitHub Environment for one reviewed immutable-tag run,
 publish with public access and provenance, then immediately configure OIDC,
-remove the secret, revoke the token, restrict token-based publishing, and
-publish `0.1.0-alpha.2` through OIDC. Verify its provenance and confirm the
-`next` dist-tag resolves to `0.1.0-alpha.2`. Never make this exception a
-reusable workflow path.
+remove the secret, revoke the token, and restrict token-based publishing. This
+historical bootstrap ended with `0.1.0-alpha.1`; `0.1.0-alpha.3` subsequently
+verified the OIDC-only path. Never make the exception a reusable workflow path.
 
 ## Authorization and evidence
 

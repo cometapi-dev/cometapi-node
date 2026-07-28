@@ -53,6 +53,7 @@ For source-checkout testing, retain and verify one exact tarball:
 mkdir -p .artifacts
 npm pack --pack-destination .artifacts
 npm run test:package -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
+npm run test:examples -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
 npm run test:fixtures -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
 ```
 
@@ -93,6 +94,17 @@ const response = await client.responses.create({
 });
 
 console.log(response.output_text);
+
+const stream = await client.chat.completions.create({
+  model: "gpt-5.4",
+  messages: [{ role: "user", content: "Write one sentence about comets." }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+}
+process.stdout.write("\n");
 ```
 
 ## CommonJS quick start
@@ -103,6 +115,12 @@ const { CometAPI } = require("cometapi");
 const client = new CometAPI();
 
 async function main() {
+  const completion = await client.chat.completions.create({
+    model: "gpt-5.4",
+    messages: [{ role: "user", content: "Reply with one short greeting." }],
+  });
+  console.log(completion.choices[0]?.message?.content ?? "");
+
   const models = await client.models.list();
   for (const model of models.data) {
     console.log(model.id);
@@ -115,26 +133,10 @@ main().catch((error) => {
 });
 ```
 
-## Streaming Chat Completions
-
-```js
-import { CometAPI } from "cometapi";
-
-const client = new CometAPI();
-const stream = await client.chat.completions.create({
-  model: "gpt-5.4",
-  messages: [{ role: "user", content: "Write one sentence about comets." }],
-  stream: true,
-});
-
-for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
-}
-```
-
 Runnable ESM and CommonJS examples are in [`examples/`](./examples/). The
-packed fixtures execute equivalent mocked public calls; executing live examples
-against a packed artifact remains a separately authorized release gate.
+offline example gate executes these exact files against the packed artifact with
+a fail-closed mocked transport. Executing them against the live API remains a
+separately authorized operation.
 
 ## Custom options
 
@@ -186,6 +188,7 @@ npm run lint
 npm run format:check
 npm run test:secrets
 npm run test:package
+npm run test:examples
 npm run test:live-contract
 npm run test:fixtures
 npm run test:compat

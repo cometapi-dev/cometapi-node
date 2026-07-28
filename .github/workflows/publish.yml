@@ -135,6 +135,7 @@ jobs:
           npm run test:package -- \
             --tarball "${{ steps.pack.outputs.tarball }}" \
             --tag "${{ github.event.release.tag_name }}"
+          npm run test:examples -- --tarball "${{ steps.pack.outputs.tarball }}"
           npm run test:fixtures -- --tarball "${{ steps.pack.outputs.tarball }}"
       - name: Upload the verified release artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

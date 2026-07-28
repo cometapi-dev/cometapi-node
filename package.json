@@ -62,6 +62,7 @@
     "test:live": "node scripts/live-smoke.mjs",
     "test:live-contract": "node scripts/test-live-smoke-contract.mjs",
     "test:package": "node scripts/test-package.mjs",
+    "test:examples": "node scripts/test-examples.mjs",
     "test:fixtures": "node scripts/test-fixtures.mjs",
     "test:compat": "node scripts/test-compat.mjs",
     "test:secrets": "node scripts/check-secrets.mjs",

@@ -8,11 +8,12 @@ default example model, `gpt-5.4`.
   Models.
 
 They require `COMETAPI_KEY` for authorized live use. Do not run them against the
-live API without an explicit request budget and authorization. Release fixtures
-execute equivalent calls with mocked transport against the exact packed
-tarball; mocked execution is package evidence, not live compatibility evidence.
+live API without an explicit request budget and authorization. The
+`test:examples` gate executes these original files with a fail-closed mocked
+transport against the exact packed tarball; mocked execution is package
+evidence, not live compatibility evidence.
 
-After the Registry Alpha is published under npm's `next` dist-tag:
+Registry Alpha is available under npm's `next` dist-tag:
 
 ```bash
 npm install cometapi@next

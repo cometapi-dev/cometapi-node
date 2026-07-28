@@ -10,6 +10,7 @@ const offlineChecks = [
   "check:standalone-content",
   "check:public-preview",
   "test:package",
+  "test:examples",
   "test:live-contract",
   "test:fixtures",
 ];

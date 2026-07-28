@@ -97,6 +97,8 @@ jobs:
         run: npm run build
       - name: Validate the package shape
         run: npm run test:package
+      - name: Execute the documented examples against a packed artifact
+        run: npm run test:examples
       - name: Verify live-smoke semantic checks with mocked transport
         run: npm run test:live-contract
       - name: Test packed-package fixtures
@@ -188,6 +190,7 @@ jobs:
     name: Latest OpenAI 6.x canary / Node.js 24
     if: >-
       github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.actor == 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 20

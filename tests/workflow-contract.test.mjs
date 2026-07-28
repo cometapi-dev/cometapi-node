@@ -64,6 +64,11 @@ describe("GitHub Actions workflow contract", () => {
     expect(advisory).toMatch(/^ {10}node-version: 26\.x$/m);
   });
 
+  it("runs the latest OpenAI lane for manually dispatched release-candidate CI", () => {
+    const latest = job(workflow("ci.yml"), "latest-openai");
+    expect(latest).toContain("github.event_name == 'workflow_dispatch'");
+  });
+
   it("runs the Public Preview gate once in blocking CI", () => {
     expect(
       matches(workflow("ci.yml"), /^\s*run: npm run check:public-preview$/gm),
@@ -165,5 +170,15 @@ describe("GitHub Actions workflow contract", () => {
     expect(job(publishWorkflow, "verify")).not.toContain("id-token: write");
     expect(job(publishWorkflow, "live-smoke")).not.toContain("id-token: write");
     expect(job(publishWorkflow, "publish")).toContain("id-token: write");
+  });
+
+  it("uses Release Please only to prepare the reviewed stable pull request", () => {
+    const contents = workflow("release-please.yml");
+    const releasePlease = job(contents, "release-please");
+    expect(releasePlease).toContain(
+      "googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7",
+    );
+    expect(releasePlease).toContain("skip-github-release: true");
+    expect(contents).not.toContain("token:");
   });
 });
