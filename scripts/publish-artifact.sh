@@ -7,7 +7,11 @@ set -euo pipefail
 
 artifact_directory="${ARTIFACT_DIRECTORY:-release-artifacts}"
 
-if [[ -n "${NODE_AUTH_TOKEN:-}" || -n "${NPM_TOKEN:-}" ]]; then
+# actions/setup-node exports this fixed sentinel when registry-url is configured,
+# including the npm-documented Trusted Publishing workflow.
+setup_node_auth_placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+if [[ -n "${NPM_TOKEN:-}" ]] || \
+  [[ -n "${NODE_AUTH_TOKEN:-}" && "${NODE_AUTH_TOKEN}" != "$setup_node_auth_placeholder" ]]; then
   echo "Registry tokens are forbidden; publication must use npm Trusted Publishing." >&2
   exit 1
 fi
