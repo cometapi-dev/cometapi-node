@@ -11,6 +11,11 @@ follows Keep a Changelog, and versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Documentation
+
+- Recorded the verified stable `0.1.0` release evidence and the deferred Release
+  Please automation follow-up.
+
 ## [0.1.0-alpha.3] - 2026-07-27
 
 ### Fixed

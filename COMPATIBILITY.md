@@ -3,8 +3,8 @@
 Compatibility document version: 0.1  
 Package line: `0.1.x`
 
-Stable candidate: `0.1.0`; publication and registry verification remain
-separate evidence until the immutable release workflow completes.
+Stable release: `0.1.0`; the immutable release workflow and separate
+post-publication registry verification completed on 2026-07-28.
 
 This matrix defines the contract-tested 0.1 compatibility surface. Inheritance
 from the official OpenAI client does not by itself establish CometAPI support.
@@ -94,10 +94,19 @@ npm run test:compat
 npm run verify
 ```
 
-These are offline or mocked checks. Stable candidate verification also runs the
-minimum, locked, and latest-compatible OpenAI 6.x lanes. Live compatibility requires the separately
-gated trusted workflow described in [RELEASING.md](./RELEASING.md). A successful
-HTTP status alone is transport evidence, not proof that streaming, types,
-errors, and cancellation behave correctly. Each authorized live run remains
-bounded to exactly three sequential requests, 16 output tokens, a 60-second
-per-request timeout, concurrency one, and stop on the first failure.
+These are offline or mocked checks. Stable verification also ran the minimum,
+locked, and latest-compatible OpenAI 6.x lanes. Live compatibility requires the
+separately gated trusted workflow described in [RELEASING.md](./RELEASING.md).
+A successful HTTP status alone is transport evidence, not proof that streaming,
+types, errors, and cancellation behave correctly. Each authorized live run
+remains bounded to exactly three sequential requests, 16 output tokens, a
+60-second per-request timeout, concurrency one, and stop on the first failure.
+
+For stable `0.1.0`, the latest-compatible lane passed in
+[CI run 30344290818](https://github.com/cometapi-dev/cometapi-node/actions/runs/30344290818).
+The immutable release, bounded live smoke, OIDC publication, registry
+signatures and provenance, and public artifact checks passed in
+[publish run 30345735681](https://github.com/cometapi-dev/cometapi-node/actions/runs/30345735681).
+A separate post-publication registry-tarball check also passed the ESM,
+CommonJS, and compatible-OpenAI host fixtures with one effective
+`openai@6.47.0` installation and preserved official error identities.

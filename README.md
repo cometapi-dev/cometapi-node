@@ -4,7 +4,8 @@ The official CometAPI entry point for the OpenAI-compatible API. The SDK keeps
 the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
-> **Stable 0.1 release candidate:** `0.1.0` is approved for npm publication.
+> **Stable 0.1 release:** `0.1.0` is approved for npm publication. Publication
+> is complete, and the package is available from npm's default `latest` dist-tag.
 > The supported API is limited to the contract-tested 0.1 surface documented
 > here and in [COMPATIBILITY.md](./COMPATIBILITY.md).
 
@@ -37,8 +38,7 @@ files. You are responsible for all usage and charges incurred with your key.
 
 ## Installation
 
-Install the stable package from npm's default `latest` dist-tag after the
-reviewed release completes:
+Install the stable package from npm's default `latest` dist-tag:
 
 ```bash
 npm install cometapi
@@ -212,16 +212,19 @@ parent.
 
 ## Project status
 
-The repository has completed Public Preview and Registry Alpha. Blocking CI,
-protected repository rules, security reporting, protected environments, and
-the authorized live smoke have passed. Stable `0.1.0` is the reviewed
-publication candidate; Registry Alpha `0.1.0-alpha.3` was published from the
-immutable release artifact through GitHub Actions OIDC with provenance, and
-independent public-registry ESM, CommonJS, and compatible-OpenAI host installs
-passed. The immutable `0.1.0-alpha.2` GitHub release remains as an unpublished
-failure record because its guard stopped before invoking npm. Mocked responses,
-packed artifacts, GitHub Actions, trusted live tests, and npm publication remain
-separate evidence layers and must not be represented as another.
+The repository has completed Public Preview, Registry Alpha, and stable 0.1.0.
+Blocking CI, protected repository rules, security reporting, protected
+environments, and the authorized release-tag live smoke have passed. Stable
+`0.1.0` was published from its immutable release artifact through GitHub
+Actions OIDC with provenance, and a separate post-publication check passed the
+ESM, CommonJS, and compatible-OpenAI host fixtures against the registry tarball.
+Registry Alpha `0.1.0-alpha.3` remains available from `next`. The immutable
+`0.1.0-alpha.2` GitHub release remains as an unpublished failure record because
+its guard stopped before invoking npm. Mocked responses, packed artifacts,
+GitHub Actions, trusted live tests, and npm publication remain separate evidence
+layers and must not be represented as another. Because published npm artifacts
+are immutable, the `0.1.0` tarball retains its candidate-era README; this
+post-release status update first ships in a later package version.
 
 See:
 

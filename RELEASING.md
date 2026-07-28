@@ -82,11 +82,11 @@ evidence is complete only when `npm owner ls cometapi` lists the
 maintainer-confirmed `cometapi_dev` account; until then this remains a Registry
 Alpha prerequisite.
 
-Public Preview and Registry Alpha are complete. For the current stable
-milestone, topic pushes, pull requests, merges, the immutable GitHub Release,
-the bounded live smoke, npm publication, and environment approvals still
-require authorization from the current maintainer request. This document
-defines allowable mechanics but grants no standing remote-write permission.
+Public Preview, Registry Alpha, and stable `0.1.0` are complete. Future topic
+pushes, pull requests, merges, immutable GitHub Releases, bounded live smoke,
+npm publication, and environment approvals require authorization from the
+current maintainer request. This document defines allowable mechanics but
+grants no standing remote-write permission.
 
 ## Candidate verification gate
 
@@ -393,9 +393,9 @@ layers:
   host already declaring `openai@6.47.0`. The host resolved one effective
   OpenAI installation and preserved `APIError instanceof` identity. Registry
   signatures and attestations were verified with `npm audit signatures`.
-- The `next` dist-tag resolves to `0.1.0-alpha.3`. The registry-created `latest`
-  tag remains on `0.1.0-alpha.1`; it is outside the prerelease installation path
-  and remains explicit residual cleanup before stable publication.
+- The `next` dist-tag resolves to `0.1.0-alpha.3`. Stable publication moved
+  `latest` to `0.1.0`; the historical registry-created `latest` value on
+  `0.1.0-alpha.1` no longer remains.
 
 ## Stable 0.1.0 sequence
 
@@ -418,21 +418,81 @@ executed README examples against the packed artifact, release-PR/tag/changelog/
 manifest version agreement, reviewed security and compatibility status, and
 post-publication registry evidence.
 
-Release Please is limited to the stable PR because its v5 single-package path
-has an open upstream tagging defect when component names are omitted from tags.
-After the reviewed release PR merges, create a draft `v0.1.0` GitHub Release
-manually against the exact merge commit, review it with `prerelease=false`, and
-publish it only once immutable releases are enabled. After successful manual
-tagging, change the merged Release Please PR label from `autorelease: pending`
-to `autorelease: tagged` so future release PRs are not blocked.
+The `0.1.0` promotion limited Release Please to the stable PR because its v5
+single-package path has an open upstream tagging defect when component names
+are omitted from tags. After the release PR merged, a maintainer created the
+draft `v0.1.0` GitHub Release manually against the exact merge commit, reviewed
+it with `prerelease=false`, and published it with immutable releases enabled.
+Release Please did not add an `autorelease: pending` label to the manually
+opened stable PR, and the repository has no `autorelease` labels, so no post-tag
+label transition applied to this release.
 
-Release Please does not author the final public status text. After it opens the
-`0.1.0` PR, a maintainer pushes a focused documentation commit to that same
-branch: README switches from `next`/prerelease to `latest`/stable and records
-the exact publication approval; SECURITY and SUPPORT remove prerelease-only
-policy; COMPATIBILITY and ROADMAP identify the stable candidate without
-claiming it is already released. If Release Please updates the branch again,
-repeat the review and CI dispatch against the new final head.
+Release Please did not author the final public status text. A maintainer pushed
+the focused README, SECURITY, SUPPORT, COMPATIBILITY, and ROADMAP candidate
+state to the generated branch and repeated the CI review on the final head
+before merging it.
+
+## Stable 0.1.0 release evidence
+
+Stable `0.1.0` completed on 2026-07-28 with these independently auditable
+layers:
+
+- The maintainer-edited release pull request [#28](https://github.com/cometapi-dev/cometapi-node/pull/28)
+  had required pull-request CI in [run 30344166767](https://github.com/cometapi-dev/cometapi-node/actions/runs/30344166767)
+  and the manually dispatched latest-compatible OpenAI 6.x lane in
+  [run 30344290818](https://github.com/cometapi-dev/cometapi-node/actions/runs/30344290818)
+  on final head `34f8dd342b56f82baa1d5a98807d715fe0bd60bf`.
+  GitHub records no formal `APPROVED` review object; maintainer review is
+  evidenced by the focused candidate edits, merge, Release publication, and
+  protected npm-environment approval.
+- The protected merge produced
+  `1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca`; its tree matched the reviewed
+  final head, and default-branch Node.js 22 and 24 CI passed in
+  [run 30345116325](https://github.com/cometapi-dev/cometapi-node/actions/runs/30345116325).
+- The immutable [`v0.1.0` release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.0)
+  targets that exact merge commit with `prerelease=false`. Its
+  [publish run 30345735681](https://github.com/cometapi-dev/cometapi-node/actions/runs/30345735681)
+  rebuilt and verified one exact artifact, executed the bounded three-request
+  release-tag live smoke with a 16-output-token cap, 60-second per-request
+  timeout, concurrency one, and stop on first failure, then published through
+  the protected `npm` environment and GitHub Actions OIDC.
+- npm's `latest` dist-tag resolves to `0.1.0`, while `next` remains on
+  `0.1.0-alpha.3`. The registry artifact has SHA-1
+  `e509196ac5618d5b073207c74c7cdc5204efbe37` and SHA-512 integrity
+  `sha512-B7vyPXZkoZRM2JjFMQZthumUHgHWZLcPlQt8SG5oopPL2JGU0LR1iBOjtox4Mos+gZmA1Bs2q6vLPX2loHyfuw==`.
+- npm reports SLSA provenance v1 and a registry signature. The provenance binds
+  `cometapi@0.1.0` to `refs/tags/v0.1.0`, the publishing workflow, run
+  `30345735681`, and the exact release commit. The Sigstore transparency-log
+  index is
+  [`2269554513`](https://search.sigstore.dev/?logIndex=2269554513), and the npm
+  publish-attestation index is
+  [`2269555365`](https://search.sigstore.dev/?logIndex=2269555365).
+- Separate post-publication registry verification downloaded the workflow
+  artifact and npm tarball and found them byte-for-byte identical. Registry
+  signature and attestation verification passed. The registry tarball then
+  passed the ESM, CommonJS, and compatible-OpenAI host fixtures; the host
+  resolved one effective `openai@6.47.0` installation and preserved official
+  error identities.
+- A closeout `npm audit` of the locked development checkout reported six
+  development-tooling findings: five high through
+  ESLint/minimatch/brace-expansion and one low in esbuild. `npm audit
+--omit=dev` reported zero production vulnerabilities; these findings do not
+  affect the published production dependency graph and remain deferred
+  dependency-maintenance work.
+- The immutable npm `0.1.0` tarball retains its candidate-era README. The
+  post-release documentation status recorded here and on the default branch can
+  first appear inside a later package artifact; no published tarball was
+  rewritten.
+- The post-merge Release Please
+  [run 30345116433](https://github.com/cometapi-dev/cometapi-node/actions/runs/30345116433)
+  failed after updating its unreviewed temporary branch to
+  `3f0949e5c0ccd0923d10595437f7a315f013af7c`, a generated `0.2.0` draft, but
+  before creating a pull request. It did not modify `main`, create a tag, or
+  publish a package. `RELEASE_PLEASE_ENABLED` was set to `false` before the
+  closeout push; the branch is retained as failure evidence and must not be
+  merged or treated as the start of 0.2. Release Please remains disabled until
+  its post-manual-release discovery and pull-request authorization strategy are
+  reviewed in a separately authorized maintenance task.
 
 ## Verification record
 
