@@ -9,7 +9,7 @@ Release status is evidence-based:
 | Local code-complete             | Required source, tests, documentation, metadata, fixtures, and workflows exist, and every applicable offline check passes.                                                   |
 | Private Remote Validation ready | Local gates pass, the sanitized history and maintainer-confirmed identity are complete, and real credential-free private default-branch CI passes.                           |
 | Public Preview ready            | After visibility changes, public-only repository rules, security reporting, environments, default-branch CI, the content gate, and authorized protected live smoke all pass. |
-| Registry Alpha candidate        | The exact `0.1.0-alpha.2` artifact passes package and clean-install gates.                                                                                                   |
+| Registry Alpha candidate        | The exact `0.1.0-alpha.3` artifact passes package and clean-install gates after preserving the unpublished immutable alpha.2 failure record.                                 |
 | Registry Alpha released         | The public npm artifact installs from the `next` channel, passes post-publication verification, and has verified provenance plus any documented one-time bootstrap evidence. |
 | Stable released                 | Every stable 0.1.0 local, remote, live, review, provenance, and registry gate has recorded evidence.                                                                         |
 
@@ -67,7 +67,7 @@ artifacts. Authorized maintainers must supply or approve:
 - Changes to the canonical identity and contact values listed above
 - Repository creation and visibility, branch/tag protections, environments,
   secrets, and environment approval policies
-- npm package ownership for the maintainer-confirmed `cometapi-team` account
+- npm package ownership for the maintainer-confirmed `cometapi_dev` account
   and Trusted Publisher configuration
 - A `COMETAPI_KEY`, request budget, and explicit authorization for live smoke
   tests
@@ -79,7 +79,7 @@ corresponding release gate. Do not invent it or replace it with a mock.
 
 The `cometapi` package exists in the public registry. Registry Alpha owner
 evidence is complete only when `npm owner ls cometapi` lists the
-maintainer-confirmed `cometapi-team` account; until then this remains a Registry
+maintainer-confirmed `cometapi_dev` account; until then this remains a Registry
 Alpha prerequisite.
 
 For the current Public Preview milestone, private topic pushes, pull requests,
@@ -302,11 +302,11 @@ dist-tag. Before authorizing release:
     company-controlled owner and verifies the resulting owner list:
 
     ```bash
-    npm owner add cometapi-team cometapi
+    npm owner add cometapi_dev cometapi
     npm owner ls cometapi
     ```
 
-    Record evidence that the output lists `cometapi-team`; Registry Alpha owner
+    Record evidence that the output lists `cometapi_dev`; Registry Alpha owner
     setup is incomplete until it does.
 
 12. Install `cometapi@next` from npm and run an independent import and mocked
@@ -337,13 +337,57 @@ one-time exception:
    publication; the bootstrap does not change or defer that requirement.
 5. A maintainer immediately configures OIDC, removes the environment variable
    and secret, revokes the token, and restricts token-based publishing.
-6. The project immediately prepares and publishes `0.1.0-alpha.2` through
-   OIDC, verifies its provenance and public installation, and confirms that
-   `next` resolves to `0.1.0-alpha.2`.
-7. The release record documents the exception and both public-install evidence
-   layers.
+6. The project prepared the immutable `0.1.0-alpha.2` GitHub release through
+   OIDC. Exact-artifact verification and the protected live smoke passed, but
+   the local publication guard rejected the fixed `actions/setup-node`
+   authentication placeholder before npm was invoked. No alpha.2 registry
+   artifact was published.
+7. Preserve that immutable failure record, prepare and publish
+   `0.1.0-alpha.3` through OIDC with regression coverage for the placeholder,
+   verify its provenance and public installation, and confirm that `next`
+   resolves to `0.1.0-alpha.3`.
+8. The release record documents the exception, the unpublished alpha.2
+   attempt, and both public-install evidence layers.
 
 This exception must never become a reusable source-controlled publishing path.
+
+## Registry Alpha release evidence
+
+Registry Alpha completed on 2026-07-27 with these independently auditable
+layers:
+
+- The one-time `0.1.0-alpha.1` bootstrap recovery published the exact artifact
+  with provenance in [GitHub Actions run 30251436832](https://github.com/cometapi-dev/cometapi-node/actions/runs/30251436832).
+- npm ownership lists both `tensornull <tensor.null@gmail.com>` and the
+  company-controlled `cometapi_dev <dev@cometapi.com>` account. The bootstrap
+  token was revoked, local npm authentication was removed, the protected `npm`
+  environment has no secrets or variables, and npm disallows token publishing.
+- The immutable `0.1.0-alpha.2` release passed exact-artifact verification and
+  protected live smoke in [run 30270656080](https://github.com/cometapi-dev/cometapi-node/actions/runs/30270656080),
+  then failed before invoking npm because the local publication guard rejected
+  the fixed `actions/setup-node` authentication placeholder. No alpha.2
+  registry artifact exists.
+- Pull request [#23](https://github.com/cometapi-dev/cometapi-node/pull/23)
+  added regression coverage for that placeholder while preserving rejection of
+  real registry credentials. Default-branch [CI run 30272606126](https://github.com/cometapi-dev/cometapi-node/actions/runs/30272606126)
+  passed before tagging.
+- The immutable [`v0.1.0-alpha.3` release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.0-alpha.3)
+  completed exact-artifact verification, the bounded three-request live smoke,
+  OIDC publication, registry convergence, signature verification, dependency
+  deduplication, and public installation in [run 30272764488](https://github.com/cometapi-dev/cometapi-node/actions/runs/30272764488).
+- npm identifies the publisher as GitHub Actions using
+  `npm-oidc-no-reply@github.com`. The registry reports SLSA provenance v1 and
+  integrity
+  `sha512-dtzQOz0dxif74jJpu2fhfUVjiq6TLm3YkPydtsryHGxuU6usaLWTpcblky854T42TG+SbTApCgOoNJDMkEYIOg==`,
+  and Sigstore transparency-log index
+  [`2257566579`](https://search.sigstore.dev/?logIndex=2257566579).
+- Independent installs from the public registry passed for ESM, CommonJS, and a
+  host already declaring `openai@6.47.0`. The host resolved one effective
+  OpenAI installation and preserved `APIError instanceof` identity. Registry
+  signatures and attestations were verified with `npm audit signatures`.
+- The `next` dist-tag resolves to `0.1.0-alpha.3`. The registry-created `latest`
+  tag remains on `0.1.0-alpha.1`; it is outside the prerelease installation path
+  and remains explicit residual cleanup before stable publication.
 
 ## Stable 0.1.0 sequence
 
