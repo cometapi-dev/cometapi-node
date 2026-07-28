@@ -5,6 +5,10 @@ Last updated: 2026-07-28
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
+The reviewed `0.1.0` release candidate is prepared. It becomes released only
+after the immutable GitHub Release, bounded live smoke, OIDC publication,
+provenance, signature, and public-install checks all pass.
+
 ## Product Target
 
 The TypeScript and Node.js SDK will provide a typed CometAPI entry point that

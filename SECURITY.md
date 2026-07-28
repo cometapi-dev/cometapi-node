@@ -2,13 +2,15 @@
 
 ## Release status
 
-The SDK is in pre-release development. Published support claims begin only
-after a package is independently verified from npm.
+The stable 0.1 line receives security fixes for the documented supported
+surface. Published support claims apply only after a package is independently
+verified from npm.
 
-| Version             | Status                                                |
-| ------------------- | ----------------------------------------------------- |
-| `0.1.x` prereleases | Best-effort security fixes after verified publication |
-| Older versions      | Unsupported                                           |
+| Version                 | Status                                              |
+| ----------------------- | --------------------------------------------------- |
+| Latest stable `0.1.x`   | Security fixes for the documented supported surface |
+| Registry Alpha versions | Best-effort fixes after verified publication        |
+| Older versions          | Unsupported                                         |
 
 ## Reporting a vulnerability
 
@@ -34,7 +36,7 @@ and redact request headers and logs.
 ## Response expectations
 
 CometAPI handles reports privately and coordinates disclosure after a fix or
-mitigation is ready. Response times are not guaranteed for prereleases.
+mitigation is ready. Response times are not guaranteed.
 
 ## Credential safety
 

@@ -3,6 +3,9 @@
 Compatibility document version: 0.1  
 Package line: `0.1.x`
 
+Stable candidate: `0.1.0`; publication and registry verification remain
+separate evidence until the immutable release workflow completes.
+
 This matrix defines the contract-tested 0.1 compatibility surface. Inheritance
 from the official OpenAI client does not by itself establish CometAPI support.
 Release and live-compatibility claims require their corresponding CI, registry,
@@ -91,7 +94,8 @@ npm run test:compat
 npm run verify
 ```
 
-These are offline or mocked checks. Live compatibility requires the separately
+These are offline or mocked checks. Stable candidate verification also runs the
+minimum, locked, and latest-compatible OpenAI 6.x lanes. Live compatibility requires the separately
 gated trusted workflow described in [RELEASING.md](./RELEASING.md). A successful
 HTTP status alone is transport evidence, not proof that streaming, types,
 errors, and cancellation behave correctly. Each authorized live run remains

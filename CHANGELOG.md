@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file. The format
 follows Keep a Changelog, and versions follow Semantic Versioning.
 
+## [0.1.0](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0-alpha.3...v0.1.0) (2026-07-28)
+
+### Bug Fixes
+
+- prepare 0.1.0 stable release ([#27](https://github.com/cometapi-dev/cometapi-node/issues/27)) ([f5f6731](https://github.com/cometapi-dev/cometapi-node/commit/f5f6731ba9a5bb0fbfdc1ed256c3e66e3c03ca96))
+
 ## [Unreleased]
 
 ## [0.1.0-alpha.3] - 2026-07-27
