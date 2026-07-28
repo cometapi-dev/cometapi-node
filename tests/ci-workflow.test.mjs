@@ -122,4 +122,29 @@ describe("blocking CI workflow", () => {
       run: "npm run test:live-contract",
     });
   });
+
+  it("round-trips one packed artifact across separate jobs", () => {
+    const jobs = readWorkflow().jobs;
+    const pack = jobs?.["artifact-pack"];
+    const download = jobs?.["artifact-download"];
+
+    expect(pack?.outputs).toEqual({
+      sha256: "${{ steps.pack.outputs.sha256 }}",
+    });
+    expect(download?.needs).toEqual(["artifact-pack"]);
+    expect(pack.steps.some((step) => step.run?.includes("npm pack"))).toBe(
+      true,
+    );
+    expect(
+      pack.steps.some((step) =>
+        step.uses?.startsWith("actions/upload-artifact@"),
+      ),
+    ).toBe(true);
+    expect(
+      download.steps.some((step) =>
+        step.uses?.startsWith("actions/download-artifact@"),
+      ),
+    ).toBe(true);
+    expect(download.steps.at(-1).run).toContain("sha256sum --check --strict");
+  });
 });

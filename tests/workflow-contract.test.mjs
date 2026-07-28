@@ -116,6 +116,9 @@ describe("GitHub Actions workflow contract", () => {
     expect(publishWorkflow).not.toContain("NPM_ALPHA1_BOOTSTRAP");
     expect(publishWorkflow).not.toContain("recover-verify");
     expect(publishWorkflow).not.toContain("recover-publish");
+    expect(publish).toMatch(
+      /package-manager-cache: false\n {10}registry-url: https:\/\/registry\.npmjs\.org/,
+    );
   });
 
   it("pins third-party actions and disables checkout credential persistence", () => {
