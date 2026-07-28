@@ -18,7 +18,6 @@ import { afterEach, describe, expect, it } from "vitest";
 const script = fileURLToPath(
   new URL("../scripts/publish-artifact.sh", import.meta.url),
 );
-const setupNodeAuthPlaceholder = "XXXXX-XXXXX-XXXXX-XXXXX";
 const temporaryDirectories = [];
 
 afterEach(() => {
@@ -97,17 +96,11 @@ describe("publish artifact authentication", () => {
     );
   });
 
-  it("allows the actions/setup-node authentication placeholder", () => {
-    const { log, result } = runPublish({
-      nodeAuthToken: setupNodeAuthPlaceholder,
-    });
-    expect(result.status, result.stderr).toBe(0);
-    expect(log).toMatch(
-      /^token-present\npublish .* --provenance --tag next\n$/,
-    );
-  });
-
   it.each([
+    [
+      "NODE_AUTH_TOKEN setup-node sentinel",
+      { nodeAuthToken: "XXXXX-XXXXX-XXXXX-XXXXX" },
+    ],
     ["NODE_AUTH_TOKEN", { nodeAuthToken: "opaque" }],
     ["NPM_TOKEN", { npmToken: "opaque" }],
   ])("rejects the %s registry credential", (_name, options) => {
