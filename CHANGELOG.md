@@ -5,6 +5,16 @@ follows Keep a Changelog, and versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-07-27
+
+### Fixed
+
+- Accepted the fixed authentication sentinel value injected by
+  `actions/setup-node` for npm Trusted Publishing while continuing to reject
+  real registry token credentials.
+- Replaced the unpublished immutable alpha.2 release after its publication
+  guard failed before invoking npm.
+
 ## [0.1.0-alpha.2] - 2026-07-27
 
 ### Changed

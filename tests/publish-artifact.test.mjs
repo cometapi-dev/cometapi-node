@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const script = fileURLToPath(
   new URL("../scripts/publish-artifact.sh", import.meta.url),
 );
+const setupNodeAuthPlaceholder = "XXXXX-XXXXX-XXXXX-XXXXX";
 const temporaryDirectories = [];
 
 afterEach(() => {
@@ -62,7 +63,7 @@ function runPublish({
   distTag = "next",
   nodeAuthToken = "",
   npmToken = "",
-  version = "0.1.0-alpha.2",
+  version = "0.1.0-alpha.3",
 } = {}) {
   const { bin, log, root } = fixture();
   const result = spawnSync("bash", [script], {
@@ -93,6 +94,16 @@ describe("publish artifact authentication", () => {
     expect(log).toMatch(/^\npublish .* --provenance --tag next\n$/);
     expect(log).toContain(
       `publish ${join(realpathSync(root), "artifacts", "cometapi.tgz")} --access public --provenance --tag next`,
+    );
+  });
+
+  it("allows the actions/setup-node authentication placeholder", () => {
+    const { log, result } = runPublish({
+      nodeAuthToken: setupNodeAuthPlaceholder,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(log).toMatch(
+      /^token-present\npublish .* --provenance --tag next\n$/,
     );
   });
 
