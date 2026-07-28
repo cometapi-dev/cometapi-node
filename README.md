@@ -4,9 +4,9 @@ The official CometAPI entry point for the OpenAI-compatible API. The SDK keeps
 the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
-> **Registry Alpha pre-release:** the SDK is under active 0.1 development.
-> `0.1.0-alpha.3` is available from npm under the `next` dist-tag, and its API
-> may change before `0.1.0`.
+> **Stable 0.1 release candidate:** `0.1.0` is approved for npm publication.
+> The supported API is limited to the contract-tested 0.1 surface documented
+> here and in [COMPATIBILITY.md](./COMPATIBILITY.md).
 
 ## Supported 0.1 surface
 
@@ -37,10 +37,11 @@ files. You are responsible for all usage and charges incurred with your key.
 
 ## Installation
 
-Install the prerelease from npm's `next` dist-tag:
+Install the stable package from npm's default `latest` dist-tag after the
+reviewed release completes:
 
 ```bash
-npm install cometapi@next
+npm install cometapi
 ```
 
 The release workflow is the sole source of the npm dist-tag: prerelease
@@ -52,9 +53,9 @@ For source-checkout testing, retain and verify one exact tarball:
 ```bash
 mkdir -p .artifacts
 npm pack --pack-destination .artifacts
-npm run test:package -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
-npm run test:examples -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
-npm run test:fixtures -- --tarball .artifacts/cometapi-0.1.0-alpha.3.tgz
+npm run test:package -- --tarball .artifacts/cometapi-0.1.0.tgz
+npm run test:examples -- --tarball .artifacts/cometapi-0.1.0.tgz
+npm run test:fixtures -- --tarball .artifacts/cometapi-0.1.0.tgz
 ```
 
 Install that path in a separate consumer when needed. Do not treat a locally
@@ -211,9 +212,10 @@ parent.
 
 ## Project status
 
-The repository has completed Public Preview. Blocking CI, protected repository
-rules, security reporting, protected environments, and the authorized live
-smoke have passed. Registry Alpha `0.1.0-alpha.3` was published from the
+The repository has completed Public Preview and Registry Alpha. Blocking CI,
+protected repository rules, security reporting, protected environments, and
+the authorized live smoke have passed. Stable `0.1.0` is the reviewed
+publication candidate; Registry Alpha `0.1.0-alpha.3` was published from the
 immutable release artifact through GitHub Actions OIDC with provenance, and
 independent public-registry ESM, CommonJS, and compatible-OpenAI host installs
 passed. The immutable `0.1.0-alpha.2` GitHub release remains as an unpublished

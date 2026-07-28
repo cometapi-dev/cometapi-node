@@ -13,10 +13,10 @@ live API without an explicit request budget and authorization. The
 transport against the exact packed tarball; mocked execution is package
 evidence, not live compatibility evidence.
 
-Registry Alpha is available under npm's `next` dist-tag:
+For the stable `0.1.x` line:
 
 ```bash
-npm install cometapi@next
+npm install cometapi
 COMETAPI_KEY="your-api-key" node examples/esm.mjs
 COMETAPI_KEY="your-api-key" node examples/commonjs.cjs
 ```

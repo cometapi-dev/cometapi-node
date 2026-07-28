@@ -48,4 +48,4 @@ Useful reports answer:
 4. Which exact `cometapi`, `openai`, and Node.js versions are installed?
 5. Does `npm ls openai --all` show more than one effective installation?
 
-Response times are not guaranteed for prereleases.
+Response times are not guaranteed.
