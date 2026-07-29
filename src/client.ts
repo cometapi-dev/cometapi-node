@@ -12,24 +12,30 @@ type UnsupportedCometAPIOption = (typeof UNSUPPORTED_COMETAPI_OPTIONS)[number];
 function sanitizeOptions<T extends Partial<ClientOptions>>(
   options: T,
 ): Omit<T, UnsupportedCometAPIOption> {
-  const {
-    provider,
-    workloadIdentity,
-    dangerouslyAllowBrowser,
-    ...supportedOptions
-  } = options;
-  const unsupportedOptions = {
-    provider,
-    workloadIdentity,
-    dangerouslyAllowBrowser,
-  };
-
   for (const option of UNSUPPORTED_COMETAPI_OPTIONS) {
-    if (unsupportedOptions[option] !== undefined) {
+    if (Reflect.get(options, option) !== undefined) {
       throw new OpenAIError(
         `The \`${option}\` option is not supported by CometAPI.`,
       );
     }
+  }
+
+  const supportedOptions = {} as Omit<T, UnsupportedCometAPIOption>;
+  for (const option of Reflect.ownKeys(options)) {
+    if (
+      UNSUPPORTED_COMETAPI_OPTIONS.includes(
+        option as UnsupportedCometAPIOption,
+      ) ||
+      !Object.prototype.propertyIsEnumerable.call(options, option)
+    ) {
+      continue;
+    }
+    Object.defineProperty(supportedOptions, option, {
+      configurable: true,
+      enumerable: true,
+      value: Reflect.get(options, option),
+      writable: true,
+    });
   }
 
   return supportedOptions;

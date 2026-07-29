@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  extractReleaseNotesFromChangelog,
+  validatePreparedReleasePullRequest,
   validateGitHubRelease,
   validateMergedReleasePullRequest,
+  validateOpenReleasePullRequestCollisions,
+  validatePostActionPullRequestSnapshot,
+  validateReleasePleaseCommitMessages,
+  validateReleasePleaseCompletion,
+  validateReleasePleaseMutationConfiguration,
+  validateReleasePleasePullRequestBody,
+  validateReleasePleaseRunMetadata,
+  validateReleasePresenceBeforeAction,
   validateReleasePleaseActionResult,
   validateReleasePleaseBranchState,
   validateReleaseWorkflowRun,
   selectPendingReleasePullRequest,
+  validateTaggedReleasePullRequest,
 } from "../scripts/release-workflow-validation.mjs";
 
 const REPOSITORY = "cometapi-dev/cometapi-node";
@@ -15,11 +26,38 @@ const RELEASE_SHA = "a".repeat(40);
 const BRANCH_SHA = "b".repeat(40);
 const RUN_ID = 123456789;
 
+function releaseNotes(version = "0.1.1") {
+  return `## [${version}](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0...v${version}) (2026-07-29)
+
+### Bug Fixes
+
+* enforce the supported options boundary`;
+}
+
+function releaseBody(version = "0.1.1") {
+  return `:robot: I have created a release *beep* *boop*
+---
+
+
+${releaseNotes(version)}
+
+---
+This PR was generated with [Release Please](https://github.com/googleapis/release-please). See [documentation](https://github.com/googleapis/release-please#release-please).`;
+}
+
 function pullRequestFixture({ merged = false, version = "0.1.1" } = {}) {
   return {
-    author: "release-author",
+    author: "github-actions[bot]",
     baseRef: "main",
+    body: releaseBody(version),
+    files: [
+      ".release-please-manifest.json",
+      "CHANGELOG.md",
+      "package-lock.json",
+      "package.json",
+    ],
     headRef: RELEASE_BRANCH,
+    headRepository: REPOSITORY,
     headSha: BRANCH_SHA,
     labels: ["autorelease: pending"],
     mergeCommitIsAncestor: merged,
@@ -51,12 +89,16 @@ function workflowRunFixture() {
 
 function actionResultFixture() {
   return {
+    actionOutcome: "success",
     htmlUrl: `${releaseUrl()}`,
+    recovered: false,
     releaseCreated: true,
+    releaseExistedBeforeAction: false,
+    releaseSourceAttempt: 1,
     repository: REPOSITORY,
     runAttempt: 1,
     runId: RUN_ID,
-    schemaVersion: 1,
+    schemaVersion: 2,
     sha: RELEASE_SHA,
     tagName: "v0.1.1",
     version: "0.1.1",
@@ -69,17 +111,52 @@ function releaseUrl() {
   return `https://github.com/${REPOSITORY}/releases/tag/v0.1.1`;
 }
 
-function releaseFixture() {
+function releaseFixture({
+  createdAt = "2026-07-28T23:59:00Z",
+  publishedAt = "2026-07-29T00:01:00Z",
+} = {}) {
   return {
     author: { login: "github-actions[bot]" },
+    body: releaseNotes(),
     draft: false,
     html_url: releaseUrl(),
     immutable: true,
     name: "v0.1.1",
     prerelease: false,
-    published_at: "2026-07-29T00:01:00Z",
+    created_at: createdAt,
+    published_at: publishedAt,
     tag_name: "v0.1.1",
     target_commitish: RELEASE_SHA,
+  };
+}
+
+function attemptEvidenceFixture(
+  attempt,
+  {
+    completedAt = "2026-07-29T00:01:30Z",
+    conclusion = "success",
+    startedAt = "2026-07-29T00:00:30Z",
+  } = {},
+) {
+  return {
+    attempt,
+    jobs: [
+      {
+        head_sha: RELEASE_SHA,
+        name: "Prepare a reviewed release pull request or GitHub release",
+        run_attempt: attempt,
+        run_id: RUN_ID,
+        steps: [
+          {
+            completed_at: completedAt,
+            conclusion,
+            name: "Run Release Please",
+            started_at: startedAt,
+            status: "completed",
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -87,12 +164,14 @@ function branchState(overrides = {}) {
   return {
     branchSha: BRANCH_SHA,
     branchVersion: "0.1.1",
+    conflictingOpenPullRequests: [],
     exists: true,
     isAncestor: false,
     mainVersion: "0.1.0",
     manifestVersion: "0.1.1",
     pullRequests: [pullRequestFixture()],
     releaseBranch: RELEASE_BRANCH,
+    repository: REPOSITORY,
     ...overrides,
   };
 }
@@ -104,6 +183,18 @@ describe("Release Please branch validation", () => {
         branchState({ exists: false, pullRequests: [] }),
       ),
     ).toEqual({ state: "missing" });
+  });
+
+  it("rejects a 0.2 main version even when the release branch is missing", () => {
+    expect(() =>
+      validateReleasePleaseBranchState(
+        branchState({
+          exists: false,
+          mainVersion: "0.2.0",
+          pullRequests: [],
+        }),
+      ),
+    ).toThrow(/stable 0\.1\.x/i);
   });
 
   it("accepts a merged branch that is an ancestor of main", () => {
@@ -124,6 +215,22 @@ describe("Release Please branch validation", () => {
       pullRequestNumber: 31,
       state: "open",
     });
+  });
+
+  it("rejects an open fork PR whose head can collide with the release branch", () => {
+    expect(() =>
+      validateReleasePleaseBranchState(
+        branchState({
+          conflictingOpenPullRequests: [
+            {
+              headRef: RELEASE_BRANCH,
+              headRepository: "fork/repo",
+              number: 32,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/collide with the canonical release branch/i);
   });
 
   it("accepts a squash-merged branch through its exact merged PR", () => {
@@ -168,6 +275,9 @@ describe("Release Please branch validation", () => {
     ["head SHA", (pr) => (pr.headSha = "c".repeat(40))],
     ["title", (pr) => (pr.title = "chore(main): release 0.2.0")],
     ["label", (pr) => (pr.labels = [])],
+    ["author", (pr) => (pr.author = "maintainer")],
+    ["body", (pr) => (pr.body = "ordinary pull request body")],
+    ["head repository", (pr) => (pr.headRepository = "fork/repo")],
   ])("rejects a release PR with the wrong %s", (_name, mutate) => {
     const pullRequest = pullRequestFixture();
     mutate(pullRequest);
@@ -175,7 +285,170 @@ describe("Release Please branch validation", () => {
       validateReleasePleaseBranchState(
         branchState({ pullRequests: [pullRequest] }),
       ),
-    ).toThrow(/release workflow/i);
+    ).toThrow(/release (?:please|workflow)/i);
+  });
+});
+
+describe("Release Please pull request preparation", () => {
+  function preparedState(overrides = {}) {
+    const pullRequest = pullRequestFixture();
+    return {
+      actionPullRequests: [
+        {
+          baseBranchName: pullRequest.baseRef,
+          body: pullRequest.body,
+          files: [],
+          headBranchName: pullRequest.headRef,
+          labels: pullRequest.labels,
+          number: pullRequest.number,
+          title: pullRequest.title,
+        },
+      ],
+      actionPullRequestsCreated: true,
+      branchSha: BRANCH_SHA,
+      branchVersion: "0.1.1",
+      changelog: `# Changelog\n\n${releaseNotes()}`,
+      mainVersion: "0.1.0",
+      manifestVersion: "0.1.1",
+      packageLockPackageVersion: "0.1.1",
+      packageLockVersion: "0.1.1",
+      pullRequest,
+      releaseBranch: RELEASE_BRANCH,
+      repository: REPOSITORY,
+      ...overrides,
+    };
+  }
+
+  it("accepts the single action-created 0.1.1 patch PR", () => {
+    expect(validatePreparedReleasePullRequest(preparedState())).toEqual({
+      pullRequestNumber: 31,
+      version: "0.1.1",
+    });
+  });
+
+  it("accepts an unchanged existing action-authored PR when the action returns no output", () => {
+    expect(
+      validatePreparedReleasePullRequest(
+        preparedState({
+          actionPullRequests: [],
+          actionPullRequestsCreated: false,
+        }),
+      ),
+    ).toEqual({ pullRequestNumber: 31, version: "0.1.1" });
+  });
+
+  it.each([
+    [
+      "multiple action PRs",
+      (state) =>
+        state.actionPullRequests.push({
+          ...state.actionPullRequests[0],
+          number: 32,
+        }),
+    ],
+    [
+      "inconsistent creation output",
+      (state) => (state.actionPullRequestsCreated = false),
+    ],
+    ["wrong manifest", (state) => (state.manifestVersion = "0.2.0")],
+    ["wrong branch SHA", (state) => (state.branchSha = "c".repeat(40))],
+    ["wrong lock root", (state) => (state.packageLockVersion = "0.2.0")],
+    [
+      "wrong lock package",
+      (state) => (state.packageLockPackageVersion = "0.2.0"),
+    ],
+    [
+      "wrong changed files",
+      (state) => state.pullRequest.files.push("README.md"),
+    ],
+    ["unparseable body", (state) => (state.pullRequest.body = "ordinary PR")],
+    ["wrong changelog", (state) => (state.changelog = "# Changelog\n")],
+  ])("rejects a preparation with %s", (_name, mutate) => {
+    const state = preparedState();
+    mutate(state);
+    expect(() => validatePreparedReleasePullRequest(state)).toThrow(
+      /release workflow/i,
+    );
+  });
+
+  it("rejects commit-level Release-As overrides before mutation", () => {
+    expect(() =>
+      validateReleasePleaseCommitMessages([
+        "fix: ordinary patch",
+        "fix: override\n\nRelease-As: 0.2.0",
+      ]),
+    ).toThrow(/Release-As/i);
+  });
+
+  it("accepts ordinary conventional commits without version overrides", () => {
+    expect(
+      validateReleasePleaseCommitMessages([
+        "fix: options boundary",
+        "fix: release workflow",
+      ]),
+    ).toEqual({ commitCount: 2 });
+  });
+
+  it.each([
+    ["root", { "release-as": "0.2.0", packages: { ".": {} } }],
+    ["package", { packages: { ".": { "release-as": "0.2.0" } } }],
+  ])(
+    "rejects a %s configuration-level release-as override",
+    (_name, config) => {
+      expect(() => validateReleasePleaseMutationConfiguration(config)).toThrow(
+        /configuration-level release-as/i,
+      );
+    },
+  );
+
+  it("accepts an override-free Release Please configuration", () => {
+    expect(
+      validateReleasePleaseMutationConfiguration({
+        packages: { ".": { versioning: "always-bump-patch" } },
+      }),
+    ).toEqual({ overrideFree: true });
+  });
+
+  it("accepts a Release Please 17.6.0 machine-readable body", () => {
+    expect(
+      validateReleasePleasePullRequestBody(releaseBody(), "0.1.1"),
+    ).toEqual({ version: "0.1.1" });
+  });
+
+  it("extracts exactly the reviewed patch notes from CHANGELOG", () => {
+    expect(
+      extractReleaseNotesFromChangelog(
+        `# Changelog\n\n${releaseNotes()}\n\n## [0.1.0] - 2026-07-28\n\nPrevious.`,
+        "0.1.1",
+      ),
+    ).toBe(releaseNotes());
+  });
+
+  it("rejects a release PR whose notes differ from CHANGELOG", () => {
+    expect(() =>
+      validateReleasePleasePullRequestBody(
+        releaseBody().replace("supported options", "different options"),
+        "0.1.1",
+        releaseNotes(),
+      ),
+    ).toThrow(/pull request notes/i);
+  });
+
+  it.each([
+    [
+      "the default repository PR template",
+      "## Summary\n\nDescribe the change.",
+    ],
+    [
+      "an overflow link",
+      "This release is too large to preview in the pull request body. View the full release notes here: https://github.com/cometapi-dev/cometapi-node/blob/release-notes/release-notes.md",
+    ],
+    ["one delimiter", ":robot:\n---\n## [0.1.1] (2026-07-29)"],
+    ["the wrong version", releaseBody("0.2.0")],
+  ])("rejects %s as a release PR body", (_name, body) => {
+    expect(() => validateReleasePleasePullRequestBody(body, "0.1.1")).toThrow(
+      /release workflow/i,
+    );
   });
 });
 
@@ -198,6 +471,22 @@ describe("release PR review validation", () => {
         eventName: "push",
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+      }),
+    ).toBe(pullRequest);
+  });
+
+  it("selects the exact merged PR on a verified release recovery rerun", () => {
+    const pullRequest = pullRequestFixture({ merged: true });
+    pullRequest.labels = ["autorelease: tagged"];
+    expect(
+      selectPendingReleasePullRequest([pullRequest], {
+        eventName: "push",
+        releaseBranch: RELEASE_BRANCH,
+        releaseCommit: RELEASE_SHA,
+        releaseExists: true,
+        repository: REPOSITORY,
+        runAttempt: 2,
       }),
     ).toBe(pullRequest);
   });
@@ -208,8 +497,21 @@ describe("release PR review validation", () => {
         eventName: "workflow_dispatch",
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
       }),
     ).toBeNull();
+  });
+
+  it("rejects a rerun attempt that would prepare a release PR", () => {
+    expect(() =>
+      selectPendingReleasePullRequest([pullRequestFixture()], {
+        eventName: "workflow_dispatch",
+        releaseBranch: RELEASE_BRANCH,
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 2,
+      }),
+    ).toThrow(/preparation run attempt/i);
   });
 
   it.each([
@@ -231,6 +533,49 @@ describe("release PR review validation", () => {
       ],
       { eventName: "push", releaseCommit: RELEASE_SHA },
     ],
+    [
+      "an exact candidate plus an alternate pending merge",
+      [
+        pullRequestFixture({ merged: true }),
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRef: "release-cometapi-v0.1.0",
+          mergeCommitSha: "c".repeat(40),
+          number: 30,
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
+    [
+      "a legacy branch",
+      [
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRef: "release-cometapi-v0.1.1",
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
+    [
+      "a v12 branch",
+      [
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRef: "release-please--branches--main",
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
+    [
+      "a fork branch",
+      [
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRepository: "fork/repo",
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
   ])(
     "rejects %s before Release Please runs",
     (_name, pullRequests, overrides) => {
@@ -239,6 +584,7 @@ describe("release PR review validation", () => {
           eventName: overrides.eventName,
           releaseBranch: RELEASE_BRANCH,
           releaseCommit: overrides.releaseCommit,
+          repository: REPOSITORY,
         }),
       ).toThrow(/release workflow/i);
     },
@@ -250,6 +596,23 @@ describe("release PR review validation", () => {
         pullRequest: pullRequestFixture({ merged: true }),
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        reviews: [reviewFixture()],
+        version: "0.1.1",
+      }),
+    ).toEqual({ pullRequestNumber: 31 });
+  });
+
+  it("accepts the reviewed release PR after an exact Release recovery removed the pending label", () => {
+    const pullRequest = pullRequestFixture({ merged: true });
+    pullRequest.labels = ["autorelease: tagged"];
+    expect(
+      validateMergedReleasePullRequest({
+        pullRequest,
+        releaseBranch: RELEASE_BRANCH,
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        requirePendingLabel: false,
         reviews: [reviewFixture()],
         version: "0.1.1",
       }),
@@ -260,7 +623,7 @@ describe("release PR review validation", () => {
     ["stale commit", (review) => (review.commitId = "c".repeat(40))],
     ["non-admin", (review) => (review.permission = "maintain")],
     ["bot", (review) => (review.userType = "Bot")],
-    ["PR author", (review) => (review.login = "release-author")],
+    ["PR author", (review) => (review.login = "github-actions[bot]")],
     ["changes requested", (review) => (review.state = "CHANGES_REQUESTED")],
   ])("rejects a %s review", (_name, mutate) => {
     const review = reviewFixture();
@@ -270,6 +633,7 @@ describe("release PR review validation", () => {
         pullRequest: pullRequestFixture({ merged: true }),
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
         reviews: [review],
         version: "0.1.1",
       }),
@@ -283,6 +647,7 @@ describe("release PR review validation", () => {
         pullRequest: pullRequestFixture({ merged: true }),
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
         reviews: [
           approval,
           { ...approval, id: 11, state: "CHANGES_REQUESTED" },
@@ -291,9 +656,87 @@ describe("release PR review validation", () => {
       }),
     ).toThrow(/human approval/i);
   });
+
+  it("accepts the exact merged release PR after label reconciliation", () => {
+    const pullRequest = pullRequestFixture({ merged: true });
+    pullRequest.labels = ["autorelease: tagged"];
+    expect(
+      validateTaggedReleasePullRequest({
+        pullRequest,
+        releaseBranch: RELEASE_BRANCH,
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        version: "0.1.1",
+      }),
+    ).toEqual({ pullRequestNumber: 31 });
+  });
+
+  it.each([
+    ["missing tagged label", []],
+    [
+      "remaining pending label",
+      ["autorelease: pending", "autorelease: tagged"],
+    ],
+  ])("rejects a tagged release PR with %s", (_name, labels) => {
+    const pullRequest = pullRequestFixture({ merged: true });
+    pullRequest.labels = labels;
+    expect(() =>
+      validateTaggedReleasePullRequest({
+        pullRequest,
+        releaseBranch: RELEASE_BRANCH,
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        version: "0.1.1",
+      }),
+    ).toThrow(/autorelease state/i);
+  });
 });
 
 describe("release workflow trust validation", () => {
+  function currentRunFixture() {
+    return {
+      created_at: "2026-07-29T00:00:00Z",
+      event: "push",
+      head_branch: "main",
+      head_sha: RELEASE_SHA,
+      id: RUN_ID,
+      repository: { full_name: REPOSITORY },
+      run_attempt: 1,
+    };
+  }
+
+  it("accepts exact current run metadata and returns its original creation time", () => {
+    expect(
+      validateReleasePleaseRunMetadata(currentRunFixture(), {
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 1,
+        runId: RUN_ID,
+      }),
+    ).toEqual({ createdAt: "2026-07-29T00:00:00Z" });
+  });
+
+  it.each([
+    ["run ID", (run) => (run.id += 1)],
+    ["attempt", (run) => (run.run_attempt = 2)],
+    ["event", (run) => (run.event = "workflow_dispatch")],
+    ["branch", (run) => (run.head_branch = "feature")],
+    ["SHA", (run) => (run.head_sha = "b".repeat(40))],
+    ["repository", (run) => (run.repository.full_name = "fork/repo")],
+    ["creation time", (run) => (run.created_at = "not-a-date")],
+  ])("rejects mismatched current run %s", (_name, mutate) => {
+    const run = currentRunFixture();
+    mutate(run);
+    expect(() =>
+      validateReleasePleaseRunMetadata(run, {
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 1,
+        runId: RUN_ID,
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
   it("accepts the exact successful first-attempt main run", () => {
     expect(
       validateReleaseWorkflowRun(workflowRunFixture(), {
@@ -318,7 +761,6 @@ describe("release workflow trust validation", () => {
     ["workflow name", (event) => (event.workflow_run.name = "Other")],
     ["workflow path", (event) => (event.workflow_run.path = "other.yml")],
     ["workflow SHA", (event) => (event.workflow_run.head_sha = "b".repeat(40))],
-    ["rerun", (event) => (event.workflow_run.run_attempt = 2)],
   ])("rejects a hostile or stale %s", (_name, mutate) => {
     const event = workflowRunFixture();
     mutate(event);
@@ -328,6 +770,241 @@ describe("release workflow trust validation", () => {
         repository: REPOSITORY,
         workflowName: "Release Please",
         workflowPath: ".github/workflows/release-please.yml",
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
+  it("accepts an exact successful recovery rerun", () => {
+    const event = workflowRunFixture();
+    event.workflow_run.run_attempt = 2;
+    expect(
+      validateReleaseWorkflowRun(event, {
+        checkedOutSha: RELEASE_SHA,
+        repository: REPOSITORY,
+        workflowName: "Release Please",
+        workflowPath: ".github/workflows/release-please.yml",
+      }),
+    ).toEqual({ releaseCommit: RELEASE_SHA, runAttempt: 2, runId: RUN_ID });
+  });
+
+  it.each([0, "2", 1.5])("rejects invalid run attempt %j", (runAttempt) => {
+    const event = workflowRunFixture();
+    event.workflow_run.run_attempt = runAttempt;
+    expect(() =>
+      validateReleaseWorkflowRun(event, {
+        checkedOutSha: RELEASE_SHA,
+        repository: REPOSITORY,
+        workflowName: "Release Please",
+        workflowPath: ".github/workflows/release-please.yml",
+      }),
+    ).toThrow(/run attempt/i);
+  });
+
+  it("requires an exact immutable release published during the same run before recovery", () => {
+    expect(
+      validateReleasePresenceBeforeAction({
+        attempts: [attemptEvidenceFixture(1)],
+        expectedReleaseNotes: releaseNotes(),
+        release: releaseFixture(),
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 2,
+        runCreatedAt: "2026-07-29T00:00:00Z",
+        runId: RUN_ID,
+        tagCommit: RELEASE_SHA,
+        version: "0.1.1",
+      }),
+    ).toEqual({ exists: true, releaseSourceAttempt: 1 });
+  });
+
+  it.each([
+    ["first attempt", { runAttempt: 1 }],
+    ["pre-run publication", { runCreatedAt: "2026-07-29T00:02:00Z" }],
+    ["missing tag", { tagCommit: null }],
+    [
+      "release outside the prior action step",
+      { release: releaseFixture({ publishedAt: "2026-07-29T00:01:31Z" }) },
+    ],
+  ])("rejects a %s release recovery", (_name, overrides) => {
+    expect(() =>
+      validateReleasePresenceBeforeAction({
+        attempts: [attemptEvidenceFixture(1)],
+        expectedReleaseNotes: releaseNotes(),
+        release: releaseFixture(),
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 2,
+        runCreatedAt: "2026-07-29T00:00:00Z",
+        runId: RUN_ID,
+        tagCommit: RELEASE_SHA,
+        version: "0.1.1",
+        ...overrides,
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
+  it.each([
+    [
+      "skipped Release Please step",
+      (attempts) => (attempts[0].jobs[0].steps[0].conclusion = "skipped"),
+    ],
+    ["wrong run ID", (attempts) => (attempts[0].jobs[0].run_id = RUN_ID + 1)],
+    [
+      "wrong head SHA",
+      (attempts) => (attempts[0].jobs[0].head_sha = "b".repeat(40)),
+    ],
+  ])("rejects recovery attempt evidence with a %s", (_name, mutate) => {
+    const attempts = [attemptEvidenceFixture(1)];
+    mutate(attempts);
+    expect(() =>
+      validateReleasePresenceBeforeAction({
+        attempts,
+        expectedReleaseNotes: releaseNotes(),
+        release: releaseFixture(),
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 2,
+        runCreatedAt: "2026-07-29T00:00:00Z",
+        runId: RUN_ID,
+        tagCommit: RELEASE_SHA,
+        version: "0.1.1",
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
+  it("accepts an absent release before any exact attempt", () => {
+    expect(
+      validateReleasePresenceBeforeAction({
+        attempts: [],
+        expectedReleaseNotes: releaseNotes(),
+        release: null,
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 1,
+        runCreatedAt: "2026-07-29T00:00:00Z",
+        runId: RUN_ID,
+        tagCommit: null,
+        version: "0.1.1",
+      }),
+    ).toEqual({ exists: false });
+  });
+
+  it("accepts a Release Please failure after it created the exact immutable release", () => {
+    expect(
+      validateReleasePleaseCompletion({
+        actionResult: { outcome: "failure" },
+        attempts: [attemptEvidenceFixture(1, { conclusion: "failure" })],
+        expectedReleaseNotes: releaseNotes(),
+        release: releaseFixture(),
+        releaseCommit: RELEASE_SHA,
+        releaseExistedBeforeAction: false,
+        repository: REPOSITORY,
+        runAttempt: 1,
+        runCreatedAt: "2026-07-29T00:00:00Z",
+        runId: RUN_ID,
+        tagCommit: RELEASE_SHA,
+        version: "0.1.1",
+      }),
+    ).toMatchObject({
+      actionOutcome: "failure",
+      recovered: true,
+      releaseCreated: true,
+      releaseExistedBeforeAction: false,
+      releaseSourceAttempt: 1,
+      tagName: "v0.1.1",
+    });
+  });
+
+  it("accepts a later attempt that creates the release after a pre-mutation failure", () => {
+    expect(
+      validateReleasePleaseCompletion({
+        actionResult: {
+          htmlUrl: releaseUrl(),
+          outcome: "success",
+          releaseCreated: true,
+          releasedPaths: ["."],
+          sha: RELEASE_SHA,
+          tagName: "v0.1.1",
+          version: "0.1.1",
+        },
+        attempts: [
+          attemptEvidenceFixture(1, {
+            completedAt: "2026-07-29T00:00:10Z",
+            conclusion: "failure",
+            startedAt: "2026-07-29T00:00:05Z",
+          }),
+          attemptEvidenceFixture(2),
+        ],
+        expectedReleaseNotes: releaseNotes(),
+        release: releaseFixture(),
+        releaseCommit: RELEASE_SHA,
+        releaseExistedBeforeAction: false,
+        repository: REPOSITORY,
+        runAttempt: 2,
+        runCreatedAt: "2026-07-29T00:00:00Z",
+        runId: RUN_ID,
+        tagCommit: RELEASE_SHA,
+        version: "0.1.1",
+      }),
+    ).toMatchObject({
+      actionOutcome: "success",
+      recovered: false,
+      releaseExistedBeforeAction: false,
+      releaseSourceAttempt: 2,
+    });
+  });
+
+  it.each([
+    ["success", true],
+    ["failure", true],
+  ])(
+    "accepts an exact pre-existing release when the recovery action reports %s",
+    (outcome, recovered) => {
+      expect(
+        validateReleasePleaseCompletion({
+          actionResult: { outcome, releaseCreated: false },
+          attempts: [
+            attemptEvidenceFixture(1),
+            attemptEvidenceFixture(2, {
+              completedAt: "2026-07-29T00:02:30Z",
+              conclusion: outcome,
+              startedAt: "2026-07-29T00:02:00Z",
+            }),
+          ],
+          expectedReleaseNotes: releaseNotes(),
+          release: releaseFixture(),
+          releaseCommit: RELEASE_SHA,
+          releaseExistedBeforeAction: true,
+          repository: REPOSITORY,
+          runAttempt: 2,
+          runCreatedAt: "2026-07-29T00:00:00Z",
+          runId: RUN_ID,
+          tagCommit: RELEASE_SHA,
+          version: "0.1.1",
+        }),
+      ).toMatchObject({
+        actionOutcome: outcome,
+        recovered,
+        releaseSourceAttempt: 1,
+      });
+    },
+  );
+
+  it("rejects an action failure that did not create the release", () => {
+    expect(() =>
+      validateReleasePleaseCompletion({
+        actionResult: { outcome: "failure" },
+        attempts: [attemptEvidenceFixture(1, { conclusion: "failure" })],
+        expectedReleaseNotes: releaseNotes(),
+        release: null,
+        releaseCommit: RELEASE_SHA,
+        releaseExistedBeforeAction: false,
+        repository: REPOSITORY,
+        runAttempt: 1,
+        runCreatedAt: "2026-07-29T00:00:00Z",
+        runId: RUN_ID,
+        tagCommit: null,
+        version: "0.1.1",
       }),
     ).toThrow(/release workflow/i);
   });
@@ -352,14 +1029,25 @@ describe("release workflow trust validation", () => {
   });
 
   it.each([
+    ["schema", (result) => (result.schemaVersion = 1)],
+    ["action outcome", (result) => (result.actionOutcome = "cancelled")],
     ["release_created", (result) => (result.releaseCreated = false)],
     ["repository", (result) => (result.repository = "fork/repo")],
     ["run ID", (result) => (result.runId += 1)],
-    ["run attempt", (result) => (result.runAttempt = 2)],
+    ["run attempt", (result) => (result.runAttempt += 1)],
+    ["recovery flag", (result) => (result.recovered = true)],
+    ["recovery flag type", (result) => (result.recovered = "false")],
+    [
+      "pre-action release flag type",
+      (result) => (result.releaseExistedBeforeAction = "false"),
+    ],
+    ["release source attempt", (result) => (result.releaseSourceAttempt = 2)],
     ["SHA", (result) => (result.sha = "b".repeat(40))],
     ["tag", (result) => (result.tagName = "v0.2.0")],
     ["version", (result) => (result.version = "0.2.0")],
     ["URL", (result) => (result.htmlUrl = `${releaseUrl()}-other`)],
+    ["workflow name", (result) => (result.workflowName = "Other")],
+    ["workflow path", (result) => (result.workflowPath = "other.yml")],
   ])("rejects a mismatched action result %s", (_name, mutate) => {
     const result = actionResultFixture();
     mutate(result);
@@ -373,12 +1061,72 @@ describe("release workflow trust validation", () => {
         workflowName: "Release Please",
         workflowPath: ".github/workflows/release-please.yml",
       }),
-    ).toThrow(/release workflow/i);
+    ).toThrow(/release (?:please|workflow)/i);
   });
+
+  it("accepts an exact run-bound recovery artifact", () => {
+    const result = actionResultFixture();
+    result.actionOutcome = "failure";
+    result.recovered = true;
+    result.releaseExistedBeforeAction = true;
+    result.releaseSourceAttempt = 1;
+    result.runAttempt = 2;
+    expect(
+      validateReleasePleaseActionResult(result, {
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 2,
+        runId: RUN_ID,
+        version: "0.1.1",
+        workflowName: "Release Please",
+        workflowPath: ".github/workflows/release-please.yml",
+      }),
+    ).toMatchObject({ tag: "v0.1.1", version: "0.1.1" });
+  });
+
+  it("accepts an exact second-attempt artifact that created the release", () => {
+    const result = actionResultFixture();
+    result.releaseSourceAttempt = 2;
+    result.runAttempt = 2;
+    expect(
+      validateReleasePleaseActionResult(result, {
+        releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+        runAttempt: 2,
+        runId: RUN_ID,
+        version: "0.1.1",
+        workflowName: "Release Please",
+        workflowPath: ".github/workflows/release-please.yml",
+      }),
+    ).toMatchObject({ tag: "v0.1.1", version: "0.1.1" });
+  });
+
+  it.each([
+    [1, 2],
+    [2, 1],
+  ])(
+    "rejects attempt %i evidence for workflow attempt %i",
+    (artifactAttempt, workflowAttempt) => {
+      const result = actionResultFixture();
+      result.runAttempt = artifactAttempt;
+      expect(() =>
+        validateReleasePleaseActionResult(result, {
+          releaseCommit: RELEASE_SHA,
+          repository: REPOSITORY,
+          runAttempt: workflowAttempt,
+          runId: RUN_ID,
+          version: "0.1.1",
+          workflowName: "Release Please",
+          workflowPath: ".github/workflows/release-please.yml",
+        }),
+      ).toThrow(/run attempt/i);
+    },
+  );
 
   it("accepts the exact immutable Release Please release", () => {
     expect(
       validateGitHubRelease(releaseFixture(), {
+        expectedBody: releaseNotes(),
         htmlUrl: releaseUrl(),
         releaseCommit: RELEASE_SHA,
         tag: "v0.1.1",
@@ -396,11 +1144,13 @@ describe("release workflow trust validation", () => {
     ["wrong URL", (release) => (release.html_url = `${releaseUrl()}-other`)],
     ["unpublished", (release) => (release.published_at = null)],
     ["manual author", (release) => (release.author.login = "maintainer")],
+    ["unreviewed notes", (release) => (release.body = "changed notes")],
   ])("rejects a %s GitHub release", (_name, mutate) => {
     const release = releaseFixture();
     mutate(release);
     expect(() =>
       validateGitHubRelease(release, {
+        expectedBody: releaseNotes(),
         htmlUrl: releaseUrl(),
         releaseCommit: RELEASE_SHA,
         tag: "v0.1.1",
@@ -412,6 +1162,7 @@ describe("release workflow trust validation", () => {
   it("rejects a tag that does not resolve to the workflow commit", () => {
     expect(() =>
       validateGitHubRelease(releaseFixture(), {
+        expectedBody: releaseNotes(),
         htmlUrl: releaseUrl(),
         releaseCommit: RELEASE_SHA,
         tag: "v0.1.1",
@@ -419,4 +1170,57 @@ describe("release workflow trust validation", () => {
       }),
     ).toThrow(/tag commit/i);
   });
+
+  it("rejects a same-name fork PR introduced before the final mutation check", () => {
+    expect(() =>
+      validateOpenReleasePullRequestCollisions(
+        [
+          {
+            baseRef: "main",
+            headRef: RELEASE_BRANCH,
+            headRepository: "fork/repo",
+            headSha: "c".repeat(40),
+            state: "open",
+          },
+        ],
+        {
+          branchSha: null,
+          releaseBranch: RELEASE_BRANCH,
+          repository: REPOSITORY,
+        },
+      ),
+    ).toThrow(/collide/i);
+  });
+
+  it("accepts only the release label transition after the action", () => {
+    const before = [pullRequestFixture({ merged: true })];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].labels = ["autorelease: tagged"];
+    expect(
+      validatePostActionPullRequestSnapshot(before, after, {
+        releasePullRequestNumber: 31,
+      }),
+    ).toEqual({ unchanged: true });
+  });
+
+  it.each([
+    ["body", (pullRequest) => (pullRequest.body = "changed")],
+    ["head SHA", (pullRequest) => (pullRequest.headSha = "c".repeat(40))],
+    [
+      "new pull request",
+      (_pullRequest, after) => after.push({ ...after[0], number: 32 }),
+    ],
+  ])(
+    "rejects a post-action pull request snapshot with a changed %s",
+    (_name, mutate) => {
+      const before = [pullRequestFixture({ merged: true })];
+      const after = JSON.parse(JSON.stringify(before));
+      mutate(after[0], after);
+      expect(() =>
+        validatePostActionPullRequestSnapshot(before, after, {
+          releasePullRequestNumber: 31,
+        }),
+      ).toThrow(/snapshot/i);
+    },
+  );
 });

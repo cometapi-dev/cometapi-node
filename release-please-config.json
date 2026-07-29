@@ -7,7 +7,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "versioning": "default",
+      "versioning": "always-bump-patch",
       "prerelease": false,
       "component": "cometapi",
       "skip-github-release": false,

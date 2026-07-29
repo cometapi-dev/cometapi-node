@@ -120,7 +120,7 @@ function fixture(version = "0.1.0-alpha.1") {
             }
           : {
               "release-type": "node",
-              versioning: "default",
+              versioning: "always-bump-patch",
               prerelease: false,
               component: "cometapi",
               "skip-github-release": false,
@@ -698,7 +698,7 @@ describe("release metadata validation", () => {
             "chore${scope}: release${component} ${version}",
           "release-type": "node",
           "skip-github-release": false,
-          versioning: "default",
+          versioning: "always-bump-patch",
         },
       },
     };
@@ -713,8 +713,8 @@ describe("release metadata validation", () => {
   it.each([
     ["component", (config) => delete config.packages["."].component],
     [
-      "default versioning",
-      (config) => (config.packages["."].versioning = "prerelease"),
+      "patch-only versioning",
+      (config) => (config.packages["."].versioning = "default"),
     ],
     [
       "GitHub release",
@@ -748,7 +748,7 @@ describe("release metadata validation", () => {
             "chore${scope}: release${component} ${version}",
           "release-type": "node",
           "skip-github-release": false,
-          versioning: "default",
+          versioning: "always-bump-patch",
         },
       },
     };
@@ -777,7 +777,7 @@ describe("release metadata validation", () => {
             "chore${scope}: release${component} ${version}",
           "release-type": "node",
           "skip-github-release": false,
-          versioning: "default",
+          versioning: "always-bump-patch",
         },
       },
     };
