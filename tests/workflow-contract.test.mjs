@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { URL } from "node:url";
 
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 const workflowNames = [
   "ci.yml",
@@ -29,6 +30,7 @@ const releaseWorkflowValidation = readFileSync(
   new URL("../scripts/release-workflow-validation.mjs", import.meta.url),
   "utf8",
 );
+const releasePleaseWorkflow = parse(workflows["release-please.yml"]);
 
 function workflow(name) {
   const contents = workflows[name];
@@ -202,9 +204,17 @@ describe("GitHub Actions workflow contract", () => {
       "continue-on-error: ${{ steps.preflight.outputs.mode == 'release' }}",
     );
     expect(contents).not.toContain("token:");
+    expect(releasePleaseWorkflow.on.push).toEqual({
+      branches: ["main"],
+      paths: ["package.json"],
+    });
     expect(contents).toMatch(/^ {2}workflow_dispatch:$/m);
     expect(contents).toContain("group: release-please-main");
     expect(releasePlease).toContain("RUN_ATTEMPT: ${{ github.run_attempt }}");
+    expect(releasePlease).toContain(
+      'git diff --name-only "$before_sha" "$GITHUB_SHA"',
+    );
+    expect(releasePlease).toContain("classifyPushReleasePresence");
     expect(releasePlease).toContain("TRIGGERING_REF: ${{ github.ref }}");
     expect(releasePlease).toContain(
       'if [[ "$TRIGGERING_REF" != "refs/heads/main" ]]; then',
