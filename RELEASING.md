@@ -454,12 +454,15 @@ executed README examples against the packed artifact, release-PR/tag/changelog/
 manifest version agreement, reviewed security and compatibility status, and
 post-publication registry evidence.
 
-The 0.1.1 repair uses one explicit `last-release-sha` boundary at the immutable
-0.1.0 release commit, `1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca`. It exists
-only to prevent pre-0.1.0 features from being rediscovered while the normal
-Release Please history is repaired. The generated 0.1.1 PR must remove that
-temporary override before merge; future releases must discover the Release
-Please-created `v0.1.1` boundary normally.
+The 0.1.1 repair used one explicit `last-release-sha` boundary at the immutable
+0.1.0 release commit, `1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca`, only for
+the initial preparation dispatch. That dispatch proved the normal action-owned
+0.1.1 PR without rediscovering pre-0.1.0 features. A normal topic PR then removes
+the temporary override and records final candidate approval on `main`; a fresh
+preparation dispatch refreshes the action-owned release PR from that state. The
+finalization commit must use a releasable `fix:` subject so Release Please
+updates the generated notes and cannot treat the old branch as unchanged.
+Future releases discover the Release Please-created `v0.1.1` boundary normally.
 
 Before enabling the repaired workflow, create the standard
 `autorelease: pending` and `autorelease: tagged` labels if they are still
@@ -494,8 +497,13 @@ The `GITHUB_TOKEN`-created PR's `pull_request` CI starts in GitHub's
 approval-required state. A human with write access must explicitly authorize
 those workflow runs before their results can satisfy required checks; this is
 separate from the final-head administrator review.
-Remove the one-cycle `last-release-sha` from that branch, complete the
-release-ready documentation, run the full matrix on its final head, and obtain
+After the finalization topic PR removes the one-cycle `last-release-sha` and
+completes the release-ready documentation on `main`, start a new first-attempt
+manual dispatch. Require it to refresh the same action-owned release PR with
+only the four generated release files and release notes identical to the
+generated CHANGELOG section. Require the refreshed release commit to have the
+post-finalization `main` commit as its direct parent; an unchanged older head is
+not a refreshed candidate. Run the full matrix on that final head and obtain
 approval from a different human repository administrator. The release-PR merge
 creates the `push` run that may tag and publish. A later push cannot tag an older
 outstanding release PR; its merge SHA must equal the triggering SHA before
@@ -518,13 +526,12 @@ mutate the release branch during that window. The workflow repeats those checks
 after the action and stops publication on any drift, but it cannot delete or
 replace an immutable Release created during an external race.
 
-The stale branch
-`release-please--branches--main--components--cometapi` at
-`3f0949e5c0ccd0923d10595437f7a315f013af7c` is the failed run's evidence, not a
-release candidate. Immediately before replacing or deleting it, confirm that
-it still contains the documented generated 0.2.0 state, has no associated open
-PR, and contains no independent work. Do not delete or rewrite any other
-branch.
+The stale branch at `3f0949e5c0ccd0923d10595437f7a315f013af7c` was revalidated
+as the failed run's generated 0.2.0 evidence, with no associated open PR or
+independent work, then deleted. Release Please recreated the canonical
+`release-please--branches--main--components--cometapi` branch for the
+action-owned 0.1.1 PR. Do not use that branch as a 0.2 starting point or delete
+or rewrite any other branch.
 
 For 0.1.1, `always-bump-patch` keeps every releasable Conventional Commit on the
 0.1.x maintenance line; changing that strategy requires a separately authorized
@@ -643,11 +650,9 @@ layers:
   `3f0949e5c0ccd0923d10595437f7a315f013af7c`, a generated `0.2.0` draft, but
   before creating a pull request. It did not modify `main`, create a tag, or
   publish a package. `RELEASE_PLEASE_ENABLED` was set to `false` before the
-  closeout push; the branch is retained as failure evidence and must not be
-  merged or treated as the start of 0.2. Release Please remains disabled until
-  the authorized 0.1.1 repair is merged, the stale branch is revalidated and
-  removed, and the normal action-created PR path is ready for one first-attempt
-  preparation run.
+  closeout push. During the authorized 0.1.1 repair, the branch was revalidated
+  as failure-only evidence with no associated PR or independent work, deleted,
+  and then recreated by Release Please for the normal action-owned 0.1.1 PR.
 
 ## Verification record
 

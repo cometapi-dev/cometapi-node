@@ -243,6 +243,12 @@ describe("GitHub Actions workflow contract", () => {
       "release-please-result-${{ github.run_id }}-${{ github.run_attempt }}",
     );
     expect(releasePlease).toContain("validateReleasePleaseActionResult");
+    expect(releasePlease).toContain(
+      'branch_parent="$(git rev-parse "${release_ref}^")"',
+    );
+    expect(releasePlease).toContain(
+      'if [[ "$branch_parent" != "$GITHUB_SHA" ]]',
+    );
     expect(releasePlease).toContain("schemaVersion: 2");
     expect(releasePlease).toContain("actionOutcome");
     expect(releasePlease).toContain("recovered");
@@ -268,9 +274,7 @@ describe("GitHub Actions workflow contract", () => {
       ),
     ).toBeLessThan(releasePlease.indexOf("Run Release Please"));
 
-    expect(releasePleaseConfig["last-release-sha"]).toBe(
-      "1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca",
-    );
+    expect(releasePleaseConfig).not.toHaveProperty("last-release-sha");
     expect(releasePleaseConfig.label).toBe("autorelease: pending");
     expect(releasePleaseConfig["release-label"]).toBe("autorelease: tagged");
     expect(releasePleaseConfig["separate-pull-requests"]).toBe(true);

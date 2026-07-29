@@ -86,13 +86,17 @@ manually against the exact merged release commit, and the publish workflow
 completed exact-artifact verification, the bounded live smoke, npm OIDC
 publication, and registry verification.
 
-Release Please remains disabled between releases after its post-0.1.0 run
-generated an unreviewed `0.2.0` temporary-branch commit and then failed to create
-a pull request. The temporary branch is failure evidence only. Do not merge it
-or use it as a 0.2 starting point. The authorized 0.1.1 maintenance task repairs
-the workflow around the current read-only-default Actions baseline with
+Release Please remains disabled between release operations after its post-0.1.0
+run generated an unreviewed `0.2.0` temporary-branch commit and then failed to
+create a pull request. That branch was verified as failure-only evidence before
+the authorized 0.1.1 operation replaced it with the action-owned patch branch.
+Do not use either branch as a 0.2 starting point. The 0.1.1 maintenance task
+repairs the workflow around the current read-only-default Actions baseline with
 action-created pull requests enabled; any later enablement still requires an
 explicit maintainer request and the fail-closed checks in `RELEASING.md`.
+For this repair, merge the anchor-removal finalization PR first, then use a new
+first-attempt manual dispatch to refresh the same action-owned 0.1.1 PR before
+its final CI and human-owner review.
 
 ## Product Contract
 

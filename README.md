@@ -9,10 +9,10 @@ defaulting the client to CometAPI.
 > The supported API is limited to the contract-tested 0.1 surface documented
 > here and in [COMPATIBILITY.md](./COMPATIBILITY.md).
 >
-> A `0.1.1` maintenance release is being prepared to correct the public options
-> contract and restore the normal Release Please path. It is not released until
-> the immutable release, npm OIDC publication, and public-registry verification
-> complete.
+> **Approved maintenance candidate:** `0.1.1` is approved for npm publication
+> through the reviewed Release Please path. This approval is not a release
+> claim: `0.1.1` remains unpublished until the immutable release, npm OIDC
+> publication, and public-registry verification complete.
 
 ## Supported 0.1 surface
 
@@ -58,9 +58,9 @@ For source-checkout testing, retain and verify one exact tarball:
 ```bash
 mkdir -p .artifacts
 npm pack --pack-destination .artifacts
-npm run test:package -- --tarball .artifacts/cometapi-0.1.0.tgz
-npm run test:examples -- --tarball .artifacts/cometapi-0.1.0.tgz
-npm run test:fixtures -- --tarball .artifacts/cometapi-0.1.0.tgz
+npm run test:package -- --tarball .artifacts/cometapi-$(node -p 'require("./package.json").version').tgz
+npm run test:examples -- --tarball .artifacts/cometapi-$(node -p 'require("./package.json").version').tgz
+npm run test:fixtures -- --tarball .artifacts/cometapi-$(node -p 'require("./package.json").version').tgz
 ```
 
 Install that path in a separate consumer when needed. Do not treat a locally

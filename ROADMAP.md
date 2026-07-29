@@ -106,30 +106,33 @@ Actions to create or approve pull requests at that time. The run did not change
 `main`, create a tag or published Release, or publish to npm.
 
 The 0.1.1 maintenance work makes the component and stable-patch policy
-explicit, anchors the one repair cycle at the exact 0.1.0 release commit, and
-restores Release Please ownership of the reviewed version/changelog PR plus the
-immutable tag and GitHub Release. The scoped Release Please job now uses the
-repository's enabled Actions PR authorization to create and label the normal PR;
+explicit, used the exact 0.1.0 release commit to anchor only the initial repair
+dispatch, and restores Release Please ownership of the reviewed
+version/changelog PR plus the immutable tag and GitHub Release. A normal topic
+PR removes that temporary anchor and records final candidate approval before a
+fresh preparation dispatch refreshes the action-owned release PR. The scoped
+Release Please job now uses the repository's enabled Actions PR authorization
+to create and label the normal PR;
 a human owner reviews its exact final head. Default workflow permissions remain
 read-only, bot approval is never accepted, and the workflow does not modify the
 repository setting. Patch-only versioning prevents an implicit 0.2 bump during
-this maintenance window. The temporary anchor must be removed in that release
-PR before merge. The explicit component identifies the temporary branch but,
-for this root package, does not enter the Release Please title or public tag;
+this maintenance window. The explicit component identifies the temporary
+branch but, for this root package, does not enter the Release Please title or public tag;
 the only accepted patch tag is `v0.1.1`. Publication is triggered from the
 successful attempt-qualified Release Please push run and independently verifies
 that run's schema-v2 result artifact, default-branch commit, tag, immutable
 Release, and package artifact before the existing bounded live smoke and npm
-OIDC steps. A
-push rerun is bounded to the same run ID, SHA, candidate, Release-producing
+OIDC steps. A push rerun is bounded to the same run ID, SHA, candidate,
+Release-producing
 attempt, and exact Release state; manual preparation remains attempt-1-only.
-The Release notes must equal the reviewed `CHANGELOG` entry. The post-merge run also
-requires an administrator's approval on the release PR's final head.
+The Release notes must equal the reviewed `CHANGELOG` entry. The post-merge run
+also requires an administrator's approval on the release PR's final head.
 
-The exact stale branch remains failure evidence until its contents, lack of an
-open PR, and lack of independent work are reconfirmed immediately before
-cleanup. It must never be merged or treated as the start of 0.2. Repository
-foundation may become Complete only after the real 0.1.1 release flow, public
+The exact stale 0.2 branch was revalidated as failure-only evidence with no
+associated PR or independent work, then deleted. Release Please recreated the
+canonical branch for the action-owned 0.1.1 PR; it must never be treated as the
+start of 0.2. Repository foundation may become Complete only after the real
+0.1.1 release flow, public
 registry installation, and a separate post-release documentation PR recording
 ROADMAP and RELEASING evidence succeed. Until then,
 `RELEASE_PLEASE_ENABLED` remains a temporary release-operation control,
