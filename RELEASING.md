@@ -526,13 +526,12 @@ mutate the release branch during that window. The workflow repeats those checks
 after the action and stops publication on any drift, but it cannot delete or
 replace an immutable Release created during an external race.
 
-The stale branch
-`release-please--branches--main--components--cometapi` at
-`3f0949e5c0ccd0923d10595437f7a315f013af7c` is the failed run's evidence, not a
-release candidate. Immediately before replacing or deleting it, confirm that
-it still contains the documented generated 0.2.0 state, has no associated open
-PR, and contains no independent work. Do not delete or rewrite any other
-branch.
+The stale branch at `3f0949e5c0ccd0923d10595437f7a315f013af7c` was revalidated
+as the failed run's generated 0.2.0 evidence, with no associated open PR or
+independent work, then deleted. Release Please recreated the canonical
+`release-please--branches--main--components--cometapi` branch for the
+action-owned 0.1.1 PR. Do not use that branch as a 0.2 starting point or delete
+or rewrite any other branch.
 
 For 0.1.1, `always-bump-patch` keeps every releasable Conventional Commit on the
 0.1.x maintenance line; changing that strategy requires a separately authorized
@@ -651,11 +650,9 @@ layers:
   `3f0949e5c0ccd0923d10595437f7a315f013af7c`, a generated `0.2.0` draft, but
   before creating a pull request. It did not modify `main`, create a tag, or
   publish a package. `RELEASE_PLEASE_ENABLED` was set to `false` before the
-  closeout push; the branch is retained as failure evidence and must not be
-  merged or treated as the start of 0.2. Release Please remains disabled until
-  the authorized 0.1.1 repair is merged, the stale branch is revalidated and
-  removed, and the normal action-created PR path is ready for one first-attempt
-  preparation run.
+  closeout push. During the authorized 0.1.1 repair, the branch was revalidated
+  as failure-only evidence with no associated PR or independent work, deleted,
+  and then recreated by Release Please for the normal action-owned 0.1.1 PR.
 
 ## Verification record
 

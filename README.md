@@ -58,9 +58,9 @@ For source-checkout testing, retain and verify one exact tarball:
 ```bash
 mkdir -p .artifacts
 npm pack --pack-destination .artifacts
-npm run test:package -- --tarball .artifacts/cometapi-0.1.1.tgz
-npm run test:examples -- --tarball .artifacts/cometapi-0.1.1.tgz
-npm run test:fixtures -- --tarball .artifacts/cometapi-0.1.1.tgz
+npm run test:package -- --tarball .artifacts/cometapi-$(node -p 'require("./package.json").version').tgz
+npm run test:examples -- --tarball .artifacts/cometapi-$(node -p 'require("./package.json").version').tgz
+npm run test:fixtures -- --tarball .artifacts/cometapi-$(node -p 'require("./package.json").version').tgz
 ```
 
 Install that path in a separate consumer when needed. Do not treat a locally

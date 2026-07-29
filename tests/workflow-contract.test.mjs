@@ -243,6 +243,12 @@ describe("GitHub Actions workflow contract", () => {
       "release-please-result-${{ github.run_id }}-${{ github.run_attempt }}",
     );
     expect(releasePlease).toContain("validateReleasePleaseActionResult");
+    expect(releasePlease).toContain(
+      'branch_parent="$(git rev-parse "${release_ref}^")"',
+    );
+    expect(releasePlease).toContain(
+      'if [[ "$branch_parent" != "$GITHUB_SHA" ]]',
+    );
     expect(releasePlease).toContain("schemaVersion: 2");
     expect(releasePlease).toContain("actionOutcome");
     expect(releasePlease).toContain("recovered");

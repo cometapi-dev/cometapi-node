@@ -658,6 +658,11 @@ jobs:
             "+refs/heads/${RELEASE_BRANCH}:refs/remotes/origin/${RELEASE_BRANCH}"
           release_ref="refs/remotes/origin/${RELEASE_BRANCH}"
           branch_sha="$(git rev-parse "$release_ref")"
+          branch_parent="$(git rev-parse "${release_ref}^")"
+          if [[ "$branch_parent" != "$GITHUB_SHA" ]]; then
+            echo "The prepared Release Please branch is not based directly on current main." >&2
+            exit 1
+          fi
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&per_page=100" \
             | jq 'add' > "$pull_requests_file"

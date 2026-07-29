@@ -128,10 +128,11 @@ attempt, and exact Release state; manual preparation remains attempt-1-only.
 The Release notes must equal the reviewed `CHANGELOG` entry. The post-merge run
 also requires an administrator's approval on the release PR's final head.
 
-The exact stale branch remains failure evidence until its contents, lack of an
-open PR, and lack of independent work are reconfirmed immediately before
-cleanup. It must never be merged or treated as the start of 0.2. Repository
-foundation may become Complete only after the real 0.1.1 release flow, public
+The exact stale 0.2 branch was revalidated as failure-only evidence with no
+associated PR or independent work, then deleted. Release Please recreated the
+canonical branch for the action-owned 0.1.1 PR; it must never be treated as the
+start of 0.2. Repository foundation may become Complete only after the real
+0.1.1 release flow, public
 registry installation, and a separate post-release documentation PR recording
 ROADMAP and RELEASING evidence succeed. Until then,
 `RELEASE_PLEASE_ENABLED` remains a temporary release-operation control,
