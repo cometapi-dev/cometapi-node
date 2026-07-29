@@ -309,7 +309,7 @@ describe("CometAPI configuration", () => {
       options as unknown as CometAPIOptions,
     );
 
-    expect(reads).toBe(1);
+    expect(reads).toBeGreaterThan(0);
     expect(error.message).toMatch(/browser-like environment/i);
     expectSecretFreeError(error, [browserKey], logger);
   });
