@@ -116,39 +116,53 @@ For normal stable patches, Release Please owns the reviewed version/changelog
 PR and the immutable tag and GitHub Release. The configuration uses an explicit
 `cometapi` component and `always-bump-patch` versioning so the authorized 0.1
 maintenance window cannot enter 0.2 implicitly and a root package does not fall
-into the single-package tag-discovery ambiguity encountered during 0.1.0.
+into the single-package tag-discovery ambiguity encountered during 0.1.0. The
+workflow also rejects commit-level `Release-As:` notes before mutation because
+Release Please applies those overrides before its patch versioning strategy.
 Because a
 GitHub Release created with the default `GITHUB_TOKEN` does not start a separate
 `release.published` workflow, publication is chained from the successful
 Release Please workflow. The handoff accepts only the canonical repository's
-successful first-attempt `push` run for `main` at the still-current exact `main`
-SHA. The release workflow records `release_created`, SHA, tag, version, URL,
-repository, workflow identity, run ID, and attempt in an exact-run artifact.
-Publication downloads and validates that artifact before checking the tag and
+successful attempt-qualified `push` run for `main` at the still-current exact
+`main` SHA. The release workflow records normalized action outcome, recovery
+state, pre-action Release presence, the exact Release-producing attempt, SHA,
+tag, version, URL, repository, workflow identity, run ID, and attempt in a
+schema-v2 exact-run artifact. Publication
+downloads and validates only that attempt's artifact before checking the tag and
 immutable Release. A first-attempt manual run is explicitly release-inert and
-must succeed only after validating one action-created patch PR; its event cannot
-enter publication. Any successful `push` run without the exact Release
-Please-created result, tag, and immutable Release fails before live or registry
-access. The release outcome and package artifact are verified independently.
+must succeed only after independently validating one canonical action-created
+patch PR; its event cannot enter publication. Any successful `push` run without
+the exact result artifact, tag, and immutable Release fails before live or
+registry access. The release outcome and package artifact are verified
+independently.
 
 Release Please and publication remain separate trust domains. Release Please
 does not receive npm OIDC permission; `id-token: write` remains limited to the
 protected publish job. Repository variables gate both flows, and reruns remain
 fail-closed on exact tag, artifact, dist-tag, integrity, and provenance state.
-Release Please itself rejects attempt 2 or later before repository mutation;
-the explicitly enabled preparation path uses a new manual dispatch with Release
-creation disabled, while only a new `push` run can create the Release and enter
-publication. The authorized Actions setting lets the default token create the
-PR, but bot review cannot satisfy the gate. A merged release PR is accepted for
-tagging only after a distinct repository administrator approved its final head.
-The workflow checks the triggering SHA against the fetched `main` tip both at
-checkout and immediately before Release Please mutation, so an older queued run
-cannot release a newer default-branch commit.
-It also rejects any pending merged release PR whose merge commit is not the
-current push SHA, and scans the complete pending merged set so a legacy, fork,
-alternate, older, or additional PR cannot be tagged. Manual dispatch is
-therefore release-inert: it may prepare one canonical action-created PR only
-when no merged release PR is awaiting a tag.
+Manual preparation rejects attempt 2 or later; restart uses a new dispatch with
+Release creation disabled. A `push` rerun is bounded to the same run ID, SHA,
+candidate, and final-head review. It may retry while the tag and Release remain
+absent. If an earlier attempt already created the Release, recovery accepts only
+the exact bot-authored immutable Release at that SHA whose publication time
+falls inside exactly one earlier Release Please step from the same run.
+Release-mode action failure is tolerated only long enough to
+prove that postcondition, reconcile the release PR to `autorelease: tagged`, and
+write the attempt-qualified artifact. The authorized Actions setting lets the
+default token create the PR; the resulting approval-required CI still needs a
+human with write access to authorize execution, and bot review cannot satisfy
+the release gate. A merged
+release PR is accepted for tagging only after a distinct repository
+administrator approved its final head. The workflow checks the triggering SHA,
+release-branch snapshot, all open and closed PR identities, current review, and
+tag/Release state immediately before Release Please mutation, then rechecks
+`main`, the release branch, the complete PR snapshot, exact final-head approval,
+and the Release body against `CHANGELOG` before accepting the result. It rejects any
+pending merged release PR whose merge commit is not the current push SHA and
+scans the complete pending merged set so a legacy, fork, alternate, older, or
+additional PR cannot be tagged. Manual dispatch is therefore release-inert: it
+may prepare one canonical action-created PR only when no merged release PR is
+awaiting a tag.
 
 ## Testing layers
 

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { URL } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -173,6 +174,7 @@ describe("GitHub Actions workflow contract", () => {
     expect(liveSmoke).not.toMatch(/^\s+[^:\n]+: write$/m);
 
     const releasePlease = job(workflow("release-please.yml"), "release-please");
+    expect(releasePlease).toMatch(/^ {6}actions: read$/m);
     expect(releasePlease).toMatch(/^ {6}contents: write$/m);
     expect(releasePlease).toMatch(/^ {6}issues: write$/m);
     expect(releasePlease).toMatch(/^ {6}pull-requests: write$/m);
@@ -191,10 +193,13 @@ describe("GitHub Actions workflow contract", () => {
       "googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7",
     );
     expect(releasePlease).toContain(
-      "skip-github-release: ${{ github.event_name == 'workflow_dispatch' }}",
+      "skip-github-release: ${{ steps.preflight.outputs.mode == 'prepare' }}",
     );
     expect(releasePlease).toContain(
-      "skip-github-pull-request: ${{ github.event_name == 'push' }}",
+      "skip-github-pull-request: ${{ steps.preflight.outputs.mode == 'release' }}",
+    );
+    expect(releasePlease).toContain(
+      "continue-on-error: ${{ steps.preflight.outputs.mode == 'release' }}",
     );
     expect(contents).not.toContain("token:");
     expect(contents).toMatch(/^ {2}workflow_dispatch:$/m);
@@ -210,10 +215,27 @@ describe("GitHub Actions workflow contract", () => {
         releasePlease,
         /git fetch --no-tags origin \+refs\/heads\/main:refs\/remotes\/origin\/main/g,
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
     expect(releasePlease).toContain("validateMergedReleasePullRequest");
     expect(releasePlease).toContain("validatePreparedReleasePullRequest");
     expect(releasePlease).toContain("selectPendingReleasePullRequest");
+    expect(releasePlease).toContain("validateReleasePleaseCommitMessages");
+    expect(releasePlease).toContain(
+      "validateReleasePleaseMutationConfiguration",
+    );
+    expect(releasePlease).toContain("validateReleasePleaseRunMetadata");
+    expect(releasePlease).toContain("validateReleasePresenceBeforeAction");
+    expect(releasePlease).toContain("validateReleasePleaseCompletion");
+    expect(releasePlease).toContain("validateTaggedReleasePullRequest");
+    expect(releasePlease).toContain(
+      'if [[ "$EVENT_NAME" == "workflow_dispatch" && "$RUN_ATTEMPT" != "1" ]]; then',
+    );
+    expect(releasePlease).not.toContain(
+      "Release Please reruns are forbidden; start a new first-attempt run.",
+    );
+    expect(releasePlease.indexOf("npm ci --ignore-scripts")).toBeLessThan(
+      releasePlease.indexOf("node scripts/validate-release.mjs"),
+    );
     expect(releasePlease).toMatch(
       /if: steps\.preflight\.outputs\.mode == 'release'[\s\S]*node scripts\/validate-release\.mjs \\\n[\s\S]*--require-final \\\n[\s\S]*--require-releasable-docs/,
     );
@@ -221,6 +243,30 @@ describe("GitHub Actions workflow contract", () => {
       "release-please-result-${{ github.run_id }}-${{ github.run_attempt }}",
     );
     expect(releasePlease).toContain("validateReleasePleaseActionResult");
+    expect(releasePlease).toContain("schemaVersion: 2");
+    expect(releasePlease).toContain("actionOutcome");
+    expect(releasePlease).toContain("recovered");
+    expect(releasePlease).toContain("releaseExistedBeforeAction");
+    expect(releasePlease).toContain("releaseSourceAttempt");
+    expect(releaseWorkflowValidation).toContain(
+      "validateReleaseAttemptEvidence",
+    );
+    expect(releasePlease).toContain("validatePostActionPullRequestSnapshot");
+    expect(releasePlease).toContain("extractReleaseNotesFromChangelog");
+    expect(releasePlease).toContain("/attempts/${attempt}/jobs?per_page=100");
+    expect(releasePlease).toContain("release-pulls-before-action.json");
+    expect(releasePlease).toContain("autorelease%3A%20pending");
+    expect(releasePlease).toContain("labels[]=autorelease: tagged");
+    expect(
+      releasePlease.indexOf(
+        "Reconfirm the branch, candidate, and review before mutation",
+      ),
+    ).toBeLessThan(releasePlease.indexOf("Run Release Please"));
+    expect(
+      releasePlease.indexOf(
+        "Reconfirm the exact release state before mutation",
+      ),
+    ).toBeLessThan(releasePlease.indexOf("Run Release Please"));
 
     expect(releasePleaseConfig["last-release-sha"]).toBe(
       "1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca",
@@ -237,6 +283,23 @@ describe("GitHub Actions workflow contract", () => {
       "skip-github-release": false,
       versioning: "always-bump-patch",
     });
+  });
+
+  it("parses every inline Node workflow validator", () => {
+    const blocks = matches(
+      workflow("release-please.yml"),
+      /node --input-type=module <<'EOF'\n([\s\S]*?)\n\s+EOF/g,
+    );
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const block of blocks) {
+      const checked = spawnSync(
+        process.execPath,
+        ["--input-type=module", "--check", "-"],
+        { encoding: "utf8", input: block[1] },
+      );
+      expect(checked.stderr).toBe("");
+      expect(checked.status).toBe(0);
+    }
   });
 
   it("starts publication only from the completed Release Please workflow", () => {
@@ -260,10 +323,28 @@ describe("GitHub Actions workflow contract", () => {
     expect(verify).toContain(
       "release-please-result-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}",
     );
+    expect(verify).toContain("run-id: ${{ github.event.workflow_run.id }}");
+    const resultDownload = verify.slice(
+      verify.indexOf("Download the exact Release Please result"),
+      verify.indexOf("Reject an untrusted Release Please workflow run"),
+    );
+    expect(resultDownload).not.toContain("pattern:");
+    expect(resultDownload).not.toContain("merge-multiple:");
+    expect(resultDownload).not.toContain("release-please-result-1");
+    expect(resultDownload).not.toContain("github.run_attempt");
     expect(verify).toContain("validateReleasePleaseActionResult");
     expect(verify).toContain("validateGitHubRelease");
+    expect(verify).toContain("runAttempt: run.runAttempt");
+    expect(verify).toContain("runId: run.runId");
     expect(releaseWorkflowValidation).toContain("run?.run_attempt");
-    expect(releaseWorkflowValidation).toContain("result.releaseCreated");
+    expect(releaseWorkflowValidation).toContain(
+      'requireEqual(result.schemaVersion, 2, "result schema version")',
+    );
+    expect(releaseWorkflowValidation).toContain("result.actionOutcome");
+    expect(releaseWorkflowValidation).toContain("result.recovered");
+    expect(releaseWorkflowValidation).toContain(
+      "result.releaseExistedBeforeAction",
+    );
     expect(releaseWorkflowValidation).toContain("release?.immutable");
     expect(releaseWorkflowValidation).toContain("release?.target_commitish");
 
@@ -288,11 +369,15 @@ describe("GitHub Actions workflow contract", () => {
     );
     expect(releasePlease).toContain("branch_version=");
     expect(releasePlease).toContain("manifest_version=");
-    expect(releasePlease).toContain("pullRequest.head?.sha === branchSha");
+    expect(releasePlease).toContain("pullRequest.headSha === branchSha");
     expect(releasePlease).toContain("validateReleasePleaseBranchState");
     expect(releasePlease).toContain(
       "pulls?state=closed&base=main&per_page=100",
     );
+    expect(
+      matches(releasePlease, /pulls\?state=all&base=main&per_page=100/g).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(releasePlease).toContain("validateOpenReleasePullRequestCollisions");
     expect(releasePlease).not.toContain(
       "pulls?state=closed&head=cometapi-dev%3A${RELEASE_BRANCH}",
     );

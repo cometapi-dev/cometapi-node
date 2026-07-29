@@ -18,8 +18,9 @@ jobs:
     name: Prepare a reviewed release pull request or GitHub release
     if: vars.RELEASE_PLEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
+      actions: read
       contents: write
       issues: write
       pull-requests: write
@@ -32,13 +33,23 @@ jobs:
           ref: ${{ github.sha }}
       - name: Require the exact current main commit
         env:
+          EVENT_NAME: ${{ github.event_name }}
           EXPECTED_SHA: ${{ github.sha }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
           TRIGGERING_REF: ${{ github.ref }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$TRIGGERING_REF" != "refs/heads/main" ]]; then
             echo "Release Please must run from refs/heads/main." >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$RUN_ATTEMPT" != "1" ]]; then
+            echo "Release Please preparation reruns are forbidden; start a new dispatch." >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" != "workflow_dispatch" && "$EVENT_NAME" != "push" ]]; then
+            echo "Release Please received an unsupported event." >&2
             exit 1
           fi
           if [[ "$(git rev-parse HEAD)" != "$EXPECTED_SHA" ]]; then
@@ -50,20 +61,156 @@ jobs:
             echo "main moved after this Release Please run was triggered." >&2
             exit 1
           fi
-      - name: Reject rerun attempts
-        env:
-          RUN_ATTEMPT: ${{ github.run_attempt }}
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Install validation dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Validate Release Please configuration before mutation
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$RUN_ATTEMPT" != "1" ]]; then
-            echo "Release Please reruns are forbidden; start a new first-attempt run." >&2
+          node scripts/validate-release.mjs
+          node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { validateReleasePleaseMutationConfiguration } from "./scripts/release-workflow-validation.mjs";
+
+          validateReleasePleaseMutationConfiguration(
+            JSON.parse(readFileSync("release-please-config.json", "utf8")),
+          );
+          EOF
+      - name: Reject commit-level version overrides
+        env:
+          STABLE_BOUNDARY: 1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$STABLE_BOUNDARY" HEAD; then
+            echo "The stable 0.1.0 boundary is not an ancestor of main." >&2
             exit 1
           fi
-      - name: Reject an unrelated stale Release Please branch
+          commits_file="$RUNNER_TEMP/release-please-commits"
+          git log -z --format='%B' "${STABLE_BOUNDARY}..HEAD" > "$commits_file"
+          COMMITS_FILE="$commits_file" node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { validateReleasePleaseCommitMessages } from "./scripts/release-workflow-validation.mjs";
+
+          const messages = readFileSync(process.env.COMMITS_FILE, "utf8")
+            .split("\0")
+            .filter((message) => message !== "");
+          validateReleasePleaseCommitMessages(messages);
+          EOF
+      - name: Inspect the exact release state for a push run
+        id: release-state
+        if: github.event_name == 'push'
         env:
-          RELEASE_BRANCH: release-please--branches--main--components--cometapi
           GH_TOKEN: ${{ github.token }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_file="$RUNNER_TEMP/release-please-run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" > "$run_file"
+          run_created_at="$(RUN_FILE="$run_file" node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { validateReleasePleaseRunMetadata } from "./scripts/release-workflow-validation.mjs";
+
+          const result = validateReleasePleaseRunMetadata(
+            JSON.parse(readFileSync(process.env.RUN_FILE, "utf8")),
+            {
+              releaseCommit: process.env.GITHUB_SHA,
+              repository: process.env.GITHUB_REPOSITORY,
+              runAttempt: Number(process.env.RUN_ATTEMPT),
+              runId: Number(process.env.RUN_ID),
+            },
+          );
+          process.stdout.write(result.createdAt);
+          EOF
+          )"
+
+          version="$(node --print 'require("./package.json").version')"
+          tag="v${version}"
+          attempts_file="$RUNNER_TEMP/release-please-prior-attempts.json"
+          printf '[]\n' > "$attempts_file"
+          if (( RUN_ATTEMPT > 1 )); then
+            for attempt in $(seq 1 $((RUN_ATTEMPT - 1))); do
+              attempt_file="$RUNNER_TEMP/release-please-attempt-${attempt}.json"
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${attempt}/jobs?per_page=100" \
+                > "$attempt_file"
+              next_attempts="$RUNNER_TEMP/release-please-prior-attempts-next.json"
+              jq --argjson attempt "$attempt" --slurpfile jobs "$attempt_file" \
+                '. + [{attempt: $attempt, jobs: $jobs[0].jobs}]' \
+                "$attempts_file" > "$next_attempts"
+              mv "$next_attempts" "$attempts_file"
+            done
+          fi
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          state_file="$RUNNER_TEMP/release-please-presence.json"
+          release_file="$RUNNER_TEMP/release-please-release-before.json"
+          # shellcheck disable=SC2016
+          gh api graphql \
+            -f owner="$owner" \
+            -f name="$repository_name" \
+            -f tag="$tag" \
+            -f qualifiedName="refs/tags/${tag}" \
+            -f query='query($owner: String!, $name: String!, $tag: String!, $qualifiedName: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } ref(qualifiedName: $qualifiedName) { name } } }' \
+            > "$state_file"
+
+          release_exists="$(jq -r '.data.repository.release != null' "$state_file")"
+          tag_exists="$(jq -r '.data.repository.ref != null' "$state_file")"
+          tag_commit=""
+          if [[ "$release_exists" == "true" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" > "$release_file"
+          else
+            printf 'null\n' > "$release_file"
+          fi
+          if [[ "$tag_exists" == "true" ]]; then
+            git fetch --no-tags origin \
+              "+refs/tags/${tag}:refs/tags/${tag}"
+            tag_commit="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+          fi
+
+          ATTEMPTS_FILE="$attempts_file" RELEASE_FILE="$release_file" \
+            RUN_CREATED_AT="$run_created_at" RUN_ID="$RUN_ID" \
+            TAG_COMMIT="$tag_commit" VERSION="$version" \
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateReleasePresenceBeforeAction,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          validateReleasePresenceBeforeAction({
+            attempts: JSON.parse(
+              readFileSync(process.env.ATTEMPTS_FILE, "utf8"),
+            ),
+            expectedReleaseNotes: extractReleaseNotesFromChangelog(
+              readFileSync("CHANGELOG.md", "utf8"),
+              process.env.VERSION,
+            ),
+            release: JSON.parse(readFileSync(process.env.RELEASE_FILE, "utf8")),
+            releaseCommit: process.env.GITHUB_SHA,
+            repository: process.env.GITHUB_REPOSITORY,
+            runAttempt: Number(process.env.RUN_ATTEMPT),
+            runCreatedAt: process.env.RUN_CREATED_AT,
+            runId: Number(process.env.RUN_ID),
+            tagCommit: process.env.TAG_COMMIT === "" ? null : process.env.TAG_COMMIT,
+            version: process.env.VERSION,
+          });
+          EOF
+          echo "exists=${release_exists}" >> "$GITHUB_OUTPUT"
+          echo "run-created-at=${run_created_at}" >> "$GITHUB_OUTPUT"
+      - name: Reject an unrelated stale Release Please branch
+        id: branch-state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: release-please--branches--main--components--cometapi
+          RELEASE_EXISTS: ${{ steps.release-state.outputs.exists || 'false' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -74,7 +221,6 @@ jobs:
           manifest_version=""
           main_version="$(node --print 'require("./package.json").version')"
           pull_requests_file="$RUNNER_TEMP/release-please-pulls.json"
-          printf '[]\n' > "$pull_requests_file"
           remote_ref="refs/heads/${RELEASE_BRANCH}"
           if git ls-remote --exit-code --heads origin "$remote_ref" >/dev/null; then
             branch_exists="true"
@@ -101,80 +247,79 @@ jobs:
             node --input-type=module <<'EOF'
           import { spawnSync } from "node:child_process";
           import { readFileSync } from "node:fs";
-          import { validateReleasePleaseBranchState } from "./scripts/release-workflow-validation.mjs";
+          import {
+            validateOpenReleasePullRequestCollisions,
+            validateReleasePleaseBranchState,
+          } from "./scripts/release-workflow-validation.mjs";
 
           const branchSha = process.env.BRANCH_SHA;
           const rawPullRequests = JSON.parse(
             readFileSync(process.env.PULL_REQUESTS_FILE, "utf8"),
           );
-          const pullRequests = rawPullRequests
-            .filter(
-              (pullRequest) =>
-                pullRequest.base?.ref === "main" &&
-                pullRequest.head?.ref === process.env.RELEASE_BRANCH &&
-                pullRequest.head?.sha === branchSha,
-            )
-            .map((pullRequest) => ({
-              author: pullRequest.user?.login,
-              baseRef: pullRequest.base?.ref,
-              body: pullRequest.body,
-              headRef: pullRequest.head?.ref,
-              headRepository: pullRequest.head?.repo?.full_name,
-              headSha: pullRequest.head?.sha,
-              labels: pullRequest.labels?.map((label) => label.name),
-              mergeCommitIsAncestor:
-                typeof pullRequest.merge_commit_sha === "string" &&
-                /^[0-9a-f]{40}$/.test(pullRequest.merge_commit_sha) &&
-                spawnSync(
-                  "git",
-                  [
-                    "merge-base",
-                    "--is-ancestor",
-                    pullRequest.merge_commit_sha,
-                    "refs/remotes/origin/main",
-                  ],
-                  { stdio: "ignore" },
-                ).status === 0,
-              mergeCommitSha: pullRequest.merge_commit_sha,
-              mergedAt: pullRequest.merged_at,
-              number: pullRequest.number,
-              state: pullRequest.state,
-              title: pullRequest.title,
-            }));
-          const conflictingOpenPullRequests = rawPullRequests.filter(
-            (pullRequest) =>
-              pullRequest.base?.ref === "main" &&
-              pullRequest.head?.ref === process.env.RELEASE_BRANCH &&
-              pullRequest.state === "open" &&
-              (pullRequest.head?.repo?.full_name !== process.env.GITHUB_REPOSITORY ||
-                pullRequest.head?.sha !== branchSha),
-          );
-
+          const pullRequests = rawPullRequests.map((pullRequest) => ({
+            author: pullRequest.user?.login,
+            baseRef: pullRequest.base?.ref,
+            body: pullRequest.body,
+            headRef: pullRequest.head?.ref,
+            headRepository: pullRequest.head?.repo?.full_name,
+            headSha: pullRequest.head?.sha,
+            labels: pullRequest.labels?.map((label) => label.name),
+            mergeCommitIsAncestor:
+              typeof pullRequest.merge_commit_sha === "string" &&
+              /^[0-9a-f]{40}$/.test(pullRequest.merge_commit_sha) &&
+              spawnSync(
+                "git",
+                [
+                  "merge-base",
+                  "--is-ancestor",
+                  pullRequest.merge_commit_sha,
+                  "refs/remotes/origin/main",
+                ],
+                { stdio: "ignore" },
+              ).status === 0,
+            mergeCommitSha: pullRequest.merge_commit_sha,
+            mergedAt: pullRequest.merged_at,
+            number: pullRequest.number,
+            state: pullRequest.state,
+            title: pullRequest.title,
+          }));
+          validateOpenReleasePullRequestCollisions(pullRequests, {
+            branchSha: branchSha === "" ? null : branchSha,
+            releaseBranch: process.env.RELEASE_BRANCH,
+            repository: process.env.GITHUB_REPOSITORY,
+          });
           validateReleasePleaseBranchState({
             branchSha,
             branchVersion: process.env.BRANCH_VERSION,
-            conflictingOpenPullRequests,
             exists: process.env.BRANCH_EXISTS === "true",
             isAncestor: process.env.IS_ANCESTOR === "true",
             mainVersion: process.env.MAIN_VERSION,
             manifestVersion: process.env.MANIFEST_VERSION,
-            pullRequests,
+            pullRequests: pullRequests.filter(
+              (pullRequest) =>
+                pullRequest.baseRef === "main" &&
+                pullRequest.headRef === process.env.RELEASE_BRANCH &&
+                pullRequest.headSha === branchSha,
+            ),
             releaseBranch: process.env.RELEASE_BRANCH,
             repository: process.env.GITHUB_REPOSITORY,
+            requirePendingLabel: process.env.RELEASE_EXISTS !== "true",
           });
           EOF
-      - name: Classify the run and require review for a merged release PR
+          echo "branch-exists=${branch_exists}" >> "$GITHUB_OUTPUT"
+          echo "branch-sha=${branch_sha}" >> "$GITHUB_OUTPUT"
+      - name: Classify the release operation
         id: preflight
         env:
           EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_BRANCH: release-please--branches--main--components--cometapi
+          RELEASE_EXISTS: ${{ steps.release-state.outputs.exists || 'false' }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         shell: bash
         run: |
           set -euo pipefail
           release_pulls_file="$RUNNER_TEMP/release-pulls.json"
-          reviews_file="$RUNNER_TEMP/release-reviews.json"
-          permissions_file="$RUNNER_TEMP/reviewer-permissions.json"
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/pulls?state=closed&base=main&per_page=100" \
             | jq 'add' > "$release_pulls_file"
@@ -202,7 +347,9 @@ jobs:
             eventName: process.env.EVENT_NAME,
             releaseBranch: process.env.RELEASE_BRANCH,
             releaseCommit: process.env.GITHUB_SHA,
+            releaseExists: process.env.RELEASE_EXISTS === "true",
             repository: process.env.GITHUB_REPOSITORY,
+            runAttempt: Number(process.env.RUN_ATTEMPT),
           });
           process.stdout.write(
             releasePullRequest === null ? "" : String(releasePullRequest.number),
@@ -217,31 +364,149 @@ jobs:
           fi
           echo "mode=release" >> "$GITHUB_OUTPUT"
           echo "release-pr-number=${release_pr_number}" >> "$GITHUB_OUTPUT"
+      - name: Require final release state before mutation
+        if: steps.preflight.outputs.mode == 'release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/validate-release.mjs \
+            --require-final \
+            --require-releasable-docs
+      - name: Reconfirm the branch, candidate, and review before mutation
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_BRANCH_EXISTS: ${{ steps.branch-state.outputs.branch-exists }}
+          EXPECTED_BRANCH_SHA: ${{ steps.branch-state.outputs.branch-sha }}
+          EXPECTED_MODE: ${{ steps.preflight.outputs.mode }}
+          EXPECTED_PR_NUMBER: ${{ steps.preflight.outputs.release-pr-number }}
+          EXPECTED_RELEASE_EXISTS: ${{ steps.release-state.outputs.exists || 'false' }}
+          EXPECTED_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: release-please--branches--main--components--cometapi
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$EXPECTED_SHA" ]]; then
+            echo "main moved during Release Please preflight." >&2
+            exit 1
+          fi
 
+          branch_exists="false"
+          branch_sha=""
+          remote_ref="refs/heads/${RELEASE_BRANCH}"
+          if git ls-remote --exit-code --heads origin "$remote_ref" >/dev/null; then
+            branch_exists="true"
+            git fetch --no-tags origin \
+              "+${remote_ref}:refs/remotes/origin/${RELEASE_BRANCH}"
+            branch_sha="$(git rev-parse "refs/remotes/origin/${RELEASE_BRANCH}")"
+          fi
+          if [[ "$branch_exists" != "$EXPECTED_BRANCH_EXISTS" || "$branch_sha" != "$EXPECTED_BRANCH_SHA" ]]; then
+            echo "The Release Please branch changed after initial validation." >&2
+            exit 1
+          fi
+
+          release_pulls_file="$RUNNER_TEMP/release-pulls-reconfirmed.json"
           gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/pulls/${release_pr_number}/reviews?per_page=100" \
-            | jq 'add' > "$reviews_file"
-          printf '{}\n' > "$permissions_file"
-          while IFS= read -r reviewer; do
-            permission="$(gh api \
-              "repos/${GITHUB_REPOSITORY}/collaborators/${reviewer}/permission" \
-              --jq '.permission' 2>/dev/null || printf 'none')"
-            next_permissions="$RUNNER_TEMP/reviewer-permissions-next.json"
-            jq --arg reviewer "$reviewer" --arg permission "$permission" \
-              '. + {($reviewer): $permission}' \
-              "$permissions_file" > "$next_permissions"
-            mv "$next_permissions" "$permissions_file"
-          done < <(jq -r '.[].user.login' "$reviews_file" | sort -u)
-
-          PERMISSIONS_FILE="$permissions_file" RELEASE_PULLS_FILE="$release_pulls_file" \
-            RELEASE_PR_NUMBER="$release_pr_number" REVIEWS_FILE="$reviews_file" \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=all&base=main&per_page=100" \
+            | jq 'add' > "$release_pulls_file"
+          BRANCH_SHA="$branch_sha" RELEASE_PULLS_FILE="$release_pulls_file" \
             node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
-          import { validateMergedReleasePullRequest } from "./scripts/release-workflow-validation.mjs";
+          import {
+            extractReleaseNotesFromChangelog,
+            selectPendingReleasePullRequest,
+            validateOpenReleasePullRequestCollisions,
+            validateReleaseCandidatePullRequest,
+          } from "./scripts/release-workflow-validation.mjs";
 
-          const pulls = JSON.parse(readFileSync(process.env.RELEASE_PULLS_FILE, "utf8"));
-          const rawPullRequest = pulls.find(
-            (pullRequest) => pullRequest.number === Number(process.env.RELEASE_PR_NUMBER),
+          const branchSha = process.env.BRANCH_SHA;
+          const pulls = JSON.parse(
+            readFileSync(process.env.RELEASE_PULLS_FILE, "utf8"),
+          ).map((pullRequest) => ({
+            author: pullRequest.user?.login,
+            baseRef: pullRequest.base?.ref,
+            body: pullRequest.body,
+            headRef: pullRequest.head?.ref,
+            headRepository: pullRequest.head?.repo?.full_name,
+            headSha: pullRequest.head?.sha,
+            labels: pullRequest.labels?.map((label) => label.name),
+            mergeCommitSha: pullRequest.merge_commit_sha,
+            mergedAt: pullRequest.merged_at,
+            number: pullRequest.number,
+            state: pullRequest.state,
+            title: pullRequest.title,
+          }));
+          validateOpenReleasePullRequestCollisions(pulls, {
+            branchSha: branchSha === "" ? null : branchSha,
+            releaseBranch: process.env.RELEASE_BRANCH,
+            repository: process.env.GITHUB_REPOSITORY,
+          });
+          const releasePullRequest = selectPendingReleasePullRequest(pulls, {
+            eventName: process.env.EVENT_NAME,
+            releaseBranch: process.env.RELEASE_BRANCH,
+            releaseCommit: process.env.GITHUB_SHA,
+            releaseExists: process.env.EXPECTED_RELEASE_EXISTS === "true",
+            repository: process.env.GITHUB_REPOSITORY,
+            runAttempt: Number(process.env.RUN_ATTEMPT),
+          });
+          const mode = releasePullRequest === null ? "prepare" : "release";
+          if (mode !== process.env.EXPECTED_MODE) {
+            throw new Error("Release workflow candidate changed after preflight.");
+          }
+          if (releasePullRequest !== null) {
+            if (String(releasePullRequest.number) !== process.env.EXPECTED_PR_NUMBER) {
+              throw new Error("Release workflow candidate PR number changed after preflight.");
+            }
+            const version = JSON.parse(readFileSync("package.json", "utf8")).version;
+            validateReleaseCandidatePullRequest({
+              expectedReleaseNotes: extractReleaseNotesFromChangelog(
+                readFileSync("CHANGELOG.md", "utf8"),
+                version,
+              ),
+              pullRequest: releasePullRequest,
+              releaseBranch: process.env.RELEASE_BRANCH,
+              repository: process.env.GITHUB_REPOSITORY,
+              requirePendingLabel: process.env.EXPECTED_RELEASE_EXISTS !== "true",
+              version,
+            });
+          }
+          EOF
+          cp "$release_pulls_file" \
+            "$RUNNER_TEMP/release-pulls-before-action.json"
+
+          if [[ "$EXPECTED_MODE" == "release" ]]; then
+            pull_request_file="$RUNNER_TEMP/release-pull-reconfirmed.json"
+            reviews_file="$RUNNER_TEMP/release-reviews-reconfirmed.json"
+            permissions_file="$RUNNER_TEMP/reviewer-permissions-reconfirmed.json"
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}" \
+              > "$pull_request_file"
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}/reviews?per_page=100" \
+              | jq 'add' > "$reviews_file"
+            printf '{}\n' > "$permissions_file"
+            while IFS= read -r reviewer; do
+              permission="$(gh api \
+                "repos/${GITHUB_REPOSITORY}/collaborators/${reviewer}/permission" \
+                --jq '.permission' 2>/dev/null || printf 'none')"
+              next_permissions="$RUNNER_TEMP/reviewer-permissions-reconfirmed-next.json"
+              jq --arg reviewer "$reviewer" --arg permission "$permission" \
+                '. + {($reviewer): $permission}' \
+                "$permissions_file" > "$next_permissions"
+              mv "$next_permissions" "$permissions_file"
+            done < <(jq -r '.[].user.login' "$reviews_file" | sort -u)
+
+            PERMISSIONS_FILE="$permissions_file" PULL_REQUEST_FILE="$pull_request_file" \
+              REVIEWS_FILE="$reviews_file" node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateMergedReleasePullRequest,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          const rawPullRequest = JSON.parse(
+            readFileSync(process.env.PULL_REQUEST_FILE, "utf8"),
           );
           const permissions = JSON.parse(
             readFileSync(process.env.PERMISSIONS_FILE, "utf8"),
@@ -249,6 +514,10 @@ jobs:
           const reviews = JSON.parse(readFileSync(process.env.REVIEWS_FILE, "utf8"));
           const version = JSON.parse(readFileSync("package.json", "utf8")).version;
           validateMergedReleasePullRequest({
+            expectedReleaseNotes: extractReleaseNotesFromChangelog(
+              readFileSync("CHANGELOG.md", "utf8"),
+              version,
+            ),
             pullRequest: {
               author: rawPullRequest.user?.login,
               baseRef: rawPullRequest.base?.ref,
@@ -266,6 +535,7 @@ jobs:
             releaseBranch: process.env.RELEASE_BRANCH,
             releaseCommit: process.env.GITHUB_SHA,
             repository: process.env.GITHUB_REPOSITORY,
+            requirePendingLabel: process.env.EXPECTED_RELEASE_EXISTS !== "true",
             reviews: reviews.map((review) => ({
               commitId: review.commit_id,
               id: review.id,
@@ -277,88 +547,86 @@ jobs:
             version,
           });
           EOF
-      - name: Require final release state before mutation
-        if: steps.preflight.outputs.mode == 'release'
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/validate-release.mjs \
-            --require-final \
-            --require-releasable-docs
-      - name: Reconfirm main and the release candidate before mutation
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          EXPECTED_MODE: ${{ steps.preflight.outputs.mode }}
-          EXPECTED_PR_NUMBER: ${{ steps.preflight.outputs.release-pr-number }}
-          EXPECTED_SHA: ${{ github.sha }}
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_BRANCH: release-please--branches--main--components--cometapi
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$EXPECTED_SHA" ]]; then
-            echo "main moved during Release Please preflight." >&2
-            exit 1
           fi
-          release_pulls_file="$RUNNER_TEMP/release-pulls-reconfirmed.json"
-          gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/pulls?state=closed&base=main&per_page=100" \
-            | jq 'add' > "$release_pulls_file"
-          RELEASE_PULLS_FILE="$release_pulls_file" node --input-type=module <<'EOF'
+      - name: Reconfirm the exact release state before mutation
+        if: github.event_name == 'push'
+        env:
+          EXPECTED_RELEASE_EXISTS: ${{ steps.release-state.outputs.exists }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_CREATED_AT: ${{ steps.release-state.outputs.run-created-at }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node --print 'require("./package.json").version')"
+          tag="v${version}"
+          attempts_file="$RUNNER_TEMP/release-please-prior-attempts.json"
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          state_file="$RUNNER_TEMP/release-please-presence-reconfirmed.json"
+          release_file="$RUNNER_TEMP/release-please-release-reconfirmed.json"
+          # shellcheck disable=SC2016
+          gh api graphql \
+            -f owner="$owner" \
+            -f name="$repository_name" \
+            -f tag="$tag" \
+            -f qualifiedName="refs/tags/${tag}" \
+            -f query='query($owner: String!, $name: String!, $tag: String!, $qualifiedName: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { id } ref(qualifiedName: $qualifiedName) { name } } }' \
+            > "$state_file"
+          release_exists="$(jq -r '.data.repository.release != null' "$state_file")"
+          tag_exists="$(jq -r '.data.repository.ref != null' "$state_file")"
+          tag_commit=""
+          if [[ "$release_exists" == "true" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" > "$release_file"
+          else
+            printf 'null\n' > "$release_file"
+          fi
+          if [[ "$tag_exists" == "true" ]]; then
+            git fetch --no-tags origin \
+              "+refs/tags/${tag}:refs/tags/${tag}"
+            tag_commit="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+          fi
+          ATTEMPTS_FILE="$attempts_file" RELEASE_FILE="$release_file" \
+            RUN_ID="$RUN_ID" TAG_COMMIT="$tag_commit" VERSION="$version" \
+            node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
           import {
-            selectPendingReleasePullRequest,
-            validateReleaseCandidatePullRequest,
+            extractReleaseNotesFromChangelog,
+            validateReleasePresenceBeforeAction,
           } from "./scripts/release-workflow-validation.mjs";
 
-          const pulls = JSON.parse(
-            readFileSync(process.env.RELEASE_PULLS_FILE, "utf8"),
-          ).map((pullRequest) => ({
-            author: pullRequest.user?.login,
-            baseRef: pullRequest.base?.ref,
-            body: pullRequest.body,
-            headRef: pullRequest.head?.ref,
-            headRepository: pullRequest.head?.repo?.full_name,
-            headSha: pullRequest.head?.sha,
-            labels: pullRequest.labels?.map((label) => label.name),
-            mergeCommitSha: pullRequest.merge_commit_sha,
-            mergedAt: pullRequest.merged_at,
-            number: pullRequest.number,
-            state: pullRequest.state,
-            title: pullRequest.title,
-          }));
-          const releasePullRequest = selectPendingReleasePullRequest(pulls, {
-            eventName: process.env.EVENT_NAME,
-            releaseBranch: process.env.RELEASE_BRANCH,
+          validateReleasePresenceBeforeAction({
+            attempts: JSON.parse(
+              readFileSync(process.env.ATTEMPTS_FILE, "utf8"),
+            ),
+            expectedReleaseNotes: extractReleaseNotesFromChangelog(
+              readFileSync("CHANGELOG.md", "utf8"),
+              process.env.VERSION,
+            ),
+            release: JSON.parse(readFileSync(process.env.RELEASE_FILE, "utf8")),
             releaseCommit: process.env.GITHUB_SHA,
             repository: process.env.GITHUB_REPOSITORY,
+            runAttempt: Number(process.env.RUN_ATTEMPT),
+            runCreatedAt: process.env.RUN_CREATED_AT,
+            runId: Number(process.env.RUN_ID),
+            tagCommit: process.env.TAG_COMMIT === "" ? null : process.env.TAG_COMMIT,
+            version: process.env.VERSION,
           });
-          const mode = releasePullRequest === null ? "prepare" : "release";
-          if (mode !== process.env.EXPECTED_MODE) {
-            throw new Error("Release workflow candidate changed after review preflight.");
-          }
-          if (releasePullRequest !== null) {
-            if (String(releasePullRequest.number) !== process.env.EXPECTED_PR_NUMBER) {
-              throw new Error("Release workflow candidate PR number changed after preflight.");
-            }
-            const version = JSON.parse(readFileSync("package.json", "utf8")).version;
-            validateReleaseCandidatePullRequest({
-              pullRequest: releasePullRequest,
-              releaseBranch: process.env.RELEASE_BRANCH,
-              repository: process.env.GITHUB_REPOSITORY,
-              version,
-            });
-          }
           EOF
+          if [[ "$release_exists" != "$EXPECTED_RELEASE_EXISTS" ]]; then
+            echo "The exact tag or Release changed after preflight." >&2
+            exit 1
+          fi
       - name: Run Release Please
         id: release
+        continue-on-error: ${{ steps.preflight.outputs.mode == 'release' }}
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          skip-github-release: ${{ github.event_name == 'workflow_dispatch' }}
-          skip-github-pull-request: ${{ github.event_name == 'push' }}
+          skip-github-release: ${{ steps.preflight.outputs.mode == 'prepare' }}
+          skip-github-pull-request: ${{ steps.preflight.outputs.mode == 'release' }}
       - name: Validate the prepared release pull request
         if: steps.preflight.outputs.mode == 'prepare'
         env:
@@ -369,29 +637,72 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$PRS_CREATED" != "true" ]]; then
-            echo "Release Please did not create or update exactly one release PR." >&2
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$GITHUB_SHA" ]]; then
+            echo "main changed while Release Please prepared the release PR." >&2
             exit 1
           fi
-          release_pr_number="$(node --input-type=module <<'EOF'
-          const pullRequests = JSON.parse(process.env.PRS);
-          if (pullRequests.length !== 1 || !Number.isInteger(pullRequests[0]?.number)) {
-            throw new Error("Release Please did not return exactly one release PR.");
-          }
-          process.stdout.write(String(pullRequests[0].number));
-          EOF
-          )"
+          case "$PRS_CREATED" in
+            true) prs_created="true" ;;
+            false | "") prs_created="false" ;;
+            *)
+              echo "Release Please returned an invalid prs_created output." >&2
+              exit 1
+              ;;
+          esac
+          pull_requests_file="$RUNNER_TEMP/prepared-release-pulls.json"
           pull_request_file="$RUNNER_TEMP/prepared-release-pull.json"
           pull_files_file="$RUNNER_TEMP/prepared-release-files.json"
           changelog_file="$RUNNER_TEMP/prepared-release-changelog.md"
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${release_pr_number}" > "$pull_request_file"
-          gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/pulls/${release_pr_number}/files?per_page=100" \
-            | jq 'add' > "$pull_files_file"
           git fetch --no-tags origin \
             "+refs/heads/${RELEASE_BRANCH}:refs/remotes/origin/${RELEASE_BRANCH}"
           release_ref="refs/remotes/origin/${RELEASE_BRANCH}"
           branch_sha="$(git rev-parse "$release_ref")"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=main&per_page=100" \
+            | jq 'add' > "$pull_requests_file"
+          release_pr_number="$(BRANCH_SHA="$branch_sha" \
+            PULL_REQUESTS_FILE="$pull_requests_file" node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { validateOpenReleasePullRequestCollisions } from "./scripts/release-workflow-validation.mjs";
+
+          const pulls = JSON.parse(
+            readFileSync(process.env.PULL_REQUESTS_FILE, "utf8"),
+          ).map((pullRequest) => ({
+            baseRef: pullRequest.base?.ref,
+            headRef: pullRequest.head?.ref,
+            headRepository: pullRequest.head?.repo?.full_name,
+            headSha: pullRequest.head?.sha,
+            number: pullRequest.number,
+            state: pullRequest.state,
+          }));
+          validateOpenReleasePullRequestCollisions(pulls, {
+            branchSha: process.env.BRANCH_SHA,
+            releaseBranch: process.env.RELEASE_BRANCH,
+            repository: process.env.GITHUB_REPOSITORY,
+          });
+          const candidates = pulls.filter(
+            (pullRequest) =>
+              pullRequest.baseRef === "main" &&
+              pullRequest.headRef === process.env.RELEASE_BRANCH &&
+              pullRequest.headRepository === process.env.GITHUB_REPOSITORY &&
+              pullRequest.headSha === process.env.BRANCH_SHA &&
+              pullRequest.state === "open",
+          );
+          if (candidates.length !== 1) {
+            throw new Error(
+              "Release workflow preparation requires exactly one canonical open release PR.",
+            );
+          }
+          process.stdout.write(String(candidates[0].number));
+          EOF
+          )"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${release_pr_number}" \
+            > "$pull_request_file"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls/${release_pr_number}/files?per_page=100" \
+            | jq 'add' > "$pull_files_file"
+
           branch_version="$(git show "$release_ref:package.json" | node -e \
             'let value="";process.stdin.on("data",chunk=>value+=chunk).on("end",()=>process.stdout.write(JSON.parse(value).version))')"
           manifest_version="$(git show "$release_ref:.release-please-manifest.json" | node -e \
@@ -405,7 +716,7 @@ jobs:
           BRANCH_SHA="$branch_sha" BRANCH_VERSION="$branch_version" \
             CHANGELOG_FILE="$changelog_file" MANIFEST_VERSION="$manifest_version" \
             PACKAGE_LOCK_PACKAGE_VERSION="$package_lock_package_version" \
-            PACKAGE_LOCK_VERSION="$package_lock_version" \
+            PACKAGE_LOCK_VERSION="$package_lock_version" PRS_CREATED_NORMALIZED="$prs_created" \
             PULL_FILES_FILE="$pull_files_file" PULL_REQUEST_FILE="$pull_request_file" \
             node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
@@ -417,9 +728,12 @@ jobs:
           const files = JSON.parse(
             readFileSync(process.env.PULL_FILES_FILE, "utf8"),
           ).map((file) => file.filename);
+          const actionPullRequests =
+            process.env.PRS === "" ? [] : JSON.parse(process.env.PRS);
           const mainVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
           validatePreparedReleasePullRequest({
-            actionPullRequests: JSON.parse(process.env.PRS),
+            actionPullRequests,
+            actionPullRequestsCreated: process.env.PRS_CREATED_NORMALIZED === "true",
             branchSha: process.env.BRANCH_SHA,
             branchVersion: process.env.BRANCH_VERSION,
             changelog: readFileSync(process.env.CHANGELOG_FILE, "utf8"),
@@ -446,51 +760,343 @@ jobs:
             repository: process.env.GITHUB_REPOSITORY,
           });
           EOF
-      - name: Record the exact Release Please release result
-        if: steps.preflight.outputs.mode == 'release'
+      - name: Verify and record the exact release result
+        if: ${{ !cancelled() && steps.preflight.outputs.mode == 'release' }}
         env:
+          ACTION_OUTCOME: ${{ steps.release.outcome }}
+          EXPECTED_BRANCH_EXISTS: ${{ steps.branch-state.outputs.branch-exists }}
+          EXPECTED_BRANCH_SHA: ${{ steps.branch-state.outputs.branch-sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: release-please--branches--main--components--cometapi
           RELEASE_CREATED: ${{ steps.release.outputs.release_created }}
+          RELEASE_EXISTED_BEFORE_ACTION: ${{ steps.release-state.outputs.exists }}
           RELEASE_HTML_URL: ${{ steps.release.outputs.html_url }}
+          RELEASE_PR_NUMBER: ${{ steps.preflight.outputs.release-pr-number }}
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
           RELEASE_TAG_NAME: ${{ steps.release.outputs.tag_name }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          RELEASES_CREATED: ${{ steps.release.outputs.releases_created }}
           RELEASED_PATHS: ${{ steps.release.outputs.paths_released }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_CREATED_AT: ${{ steps.release-state.outputs.run-created-at }}
+          RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-please-result
-          node --input-type=module <<'EOF'
-          import { readFileSync, writeFileSync } from "node:fs";
-          import { validateReleasePleaseActionResult } from "./scripts/release-workflow-validation.mjs";
+          version="$(node --print 'require("./package.json").version')"
+          tag="v${version}"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$GITHUB_SHA" ]]; then
+            echo "main changed while Release Please was running." >&2
+            exit 1
+          fi
+          branch_exists="false"
+          branch_sha=""
+          remote_ref="refs/heads/${RELEASE_BRANCH}"
+          if git ls-remote --exit-code --heads origin "$remote_ref" >/dev/null; then
+            branch_exists="true"
+            git fetch --no-tags origin \
+              "+${remote_ref}:refs/remotes/origin/${RELEASE_BRANCH}"
+            branch_sha="$(git rev-parse "refs/remotes/origin/${RELEASE_BRANCH}")"
+          fi
+          if [[ "$branch_exists" != "$EXPECTED_BRANCH_EXISTS" || "$branch_sha" != "$EXPECTED_BRANCH_SHA" ]]; then
+            echo "The Release Please branch changed while the action was running." >&2
+            exit 1
+          fi
 
-          if (process.env.RELEASES_CREATED !== "true") {
-            throw new Error("Release Please did not create exactly one release.");
-          }
-          const releasedPaths = JSON.parse(process.env.RELEASED_PATHS);
-          if (releasedPaths.length !== 1 || releasedPaths[0] !== ".") {
-            throw new Error("Release Please did not release exactly the root package.");
-          }
-          const version = JSON.parse(readFileSync("package.json", "utf8")).version;
-          const result = {
-            htmlUrl: process.env.RELEASE_HTML_URL,
-            releaseCreated: process.env.RELEASE_CREATED === "true",
+          pull_requests_after="$RUNNER_TEMP/release-pulls-after-action.json"
+          pull_request_file="$RUNNER_TEMP/release-pull-after.json"
+          reviews_file="$RUNNER_TEMP/release-reviews-after.json"
+          permissions_file="$RUNNER_TEMP/reviewer-permissions-after.json"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=all&base=main&per_page=100" \
+            | jq 'add' > "$pull_requests_after"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${RELEASE_PR_NUMBER}" \
+            > "$pull_request_file"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/pulls/${RELEASE_PR_NUMBER}/reviews?per_page=100" \
+            | jq 'add' > "$reviews_file"
+          printf '{}\n' > "$permissions_file"
+          while IFS= read -r reviewer; do
+            permission="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/collaborators/${reviewer}/permission" \
+              --jq '.permission' 2>/dev/null || printf 'none')"
+            next_permissions="$RUNNER_TEMP/reviewer-permissions-after-next.json"
+            jq --arg reviewer "$reviewer" --arg permission "$permission" \
+              '. + {($reviewer): $permission}' \
+              "$permissions_file" > "$next_permissions"
+            mv "$next_permissions" "$permissions_file"
+          done < <(jq -r '.[].user.login' "$reviews_file" | sort -u)
+
+          BEFORE_PULLS_FILE="$RUNNER_TEMP/release-pulls-before-action.json" \
+            AFTER_PULLS_FILE="$pull_requests_after" \
+            PERMISSIONS_FILE="$permissions_file" \
+            PULL_REQUEST_FILE="$pull_request_file" \
+            REVIEWS_FILE="$reviews_file" VERSION="$version" \
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateMergedReleasePullRequest,
+            validatePostActionPullRequestSnapshot,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          const normalizePulls = (path) =>
+            JSON.parse(readFileSync(path, "utf8")).map((pullRequest) => ({
+              author: pullRequest.user?.login,
+              baseRef: pullRequest.base?.ref,
+              body: pullRequest.body,
+              headRef: pullRequest.head?.ref,
+              headRepository: pullRequest.head?.repo?.full_name,
+              headSha: pullRequest.head?.sha,
+              labels: pullRequest.labels?.map((label) => label.name),
+              mergeCommitSha: pullRequest.merge_commit_sha,
+              mergedAt: pullRequest.merged_at,
+              number: pullRequest.number,
+              state: pullRequest.state,
+              title: pullRequest.title,
+            }));
+          validatePostActionPullRequestSnapshot(
+            normalizePulls(process.env.BEFORE_PULLS_FILE),
+            normalizePulls(process.env.AFTER_PULLS_FILE),
+            { releasePullRequestNumber: Number(process.env.RELEASE_PR_NUMBER) },
+          );
+
+          const rawPullRequest = JSON.parse(
+            readFileSync(process.env.PULL_REQUEST_FILE, "utf8"),
+          );
+          const permissions = JSON.parse(
+            readFileSync(process.env.PERMISSIONS_FILE, "utf8"),
+          );
+          const reviews = JSON.parse(readFileSync(process.env.REVIEWS_FILE, "utf8"));
+          validateMergedReleasePullRequest({
+            expectedReleaseNotes: extractReleaseNotesFromChangelog(
+              readFileSync("CHANGELOG.md", "utf8"),
+              process.env.VERSION,
+            ),
+            pullRequest: {
+              author: rawPullRequest.user?.login,
+              baseRef: rawPullRequest.base?.ref,
+              body: rawPullRequest.body,
+              headRef: rawPullRequest.head?.ref,
+              headRepository: rawPullRequest.head?.repo?.full_name,
+              headSha: rawPullRequest.head?.sha,
+              labels: rawPullRequest.labels?.map((label) => label.name),
+              mergeCommitSha: rawPullRequest.merge_commit_sha,
+              mergedAt: rawPullRequest.merged_at,
+              number: rawPullRequest.number,
+              state: rawPullRequest.state,
+              title: rawPullRequest.title,
+            },
+            releaseBranch: process.env.RELEASE_BRANCH,
+            releaseCommit: process.env.GITHUB_SHA,
             repository: process.env.GITHUB_REPOSITORY,
-            runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
-            runId: Number(process.env.GITHUB_RUN_ID),
-            schemaVersion: 1,
-            sha: process.env.RELEASE_SHA,
-            tagName: process.env.RELEASE_TAG_NAME,
-            version: process.env.RELEASE_VERSION,
+            requirePendingLabel: false,
+            reviews: reviews.map((review) => ({
+              commitId: review.commit_id,
+              id: review.id,
+              login: review.user?.login,
+              permission: permissions[review.user?.login] ?? "none",
+              state: review.state,
+              userType: review.user?.type,
+            })),
+            version: process.env.VERSION,
+          });
+          EOF
+
+          release_file="$RUNNER_TEMP/release-please-release-after.json"
+          completion_file="$RUNNER_TEMP/release-please-completion.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" > "$release_file"
+          git fetch --no-tags origin \
+            "+refs/tags/${tag}:refs/tags/${tag}"
+          tag_commit="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+
+          attempts_file="$RUNNER_TEMP/release-please-attempts-through-current.json"
+          printf '[]\n' > "$attempts_file"
+          for attempt in $(seq 1 "$RUN_ATTEMPT"); do
+            attempt_file="$RUNNER_TEMP/release-please-completed-attempt-${attempt}.json"
+            attempt_ready="false"
+            for api_check in {1..6}; do
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/attempts/${attempt}/jobs?per_page=100" \
+                > "$attempt_file"
+              if [[ "$attempt" != "$RUN_ATTEMPT" ]] || \
+                jq -e \
+                  --arg job "Prepare a reviewed release pull request or GitHub release" \
+                  --arg step "Run Release Please" \
+                  '[.jobs[] | select(.name == $job) | .steps[] | select(.name == $step and .status == "completed")] | length == 1' \
+                  "$attempt_file" >/dev/null; then
+                attempt_ready="true"
+                break
+              fi
+              if [[ "$api_check" -lt 6 ]]; then
+                sleep 2
+              fi
+            done
+            if [[ "$attempt_ready" != "true" ]]; then
+              echo "Actions did not expose the completed Release Please step." >&2
+              exit 1
+            fi
+            next_attempts="$RUNNER_TEMP/release-please-attempts-through-current-next.json"
+            jq --argjson attempt "$attempt" --slurpfile jobs "$attempt_file" \
+              '. + [{attempt: $attempt, jobs: $jobs[0].jobs}]' \
+              "$attempts_file" > "$next_attempts"
+            mv "$next_attempts" "$attempts_file"
+          done
+
+          ATTEMPTS_FILE="$attempts_file" COMPLETION_FILE="$completion_file" \
+            RELEASE_FILE="$release_file" TAG_COMMIT="$tag_commit" \
+            VERSION="$version" node --input-type=module <<'EOF'
+          import { readFileSync, writeFileSync } from "node:fs";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateReleasePleaseCompletion,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          const releasedPaths =
+            process.env.RELEASED_PATHS === ""
+              ? []
+              : JSON.parse(process.env.RELEASED_PATHS);
+          const completion = validateReleasePleaseCompletion({
+            actionResult: {
+              htmlUrl: process.env.RELEASE_HTML_URL,
+              outcome: process.env.ACTION_OUTCOME,
+              releaseCreated: process.env.RELEASE_CREATED === "true",
+              releasedPaths,
+              sha: process.env.RELEASE_SHA,
+              tagName: process.env.RELEASE_TAG_NAME,
+              version: process.env.RELEASE_VERSION,
+            },
+            attempts: JSON.parse(
+              readFileSync(process.env.ATTEMPTS_FILE, "utf8"),
+            ),
+            expectedReleaseNotes: extractReleaseNotesFromChangelog(
+              readFileSync("CHANGELOG.md", "utf8"),
+              process.env.VERSION,
+            ),
+            release: JSON.parse(readFileSync(process.env.RELEASE_FILE, "utf8")),
+            releaseCommit: process.env.GITHUB_SHA,
+            releaseExistedBeforeAction:
+              process.env.RELEASE_EXISTED_BEFORE_ACTION === "true",
+            repository: process.env.GITHUB_REPOSITORY,
+            runAttempt: Number(process.env.RUN_ATTEMPT),
+            runCreatedAt: process.env.RUN_CREATED_AT,
+            runId: Number(process.env.RUN_ID),
+            tagCommit: process.env.TAG_COMMIT,
+            version: process.env.VERSION,
+          });
+          writeFileSync(
+            process.env.COMPLETION_FILE,
+            `${JSON.stringify(completion)}\n`,
+            { mode: 0o600 },
+          );
+          EOF
+
+          if ! jq -e '.labels | map(.name) | index("autorelease: tagged") != null' \
+            "$pull_request_file" >/dev/null; then
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${RELEASE_PR_NUMBER}/labels" \
+              -f 'labels[]=autorelease: tagged' >/dev/null
+          fi
+          if jq -e '.labels | map(.name) | index("autorelease: pending") != null' \
+            "$pull_request_file" >/dev/null; then
+            gh api --method DELETE \
+              "repos/${GITHUB_REPOSITORY}/issues/${RELEASE_PR_NUMBER}/labels/autorelease%3A%20pending" \
+              >/dev/null
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${RELEASE_PR_NUMBER}" \
+            > "$pull_request_file"
+          PULL_REQUEST_FILE="$pull_request_file" VERSION="$version" \
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateTaggedReleasePullRequest,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          const pullRequest = JSON.parse(
+            readFileSync(process.env.PULL_REQUEST_FILE, "utf8"),
+          );
+          validateTaggedReleasePullRequest({
+            expectedReleaseNotes: extractReleaseNotesFromChangelog(
+              readFileSync("CHANGELOG.md", "utf8"),
+              process.env.VERSION,
+            ),
+            pullRequest: {
+              author: pullRequest.user?.login,
+              baseRef: pullRequest.base?.ref,
+              body: pullRequest.body,
+              headRef: pullRequest.head?.ref,
+              headRepository: pullRequest.head?.repo?.full_name,
+              headSha: pullRequest.head?.sha,
+              labels: pullRequest.labels?.map((label) => label.name),
+              mergeCommitSha: pullRequest.merge_commit_sha,
+              mergedAt: pullRequest.merged_at,
+              number: pullRequest.number,
+              state: pullRequest.state,
+              title: pullRequest.title,
+            },
+            releaseBranch: process.env.RELEASE_BRANCH,
+            releaseCommit: process.env.GITHUB_SHA,
+            repository: process.env.GITHUB_REPOSITORY,
+            version: process.env.VERSION,
+          });
+          EOF
+
+          final_release_file="$RUNNER_TEMP/release-please-release-final.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" > "$final_release_file"
+          git fetch --no-tags origin \
+            "+refs/tags/${tag}:refs/tags/${tag}"
+          final_tag_commit="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+          mkdir -p release-please-result
+          COMPLETION_FILE="$completion_file" FINAL_RELEASE_FILE="$final_release_file" \
+            FINAL_TAG_COMMIT="$final_tag_commit" VERSION="$version" \
+            node --input-type=module <<'EOF'
+          import { readFileSync, writeFileSync } from "node:fs";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateGitHubRelease,
+            validateReleasePleaseActionResult,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          const completion = JSON.parse(
+            readFileSync(process.env.COMPLETION_FILE, "utf8"),
+          );
+          validateGitHubRelease(
+            JSON.parse(readFileSync(process.env.FINAL_RELEASE_FILE, "utf8")),
+            {
+              expectedBody: extractReleaseNotesFromChangelog(
+                readFileSync("CHANGELOG.md", "utf8"),
+                process.env.VERSION,
+              ),
+              htmlUrl: completion.htmlUrl,
+              releaseCommit: process.env.GITHUB_SHA,
+              tag: completion.tagName,
+              tagCommit: process.env.FINAL_TAG_COMMIT,
+            },
+          );
+          const result = {
+            actionOutcome: completion.actionOutcome,
+            htmlUrl: completion.htmlUrl,
+            recovered: completion.recovered,
+            releaseCreated: completion.releaseCreated,
+            releaseExistedBeforeAction: completion.releaseExistedBeforeAction,
+            releaseSourceAttempt: completion.releaseSourceAttempt,
+            repository: process.env.GITHUB_REPOSITORY,
+            runAttempt: Number(process.env.RUN_ATTEMPT),
+            runId: Number(process.env.RUN_ID),
+            schemaVersion: 2,
+            sha: completion.sha,
+            tagName: completion.tagName,
+            version: completion.version,
             workflowName: "Release Please",
             workflowPath: ".github/workflows/release-please.yml",
           };
           validateReleasePleaseActionResult(result, {
             releaseCommit: process.env.GITHUB_SHA,
             repository: process.env.GITHUB_REPOSITORY,
-            runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
-            runId: Number(process.env.GITHUB_RUN_ID),
-            version,
+            runAttempt: Number(process.env.RUN_ATTEMPT),
+            runId: Number(process.env.RUN_ID),
+            version: process.env.VERSION,
             workflowName: "Release Please",
             workflowPath: ".github/workflows/release-please.yml",
           });

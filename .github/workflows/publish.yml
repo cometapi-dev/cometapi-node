@@ -157,10 +157,18 @@ jobs:
           RELEASE_JSON="$release_json" TAG_COMMIT="$tag_commit" \
             node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
-          import { validateGitHubRelease } from "./scripts/release-workflow-validation.mjs";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateGitHubRelease,
+          } from "./scripts/release-workflow-validation.mjs";
 
           const release = JSON.parse(readFileSync(process.env.RELEASE_JSON, "utf8"));
+          const version = JSON.parse(readFileSync("package.json", "utf8")).version;
           validateGitHubRelease(release, {
+            expectedBody: extractReleaseNotesFromChangelog(
+              readFileSync("CHANGELOG.md", "utf8"),
+              version,
+            ),
             htmlUrl: process.env.RELEASE_HTML_URL,
             releaseCommit: process.env.RELEASE_COMMIT,
             tag: process.env.RELEASE_TAG,

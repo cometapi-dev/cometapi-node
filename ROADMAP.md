@@ -116,11 +116,13 @@ repository setting. Patch-only versioning prevents an implicit 0.2 bump during
 this maintenance window. The temporary anchor must be removed in that release
 PR before merge. The explicit component does not enter the public tag; the only
 accepted patch tag is `v0.1.1`. Publication is triggered from the successful
-first-attempt Release Please push run and independently verifies that run's
-exact release-created output artifact, default-branch commit, tag, immutable
-Release, and package artifact before the existing bounded live smoke and npm
-OIDC steps. The post-merge run also requires an administrator's approval on the
-release PR's final head.
+attempt-qualified Release Please push run and independently verifies that run's
+schema-v2 result artifact, default-branch commit, tag, immutable Release, and
+package artifact before the existing bounded live smoke and npm OIDC steps. A
+push rerun is bounded to the same run ID, SHA, candidate, Release-producing
+attempt, and exact Release state; manual preparation remains attempt-1-only.
+The Release notes must equal the reviewed `CHANGELOG` entry. The post-merge run also
+requires an administrator's approval on the release PR's final head.
 
 The exact stale branch remains failure evidence until its contents, lack of an
 open PR, and lack of independent work are reconfirmed immediately before
@@ -282,8 +284,9 @@ component identity, patch versioning, pull-request configuration, one-cycle
 creation, and a trusted `workflow_run` handoff to the existing exact-artifact,
 bounded-live, and npm OIDC gates. Regression tests must reject stale manifest
 state, a 0.2 bump, missing PR configuration, an unrelated stale branch, hostile
-workflow events, reruns, mismatched action outputs, missing final-head approval,
-and declaration or runtime option bypasses.
+workflow events, unsafe or mismatched recovery attempts, mismatched action
+outputs, missing final-head approval, and declaration or runtime option
+bypasses.
 
 Exit criteria:
 
@@ -405,10 +408,13 @@ merge. Because the default `GITHUB_TOKEN` cannot cause a second workflow through
 a `release.published` event, `publish.yml` starts from successful Release Please
 workflow completion and re-establishes trust from exact repository state.
 Failed pull-request preparation runs are filtered out; any successful run
-without a run-bound `release_created` result, the exact Release Please-created
-tag, and immutable Release fails before live or registry access. Only a
-successful canonical first-attempt `push` run for the still-current exact
-`main` SHA can enter artifact verification.
+without a schema-v2 attempt-bound release result, the exact tag, and immutable
+Release fails before live or registry access. Only a successful canonical
+attempt-qualified `push` run for the still-current exact `main` SHA can enter
+artifact verification. A push retry may recover only the same run ID, SHA,
+candidate, and exact bot-authored immutable Release published inside one
+earlier Release Please step; manual preparation
+reruns remain forbidden.
 
 Public Preview needs no registry workflow. Registry Alpha publishes from a
 human-reviewed immutable prerelease tag under the `next` dist-tag through OIDC

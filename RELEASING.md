@@ -234,22 +234,26 @@ The repository maintains four independently auditable workflows:
   `LIVE_SMOKE_ENABLED=true`.
 - `release-please.yml`: patch-only versioning, an explicit `cometapi` component,
   separate pull requests, and an explicit component/version title. It requires
-  `RELEASE_PLEASE_ENABLED=true`, accepts only first-attempt runs, and uses the
-  default `GITHUB_TOKEN`. The authorized repository baseline keeps default
-  workflow permissions read-only and allows Actions to create pull requests; it
-  does not make bot review valid release approval. A first-attempt manual
-  dispatch runs with GitHub
-  Release creation disabled and prepares exactly one action-authored patch PR
-  after the variable is enabled; rerunning an older workflow is rejected before
-  Release Please can mutate repository state. The preparation run succeeds only
-  after verifying the canonical branch, title, machine-readable body, pending
-  label, four expected release files, and 0.1.x patch versions. Before a
-  post-merge `push` may create a Release, the workflow scans every merged `main`
-  PR carrying `autorelease: pending`, rejects legacy, alternate, fork, older, or
-  multiple candidates, and requires an administrator's human approval on the
-  exact final head. Release Please then creates the normal tag and GitHub
-  Release, transitions the release label, and uploads its exact release outputs
-  as a run-bound artifact.
+  `RELEASE_PLEASE_ENABLED=true` and uses the default `GITHUB_TOKEN`. The
+  authorized repository baseline keeps default workflow permissions read-only
+  and allows Actions to create pull requests; it does not make bot review valid
+  release approval. A manual dispatch is attempt-1-only, runs with GitHub Release
+  creation disabled, and prepares exactly one action-authored patch PR after the
+  variable is enabled. A new dispatch may revalidate an unchanged canonical PR
+  even when Release Please returns no PR output. The preparation run succeeds
+  only after independently verifying the canonical branch, title,
+  machine-readable body, pending label, four expected release files, and 0.1.x
+  patch versions. Before a post-merge `push` may create a Release, the workflow
+  scans every merged `main` PR carrying `autorelease: pending`, rejects legacy,
+  alternate, fork, older, or multiple candidates, and requires an
+  administrator's human approval on the exact final head. A same-run push retry
+  may proceed only for the same run ID, SHA, candidate, and review. An existing
+  tag and Release are accepted only as the exact bot-authored immutable Release
+  whose publication time falls within exactly one executed Release Please step
+  from an earlier attempt of that run. Release Please then creates or recovers
+  the normal tag and GitHub Release, verifies its notes byte-for-byte against the
+  normalized `CHANGELOG` entry, reconciles the release label, and uploads a
+  schema-v2 attempt-qualified result artifact.
   The triggering SHA must still equal the fetched `main` tip at checkout and
   immediately before the Release Please action; an older queued run stops before
   mutation.
@@ -262,11 +266,13 @@ The repository maintains four independently auditable workflows:
   Please workflow for `main`. This indirection is required because a GitHub
   Release created with the default `GITHUB_TOKEN` does not trigger a new
   `release.published` workflow. The handoff accepts only the canonical
-  repository's successful, first-attempt `push` run for the still-current exact
-  `main` SHA. It downloads the output artifact from that exact upstream run and
-  requires `release_created`, SHA, tag, version, URL, repository, workflow path,
-  run ID, and attempt to agree before accepting the matching Release
-  Please-created version tag and immutable GitHub Release. A successful manual
+  repository's successful attempt-qualified `push` run for the still-current
+  exact `main` SHA. It downloads the output artifact from that exact upstream
+  run ID and attempt and requires schema version, normalized action outcome,
+  recovery state, pre-action Release presence, exact Release-producing attempt,
+  SHA, tag, version, URL, repository, workflow path, run ID, and attempt to agree
+  before accepting the
+  matching version tag and immutable GitHub Release. A successful manual
   preparation run is release-inert and cannot enter publication; a successful
   `push` run without the exact release result fails before live or publication
   work. The release path then packs and tests one exact, attempt-qualified
@@ -470,24 +476,46 @@ The release workflow must never change either setting, and any later drift is a
 stop condition.
 
 After enabling `RELEASE_PLEASE_ENABLED`, start a new manual dispatch on `main`;
-do not rerun the skipped workflow from the repair merge. Only attempt 1 may call
-Release Please. The workflow rejects any dispatch whose triggering ref is not
-`refs/heads/main`, and all preparation and release runs share one main-scoped
-concurrency group. The manually dispatched preparation run cannot trigger npm
-publication or create a Release: the action receives explicit
+do not rerun the skipped workflow from the repair merge. Only attempt 1 of a
+manual dispatch may call Release Please; an unchanged PR is restarted with a
+new dispatch, not a rerun. The workflow rejects any dispatch whose triggering
+ref is not `refs/heads/main`, and all preparation and release runs share one
+main-scoped concurrency group. The manually dispatched preparation run cannot
+trigger npm publication or create a Release: the action receives explicit
 `skip-github-release=true`, it is accepted only when no merged
 `autorelease: pending` PR exists, and `publish.yml` accepts only an upstream
-`push` event. It must succeed after validating the one action-created 0.1.1 PR.
-Before mutation, the workflow also rejects any open PR whose head name could be
-mistaken for the canonical release branch, including a same-named fork branch.
+`push` event. It must succeed after independently validating the one canonical
+action-created 0.1.1 PR, including the unchanged-PR case where the action emits
+no `prs` output. Before mutation, the workflow also rejects any open PR whose
+head name could be mistaken for the canonical release branch, including a
+same-named fork branch.
+The `GITHUB_TOKEN`-created PR's `pull_request` CI starts in GitHub's
+approval-required state. A human with write access must explicitly authorize
+those workflow runs before their results can satisfy required checks; this is
+separate from the final-head administrator review.
 Remove the one-cycle `last-release-sha` from that branch, complete the
 release-ready documentation, run the full matrix on its final head, and obtain
 approval from a different human repository administrator. The release-PR merge
-creates the new first-attempt `push` run that may tag and publish. A later push
-cannot tag an older outstanding release PR; its merge SHA must equal the
-triggering SHA before Release Please runs. Immediately before the irreversible
-Release Please call, the push run also requires final release metadata and
-public documentation, including removal of the one-cycle `last-release-sha`.
+creates the `push` run that may tag and publish. A later push cannot tag an older
+outstanding release PR; its merge SHA must equal the triggering SHA before
+Release Please runs. A rerun may retry that same candidate while no tag or
+Release exists. If Release Please created the immutable Release but failed
+before producing outputs, only the same run may recover it, and only after
+proving its exact SHA, tag, bot author, immutable state, target, URL, notes, and
+publication inside exactly one earlier Release Please step time window. Recovery
+then idempotently removes `autorelease: pending`,
+adds `autorelease: tagged`, and writes a schema-v2 artifact for that attempt.
+Immediately before the irreversible Release Please call, every attempt also
+reconfirms `main`, the release-branch snapshot, all PR collisions, the candidate
+and final-head review, final release metadata and public documentation, and the
+exact tag/Release state, including removal of the one-cycle `last-release-sha`.
+Because workflow concurrency does not lock `main` or PR metadata against other
+actors, the maintainer must hold a short mutation freeze from the release-PR
+merge until the Release Please run reaches its post-action validation. Do not
+merge another `main` PR, edit the release PR, change its labels or review, or
+mutate the release branch during that window. The workflow repeats those checks
+after the action and stops publication on any drift, but it cannot delete or
+replace an immutable Release created during an external race.
 
 The stale branch
 `release-please--branches--main--components--cometapi` at
@@ -545,6 +573,17 @@ identity, one-cycle history anchoring, action-created/human-reviewed release
 PRs, and normal Release Please tag and GitHub Release creation. Repository
 Actions pull-request authorization is now enabled for that scoped job; the
 workflow still uses only its default token and job-local permissions.
+
+The recovery rules follow the pinned implementation rather than assuming the
+action is atomic. Release Please 17.6.0
+[creates the Release before PR comments and label changes](https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/src/manifest.ts#L1258-L1319),
+while the pinned action emits release outputs only after that call returns. An
+unchanged release PR may also return
+[no PR result](https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/src/manifest.ts#L1089-L1101).
+Finally, commit-level `Release-As:` is rejected before the action because the
+[base strategy applies it before configured versioning](https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/src/strategies/base.ts#L543-L570).
+GitHub documents that a `GITHUB_TOKEN`-created PR's opened or synchronize event
+[creates an approval-required workflow run](https://github.com/github/docs/blob/e1e4aa937308f21c411c248b4966873536bb0cba/data/reusables/actions/actions-do-not-trigger-workflows.md#L1-L6).
 
 ## Stable 0.1.0 release evidence
 
