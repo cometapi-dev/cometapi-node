@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file. The format
 follows Keep a Changelog, and versions follow Semantic Versioning.
 
+## [0.1.1](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0...v0.1.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* classify Release Please push state ([505c7e9](https://github.com/cometapi-dev/cometapi-node/commit/505c7e9ef9186be5c5518e62de6899908adcf921))
+* classify Release Please push state ([a7a03de](https://github.com/cometapi-dev/cometapi-node/commit/a7a03de7a6f805dafafdba421c5b75feed37495c))
+* enforce options boundary and patch release flow ([91ce99c](https://github.com/cometapi-dev/cometapi-node/commit/91ce99ca4f50e9b9f51f992eab8f3e1ab8bf0d36))
+* enforce options boundary and patch release flow ([abf21ba](https://github.com/cometapi-dev/cometapi-node/commit/abf21ba9954c7ca08e7c4c1824ecb4e33c56072e))
+* finalize Release Please patch state ([3180b52](https://github.com/cometapi-dev/cometapi-node/commit/3180b52794e1eb92bbc4dd54e76e087c61c24ea1))
+* finalize Release Please patch state ([453135e](https://github.com/cometapi-dev/cometapi-node/commit/453135e45e81541b1da998d5abc87240f1f51880))
+* harden options and Release Please patch flow ([5b03072](https://github.com/cometapi-dev/cometapi-node/commit/5b0307238ce9148082557d5cad5f7e6c220166ee))
+* harden Release Please patch releases ([a33c128](https://github.com/cometapi-dev/cometapi-node/commit/a33c128fa60c58fdcbbc6562d4ad5c1112aaba72))
+* limit Release Please push trigger ([fbd5a22](https://github.com/cometapi-dev/cometapi-node/commit/fbd5a2243be6b83082c40ba41e1693295bed527e))
+* match Release Please root title ([0963e0e](https://github.com/cometapi-dev/cometapi-node/commit/0963e0eeed47a10f4a76b32c108911a8de2f0d01))
+* match Release Please root title ([300ffac](https://github.com/cometapi-dev/cometapi-node/commit/300ffac2ec5c891820bd824385c49f1d232ed428))
+* recover exact Release Please runs ([4ffee49](https://github.com/cometapi-dev/cometapi-node/commit/4ffee49fb78bb9661c6e30dab72451951cbf7a7a))
+* require refreshed release candidate ([ab5aa26](https://github.com/cometapi-dev/cometapi-node/commit/ab5aa26d997e9653ef5c860cf7968d443caba53e))
+* snapshot supported client options once ([6ee0fdf](https://github.com/cometapi-dev/cometapi-node/commit/6ee0fdfdbd9062f60fc3784fef3dbfe6162464fb))
+
 ## [0.1.0](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0-alpha.3...v0.1.0) (2026-07-28)
 
 ### Bug Fixes
