@@ -101,17 +101,20 @@ ran after a draft `v0.1.0` Release had been created but before that draft was
 published or had a tag. With no discoverable Release Please release boundary,
 it scanned older Conventional Commits, including the initial feature, and
 generated an unrequested `0.2.0` temporary branch commit. Pull-request creation
-then failed independently because the repository does not authorize GitHub
-Actions to create or approve pull requests. The run did not change `main`,
-create a tag or published Release, or publish to npm.
+then failed independently because the repository did not authorize GitHub
+Actions to create or approve pull requests at that time. The run did not change
+`main`, create a tag or published Release, or publish to npm.
 
 The 0.1.1 maintenance work makes the component and stable-patch policy
 explicit, anchors the one repair cycle at the exact 0.1.0 release commit, and
 restores Release Please ownership of the reviewed version/changelog PR plus the
-immutable tag and GitHub Release. The repository's Actions PR authorization is
-not broadened: a maintainer creates the PR from the generated branch and a
-human owner reviews it. The temporary anchor must be removed in that release PR
-before merge. The explicit component does not enter the public tag; the only
+immutable tag and GitHub Release. The scoped Release Please job now uses the
+repository's enabled Actions PR authorization to create and label the normal PR;
+a human owner reviews its exact final head. Default workflow permissions remain
+read-only, bot approval is never accepted, and the workflow does not modify the
+repository setting. Patch-only versioning prevents an implicit 0.2 bump during
+this maintenance window. The temporary anchor must be removed in that release
+PR before merge. The explicit component does not enter the public tag; the only
 accepted patch tag is `v0.1.1`. Publication is triggered from the successful
 first-attempt Release Please push run and independently verifies that run's
 exact release-created output artifact, default-branch commit, tag, immutable
@@ -396,7 +399,7 @@ or dry-run packages but may not publish an arbitrary commit.
 
 The manual tag/Release combination used for 0.1.0 is historical evidence, not
 the normal patch process. Stable 0.1.x patches require explicit stable
-versioning and the `cometapi` component, a maintainer-created and human-reviewed
+versioning and the `cometapi` component, an action-created and human-reviewed
 Release Please PR, and automated immutable tag and GitHub Release creation after
 merge. Because the default `GITHUB_TOKEN` cannot cause a second workflow through
 a `release.published` event, `publish.yml` starts from successful Release Please

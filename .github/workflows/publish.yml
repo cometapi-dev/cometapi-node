@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
+      artifact-name: ${{ steps.artifact-name.outputs.name }}
       dist-tag: ${{ steps.version.outputs.dist-tag }}
       release-commit: ${{ steps.trust.outputs.release-commit }}
       release-tag: ${{ steps.trust.outputs.release-tag }}
@@ -202,10 +203,16 @@ jobs:
             --tag "${{ steps.trust.outputs.release-tag }}"
           npm run test:examples -- --tarball "${{ steps.pack.outputs.tarball }}"
           npm run test:fixtures -- --tarball "${{ steps.pack.outputs.tarball }}"
+      - name: Name the attempt-qualified release artifact
+        id: artifact-name
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "name=npm-package-${{ steps.version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
       - name: Upload the verified release artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: npm-package-${{ steps.version.outputs.version }}
+          name: ${{ steps.artifact-name.outputs.name }}
           path: ${{ steps.pack.outputs.tarball }}
           if-no-files-found: error
           retention-days: 30
@@ -280,7 +287,7 @@ jobs:
       - name: Download the verified release artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: npm-package-${{ needs.verify.outputs.version }}
+          name: ${{ needs.verify.outputs.artifact-name }}
           path: release-artifacts
       - name: Publish the exact artifact with provenance
         env:

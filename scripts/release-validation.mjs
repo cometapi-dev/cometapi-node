@@ -951,7 +951,7 @@ function validateReleasePleaseState({
     }
     requireExact(
       packageConfig.versioning,
-      "default",
+      "always-bump-patch",
       "Release Please versioning",
     );
     requireExact(

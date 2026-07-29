@@ -1,4 +1,10 @@
 const STABLE_VERSION_PATTERN = /^0\.1\.(0|[1-9]\d*)$/;
+const RELEASE_PR_FILES = [
+  ".release-please-manifest.json",
+  "CHANGELOG.md",
+  "package-lock.json",
+  "package.json",
+];
 
 function fail(message) {
   throw new Error(message);
@@ -43,9 +49,38 @@ function requirePendingLabel(labels, label) {
   }
 }
 
+export function validateReleasePleasePullRequestBody(body, version) {
+  stablePatch(version, "release pull request body version");
+  if (typeof body !== "string") {
+    fail("Release workflow release pull request body must be a string.");
+  }
+  const lines = body.trim().replace(/\r\n/g, "\n").split("\n");
+  const firstDelimiter = lines.indexOf("---");
+  const lastDelimiter = lines.lastIndexOf("---");
+  if (firstDelimiter < 0 || lastDelimiter <= firstDelimiter) {
+    fail(
+      "Release workflow release pull request body must contain the two Release Please delimiters.",
+    );
+  }
+  const releaseNotes = lines
+    .slice(firstDelimiter + 1, lastDelimiter)
+    .join("\n")
+    .trim();
+  const versionMatch = releaseNotes.match(
+    /^#{2,} \[?(\d+\.\d+\.\d+(?:-[^\]\s]+)?)\]?/,
+  );
+  if (!versionMatch) {
+    fail(
+      "Release workflow release pull request body must begin its release notes with a version heading.",
+    );
+  }
+  requireEqual(versionMatch[1], version, "release pull request body version");
+  return { version };
+}
+
 function requireReleasePullRequest(
   pullRequest,
-  { branchSha, branchVersion, releaseBranch },
+  { branchSha, branchVersion, releaseBranch, repository },
 ) {
   if (pullRequest === null || typeof pullRequest !== "object") {
     fail("Release workflow release pull request metadata must be an object.");
@@ -53,8 +88,18 @@ function requireReleasePullRequest(
   requirePositiveInteger(pullRequest.number, "release pull request number");
   requireCommit(pullRequest.headSha, "release pull request head SHA");
   requireCommit(branchSha, "expected release pull request head SHA");
+  requireEqual(
+    pullRequest.author,
+    "github-actions[bot]",
+    "release pull request author",
+  );
   requireEqual(pullRequest.baseRef, "main", "release pull request base");
   requireEqual(pullRequest.headRef, releaseBranch, "release pull request head");
+  requireEqual(
+    pullRequest.headRepository,
+    repository,
+    "release pull request head repository",
+  );
   requireEqual(pullRequest.headSha, branchSha, "release pull request head SHA");
   requireEqual(
     pullRequest.title,
@@ -62,11 +107,12 @@ function requireReleasePullRequest(
     "release pull request title",
   );
   requirePendingLabel(pullRequest.labels, "release pull request");
+  validateReleasePleasePullRequestBody(pullRequest.body, branchVersion);
 }
 
 export function selectPendingReleasePullRequest(
   pullRequests,
-  { eventName, releaseBranch, releaseCommit },
+  { eventName, releaseBranch, releaseCommit, repository },
 ) {
   if (!Array.isArray(pullRequests)) {
     fail("Release workflow pending release pull requests must be an array.");
@@ -75,7 +121,6 @@ export function selectPendingReleasePullRequest(
   const pendingReleasePullRequests = pullRequests.filter(
     (pullRequest) =>
       pullRequest?.baseRef === "main" &&
-      pullRequest?.headRef === releaseBranch &&
       pullRequest?.state === "closed" &&
       pullRequest?.mergedAt !== null &&
       Array.isArray(pullRequest?.labels) &&
@@ -85,10 +130,21 @@ export function selectPendingReleasePullRequest(
     fail("Release workflow found multiple pending merged release PRs.");
   }
   if (pendingReleasePullRequests.length === 0) {
+    requireEqual(eventName, "workflow_dispatch", "release preparation event");
     return null;
   }
 
   const pullRequest = pendingReleasePullRequests[0];
+  requireEqual(
+    pullRequest.headRef,
+    releaseBranch,
+    "pending release pull request head",
+  );
+  requireEqual(
+    pullRequest.headRepository,
+    repository,
+    "pending release pull request head repository",
+  );
   requireEqual(
     pullRequest.mergeCommitSha,
     releaseCommit,
@@ -101,18 +157,28 @@ export function selectPendingReleasePullRequest(
 export function validateReleasePleaseBranchState({
   branchSha,
   branchVersion,
+  conflictingOpenPullRequests = [],
   exists,
   isAncestor,
   mainVersion,
   manifestVersion,
   pullRequests = [],
   releaseBranch,
+  repository,
 }) {
   if (typeof exists !== "boolean" || typeof isAncestor !== "boolean") {
     fail("Release Please branch state flags must be boolean.");
   }
   if (!Array.isArray(pullRequests)) {
     fail("Release Please branch pull requests must be an array.");
+  }
+  if (!Array.isArray(conflictingOpenPullRequests)) {
+    fail("Release Please conflicting open pull requests must be an array.");
+  }
+  if (conflictingOpenPullRequests.length > 0) {
+    fail(
+      "Release Please found an open pull request whose head can collide with the canonical release branch.",
+    );
   }
   if (!exists) {
     return { state: "missing" };
@@ -149,6 +215,7 @@ export function validateReleasePleaseBranchState({
     branchSha,
     branchVersion,
     releaseBranch,
+    repository,
   });
 
   if (pullRequest.state === "open" && pullRequest.mergedAt === null) {
@@ -179,6 +246,7 @@ export function validateMergedReleasePullRequest({
   pullRequest,
   releaseBranch,
   releaseCommit,
+  repository,
   reviews,
   version,
 }) {
@@ -188,6 +256,7 @@ export function validateMergedReleasePullRequest({
     branchSha: pullRequest?.headSha,
     branchVersion: version,
     releaseBranch,
+    repository,
   });
   if (pullRequest.state !== "closed" || pullRequest.mergedAt === null) {
     fail("Release workflow release pull request must be merged.");
@@ -228,6 +297,137 @@ export function validateMergedReleasePullRequest({
   }
 
   return { pullRequestNumber: pullRequest.number };
+}
+
+export function validateReleaseCandidatePullRequest({
+  pullRequest,
+  releaseBranch,
+  repository,
+  version,
+}) {
+  requireReleasePullRequest(pullRequest, {
+    branchSha: pullRequest?.headSha,
+    branchVersion: version,
+    releaseBranch,
+    repository,
+  });
+  return pullRequest;
+}
+
+export function validatePreparedReleasePullRequest({
+  actionPullRequests,
+  branchSha,
+  branchVersion,
+  changelog,
+  mainVersion,
+  manifestVersion,
+  packageLockPackageVersion,
+  packageLockVersion,
+  pullRequest,
+  releaseBranch,
+  repository,
+}) {
+  if (!Array.isArray(actionPullRequests) || actionPullRequests.length !== 1) {
+    fail(
+      "Release workflow preparation must create or update exactly one release pull request.",
+    );
+  }
+  const actionPullRequest = actionPullRequests[0];
+  if (
+    actionPullRequest === null ||
+    typeof actionPullRequest !== "object" ||
+    Array.isArray(actionPullRequest)
+  ) {
+    fail("Release workflow action pull request output must be an object.");
+  }
+
+  const mainPatch = stablePatch(mainVersion, "preparation main version");
+  const branchPatch = stablePatch(
+    branchVersion,
+    "preparation release branch version",
+  );
+  if (branchPatch !== mainPatch + 1) {
+    fail("Release workflow preparation must produce the next stable patch.");
+  }
+  requireEqual(manifestVersion, branchVersion, "preparation manifest version");
+  requireEqual(
+    packageLockVersion,
+    branchVersion,
+    "preparation package-lock version",
+  );
+  requireEqual(
+    packageLockPackageVersion,
+    branchVersion,
+    "preparation package-lock root package version",
+  );
+
+  requireReleasePullRequest(pullRequest, {
+    branchSha,
+    branchVersion,
+    releaseBranch,
+    repository,
+  });
+  if (pullRequest.state !== "open" || pullRequest.mergedAt !== null) {
+    fail("Release workflow prepared release pull request must be open.");
+  }
+  const changedFiles = Array.isArray(pullRequest.files)
+    ? [...pullRequest.files].sort()
+    : [];
+  requireEqual(
+    JSON.stringify(changedFiles),
+    JSON.stringify(RELEASE_PR_FILES),
+    "prepared release pull request files",
+  );
+
+  requirePositiveInteger(
+    actionPullRequest.number,
+    "action pull request number",
+  );
+  requireEqual(
+    actionPullRequest.number,
+    pullRequest.number,
+    "action pull request number",
+  );
+  requireEqual(
+    actionPullRequest.baseBranchName,
+    pullRequest.baseRef,
+    "action pull request base",
+  );
+  requireEqual(
+    actionPullRequest.headBranchName,
+    pullRequest.headRef,
+    "action pull request head",
+  );
+  requireEqual(
+    actionPullRequest.title,
+    pullRequest.title,
+    "action pull request title",
+  );
+  requireEqual(
+    actionPullRequest.body,
+    pullRequest.body,
+    "action pull request body",
+  );
+  requirePendingLabel(actionPullRequest.labels, "action pull request");
+  if (!Array.isArray(actionPullRequest.files)) {
+    fail("Release workflow action pull request files must be an array.");
+  }
+
+  if (typeof changelog !== "string") {
+    fail("Release workflow prepared CHANGELOG must be a string.");
+  }
+  const escapedVersion = branchVersion.replaceAll(".", "\\.");
+  const releaseHeading = new RegExp(
+    `^#{2,3} \\[?${escapedVersion}\\]?(?:\\([^\\n]+\\))? (?:\\(\\d{4}-\\d{2}-\\d{2}\\)|- \\d{4}-\\d{2}-\\d{2})$`,
+    "gm",
+  );
+  if ([...changelog.matchAll(releaseHeading)].length !== 1) {
+    fail(
+      "Release workflow prepared CHANGELOG must contain exactly one dated release heading for the patch.",
+    );
+  }
+
+  return { pullRequestNumber: pullRequest.number, version: branchVersion };
 }
 
 export function validateReleasePleaseActionResult(

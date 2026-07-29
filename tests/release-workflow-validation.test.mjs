@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  validatePreparedReleasePullRequest,
   validateGitHubRelease,
   validateMergedReleasePullRequest,
+  validateReleasePleasePullRequestBody,
   validateReleasePleaseActionResult,
   validateReleasePleaseBranchState,
   validateReleaseWorkflowRun,
@@ -15,11 +17,34 @@ const RELEASE_SHA = "a".repeat(40);
 const BRANCH_SHA = "b".repeat(40);
 const RUN_ID = 123456789;
 
+function releaseBody(version = "0.1.1") {
+  return `:robot: I have created a release *beep* *boop*
+---
+
+
+## [${version}](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0...v${version}) (2026-07-29)
+
+### Bug Fixes
+
+* enforce the supported options boundary
+
+---
+This PR was generated with [Release Please](https://github.com/googleapis/release-please).`;
+}
+
 function pullRequestFixture({ merged = false, version = "0.1.1" } = {}) {
   return {
-    author: "release-author",
+    author: "github-actions[bot]",
     baseRef: "main",
+    body: releaseBody(version),
+    files: [
+      ".release-please-manifest.json",
+      "CHANGELOG.md",
+      "package-lock.json",
+      "package.json",
+    ],
     headRef: RELEASE_BRANCH,
+    headRepository: REPOSITORY,
     headSha: BRANCH_SHA,
     labels: ["autorelease: pending"],
     mergeCommitIsAncestor: merged,
@@ -87,12 +112,14 @@ function branchState(overrides = {}) {
   return {
     branchSha: BRANCH_SHA,
     branchVersion: "0.1.1",
+    conflictingOpenPullRequests: [],
     exists: true,
     isAncestor: false,
     mainVersion: "0.1.0",
     manifestVersion: "0.1.1",
     pullRequests: [pullRequestFixture()],
     releaseBranch: RELEASE_BRANCH,
+    repository: REPOSITORY,
     ...overrides,
   };
 }
@@ -124,6 +151,22 @@ describe("Release Please branch validation", () => {
       pullRequestNumber: 31,
       state: "open",
     });
+  });
+
+  it("rejects an open fork PR whose head can collide with the release branch", () => {
+    expect(() =>
+      validateReleasePleaseBranchState(
+        branchState({
+          conflictingOpenPullRequests: [
+            {
+              headRef: RELEASE_BRANCH,
+              headRepository: "fork/repo",
+              number: 32,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/collide with the canonical release branch/i);
   });
 
   it("accepts a squash-merged branch through its exact merged PR", () => {
@@ -168,6 +211,9 @@ describe("Release Please branch validation", () => {
     ["head SHA", (pr) => (pr.headSha = "c".repeat(40))],
     ["title", (pr) => (pr.title = "chore(main): release 0.2.0")],
     ["label", (pr) => (pr.labels = [])],
+    ["author", (pr) => (pr.author = "maintainer")],
+    ["body", (pr) => (pr.body = "ordinary pull request body")],
+    ["head repository", (pr) => (pr.headRepository = "fork/repo")],
   ])("rejects a release PR with the wrong %s", (_name, mutate) => {
     const pullRequest = pullRequestFixture();
     mutate(pullRequest);
@@ -176,6 +222,97 @@ describe("Release Please branch validation", () => {
         branchState({ pullRequests: [pullRequest] }),
       ),
     ).toThrow(/release workflow/i);
+  });
+});
+
+describe("Release Please pull request preparation", () => {
+  function preparedState(overrides = {}) {
+    const pullRequest = pullRequestFixture();
+    return {
+      actionPullRequests: [
+        {
+          baseBranchName: pullRequest.baseRef,
+          body: pullRequest.body,
+          files: [],
+          headBranchName: pullRequest.headRef,
+          labels: pullRequest.labels,
+          number: pullRequest.number,
+          title: pullRequest.title,
+        },
+      ],
+      branchSha: BRANCH_SHA,
+      branchVersion: "0.1.1",
+      changelog: releaseBody(),
+      mainVersion: "0.1.0",
+      manifestVersion: "0.1.1",
+      packageLockPackageVersion: "0.1.1",
+      packageLockVersion: "0.1.1",
+      pullRequest,
+      releaseBranch: RELEASE_BRANCH,
+      repository: REPOSITORY,
+      ...overrides,
+    };
+  }
+
+  it("accepts the single action-created 0.1.1 patch PR", () => {
+    expect(validatePreparedReleasePullRequest(preparedState())).toEqual({
+      pullRequestNumber: 31,
+      version: "0.1.1",
+    });
+  });
+
+  it.each([
+    ["no action PR", (state) => (state.actionPullRequests = [])],
+    [
+      "multiple action PRs",
+      (state) =>
+        state.actionPullRequests.push({
+          ...state.actionPullRequests[0],
+          number: 32,
+        }),
+    ],
+    ["wrong manifest", (state) => (state.manifestVersion = "0.2.0")],
+    ["wrong branch SHA", (state) => (state.branchSha = "c".repeat(40))],
+    ["wrong lock root", (state) => (state.packageLockVersion = "0.2.0")],
+    [
+      "wrong lock package",
+      (state) => (state.packageLockPackageVersion = "0.2.0"),
+    ],
+    [
+      "wrong changed files",
+      (state) => state.pullRequest.files.push("README.md"),
+    ],
+    ["unparseable body", (state) => (state.pullRequest.body = "ordinary PR")],
+    ["wrong changelog", (state) => (state.changelog = "# Changelog\n")],
+  ])("rejects a preparation with %s", (_name, mutate) => {
+    const state = preparedState();
+    mutate(state);
+    expect(() => validatePreparedReleasePullRequest(state)).toThrow(
+      /release workflow/i,
+    );
+  });
+
+  it("accepts a Release Please 17.6.0 machine-readable body", () => {
+    expect(
+      validateReleasePleasePullRequestBody(releaseBody(), "0.1.1"),
+    ).toEqual({ version: "0.1.1" });
+  });
+
+  it.each([
+    [
+      "the default repository PR template",
+      "## Summary\n\nDescribe the change.",
+    ],
+    [
+      "an overflow link",
+      "This release is too large to preview in the pull request body. View the full release notes here: https://github.com/cometapi-dev/cometapi-node/blob/release-notes/release-notes.md",
+    ],
+    ["one delimiter", ":robot:\n---\n## [0.1.1] (2026-07-29)"],
+    ["the wrong version", releaseBody("0.2.0")],
+  ])("rejects %s as a release PR body", (_name, body) => {
+    expect(() => validateReleasePleasePullRequestBody(body, "0.1.1")).toThrow(
+      /release workflow/i,
+    );
   });
 });
 
@@ -198,6 +335,7 @@ describe("release PR review validation", () => {
         eventName: "push",
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
       }),
     ).toBe(pullRequest);
   });
@@ -208,6 +346,7 @@ describe("release PR review validation", () => {
         eventName: "workflow_dispatch",
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
       }),
     ).toBeNull();
   });
@@ -231,6 +370,49 @@ describe("release PR review validation", () => {
       ],
       { eventName: "push", releaseCommit: RELEASE_SHA },
     ],
+    [
+      "an exact candidate plus an alternate pending merge",
+      [
+        pullRequestFixture({ merged: true }),
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRef: "release-cometapi-v0.1.0",
+          mergeCommitSha: "c".repeat(40),
+          number: 30,
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
+    [
+      "a legacy branch",
+      [
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRef: "release-cometapi-v0.1.1",
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
+    [
+      "a v12 branch",
+      [
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRef: "release-please--branches--main",
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
+    [
+      "a fork branch",
+      [
+        {
+          ...pullRequestFixture({ merged: true }),
+          headRepository: "fork/repo",
+        },
+      ],
+      { eventName: "push", releaseCommit: RELEASE_SHA },
+    ],
   ])(
     "rejects %s before Release Please runs",
     (_name, pullRequests, overrides) => {
@@ -239,6 +421,7 @@ describe("release PR review validation", () => {
           eventName: overrides.eventName,
           releaseBranch: RELEASE_BRANCH,
           releaseCommit: overrides.releaseCommit,
+          repository: REPOSITORY,
         }),
       ).toThrow(/release workflow/i);
     },
@@ -250,6 +433,7 @@ describe("release PR review validation", () => {
         pullRequest: pullRequestFixture({ merged: true }),
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
         reviews: [reviewFixture()],
         version: "0.1.1",
       }),
@@ -260,7 +444,7 @@ describe("release PR review validation", () => {
     ["stale commit", (review) => (review.commitId = "c".repeat(40))],
     ["non-admin", (review) => (review.permission = "maintain")],
     ["bot", (review) => (review.userType = "Bot")],
-    ["PR author", (review) => (review.login = "release-author")],
+    ["PR author", (review) => (review.login = "github-actions[bot]")],
     ["changes requested", (review) => (review.state = "CHANGES_REQUESTED")],
   ])("rejects a %s review", (_name, mutate) => {
     const review = reviewFixture();
@@ -270,6 +454,7 @@ describe("release PR review validation", () => {
         pullRequest: pullRequestFixture({ merged: true }),
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
         reviews: [review],
         version: "0.1.1",
       }),
@@ -283,6 +468,7 @@ describe("release PR review validation", () => {
         pullRequest: pullRequestFixture({ merged: true }),
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
         reviews: [
           approval,
           { ...approval, id: 11, state: "CHANGES_REQUESTED" },

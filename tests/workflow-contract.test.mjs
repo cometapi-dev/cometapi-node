@@ -190,10 +190,20 @@ describe("GitHub Actions workflow contract", () => {
     expect(releasePlease).toContain(
       "googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7",
     );
-    expect(releasePlease).not.toContain("skip-github-release: true");
+    expect(releasePlease).toContain(
+      "skip-github-release: ${{ github.event_name == 'workflow_dispatch' }}",
+    );
+    expect(releasePlease).toContain(
+      "skip-github-pull-request: ${{ github.event_name == 'push' }}",
+    );
     expect(contents).not.toContain("token:");
     expect(contents).toMatch(/^ {2}workflow_dispatch:$/m);
+    expect(contents).toContain("group: release-please-main");
     expect(releasePlease).toContain("RUN_ATTEMPT: ${{ github.run_attempt }}");
+    expect(releasePlease).toContain("TRIGGERING_REF: ${{ github.ref }}");
+    expect(releasePlease).toContain(
+      'if [[ "$TRIGGERING_REF" != "refs/heads/main" ]]; then',
+    );
     expect(releasePlease).toContain("ref: ${{ github.sha }}");
     expect(
       matches(
@@ -202,7 +212,11 @@ describe("GitHub Actions workflow contract", () => {
       ),
     ).toHaveLength(2);
     expect(releasePlease).toContain("validateMergedReleasePullRequest");
+    expect(releasePlease).toContain("validatePreparedReleasePullRequest");
     expect(releasePlease).toContain("selectPendingReleasePullRequest");
+    expect(releasePlease).toMatch(
+      /if: steps\.preflight\.outputs\.mode == 'release'[\s\S]*node scripts\/validate-release\.mjs \\\n[\s\S]*--require-final \\\n[\s\S]*--require-releasable-docs/,
+    );
     expect(releasePlease).toContain(
       "release-please-result-${{ github.run_id }}-${{ github.run_attempt }}",
     );
@@ -221,7 +235,7 @@ describe("GitHub Actions workflow contract", () => {
         "chore${scope}: release${component} ${version}",
       "release-type": "node",
       "skip-github-release": false,
-      versioning: "default",
+      versioning: "always-bump-patch",
     });
   });
 
@@ -252,6 +266,16 @@ describe("GitHub Actions workflow contract", () => {
     expect(releaseWorkflowValidation).toContain("result.releaseCreated");
     expect(releaseWorkflowValidation).toContain("release?.immutable");
     expect(releaseWorkflowValidation).toContain("release?.target_commitish");
+
+    expect(verify).toContain(
+      "artifact-name: ${{ steps.artifact-name.outputs.name }}",
+    );
+    expect(verify).toContain(
+      "npm-package-${{ steps.version.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}",
+    );
+    expect(job(publish, "publish")).toContain(
+      "name: ${{ needs.verify.outputs.artifact-name }}",
+    );
   });
 
   it("rejects an unrelated divergent Release Please branch", () => {
@@ -266,5 +290,11 @@ describe("GitHub Actions workflow contract", () => {
     expect(releasePlease).toContain("manifest_version=");
     expect(releasePlease).toContain("pullRequest.head?.sha === branchSha");
     expect(releasePlease).toContain("validateReleasePleaseBranchState");
+    expect(releasePlease).toContain(
+      "pulls?state=closed&base=main&per_page=100",
+    );
+    expect(releasePlease).not.toContain(
+      "pulls?state=closed&head=cometapi-dev%3A${RELEASE_BRANCH}",
+    );
   });
 });
