@@ -31,6 +31,7 @@ const releaseWorkflowValidation = readFileSync(
   "utf8",
 );
 const releasePleaseWorkflow = parse(workflows["release-please.yml"]);
+const publishWorkflow = parse(workflows["publish.yml"]);
 
 function workflow(name) {
   const contents = workflows[name];
@@ -316,18 +317,29 @@ describe("GitHub Actions workflow contract", () => {
     }
   });
 
-  it("starts publication only from the completed Release Please workflow", () => {
+  it("starts publication from Release Please or the exact one-cycle recovery", () => {
     const publish = workflow("publish.yml");
     expect(publish).toMatch(
       /workflow_run:\n {4}workflows:\n {6}- Release Please\n {4}types:\n {6}- completed/,
     );
     expect(publish).not.toMatch(/^ {2}release:/m);
+    expect(publish).not.toMatch(/^ {2}workflow_dispatch:/m);
+    expect(publishWorkflow.on.push).toEqual({
+      branches: ["main"],
+      paths: [".github/workflows/publish.yml"],
+    });
 
     const verify = job(publish, "verify");
     expect(verify).toContain(
       "github.event.workflow_run.conclusion == 'success'",
     );
-    expect(verify).toContain("ref: refs/heads/main");
+    expect(verify).toContain("SOURCE_RELEASE_COMMIT:");
+    expect(verify).toContain("c98b514227858cd183c781270a7f78f65b577e82");
+    expect(verify).toContain("SOURCE_RELEASE_RUN_ID:");
+    expect(verify).toContain("30469181724");
+    expect(verify).toContain("SOURCE_RELEASE_RUN_ATTEMPT:");
+    expect(verify).toContain("validatePublishRecoveryTrigger");
+    expect(verify).toContain("ref: ${{ env.SOURCE_RELEASE_COMMIT }}");
     expect(verify).toContain("EXPECTED_WORKFLOW: Release Please");
     expect(verify).toContain(
       "EXPECTED_WORKFLOW_PATH: .github/workflows/release-please.yml",
@@ -335,9 +347,13 @@ describe("GitHub Actions workflow contract", () => {
     expect(verify).toContain("github.event.workflow_run.head_sha");
     expect(verify).toContain("github.event.workflow_run.run_attempt");
     expect(verify).toContain(
-      "release-please-result-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}",
+      "release-please-result-${{ env.SOURCE_RELEASE_RUN_ID }}-${{ env.SOURCE_RELEASE_RUN_ATTEMPT }}",
     );
-    expect(verify).toContain("run-id: ${{ github.event.workflow_run.id }}");
+    expect(verify).toContain("path: ${{ runner.temp }}/release-please-result");
+    expect(verify).toContain("run-id: ${{ env.SOURCE_RELEASE_RUN_ID }}");
+    expect(verify).toContain(
+      "RELEASE_RESULT: ${{ runner.temp }}/release-please-result/result.json",
+    );
     const resultDownload = verify.slice(
       verify.indexOf("Download the exact Release Please result"),
       verify.indexOf("Reject an untrusted Release Please workflow run"),

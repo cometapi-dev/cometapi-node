@@ -291,6 +291,20 @@ The repository maintains four independently auditable workflows:
   downloaded artifact, then repeats every bounded registry-state and signature
   check.
 
+  The first `0.1.1` Publish run
+  [30469240186](https://github.com/cometapi-dev/cometapi-node/actions/runs/30469240186)
+  validated the immutable tag, Release, and Release Please result, then failed
+  before packing, live smoke, OIDC, or npm because the downloaded runtime result
+  JSON was inside the workspace scanned by Prettier. One reviewed recovery merge
+  temporarily adds an automatic `publish.yml`-only `main` push path. It accepts
+  only human actor `tensornull`, exact Release Please run `30469181724` attempt
+  1, release commit `c98b514227858cd183c781270a7f78f65b577e82`, a direct
+  first-parent recovery merge, and the five recorded repair files. The workflow
+  then checks out and rebuilds the immutable release commit, downloads runtime
+  evidence under `runner.temp`, and uses the unchanged live, OIDC, artifact, and
+  registry gates. The recovery trigger and constants must be removed in the
+  post-release evidence PR; the `runner.temp` isolation remains permanent.
+
 Third-party actions are pinned to full commit SHAs. Workflow permissions remain
 read-only except where a documented job requires more; `id-token: write` belongs
 only to the publish job. Publication cannot run from an arbitrary branch or an

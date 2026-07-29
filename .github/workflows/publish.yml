@@ -1,6 +1,11 @@
 name: Publish
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish.yml
   workflow_run:
     workflows:
       - Release Please
@@ -20,11 +25,17 @@ jobs:
     name: Verify the immutable release artifact
     if: >-
       vars.RELEASE_PLEASE_ENABLED == 'true' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main') ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SOURCE_RELEASE_COMMIT: ${{ github.event_name == 'push' && 'c98b514227858cd183c781270a7f78f65b577e82' || github.event.workflow_run.head_sha }}
+      SOURCE_RELEASE_RUN_ATTEMPT: ${{ github.event_name == 'push' && '1' || github.event.workflow_run.run_attempt }}
+      SOURCE_RELEASE_RUN_ID: ${{ github.event_name == 'push' && '30469181724' || github.event.workflow_run.id }}
     outputs:
       artifact-name: ${{ steps.artifact-name.outputs.name }}
       dist-tag: ${{ steps.version.outputs.dist-tag }}
@@ -32,20 +43,82 @@ jobs:
       release-tag: ${{ steps.trust.outputs.release-tag }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Check out the current main branch
+      - name: Check out the workflow control commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: refs/heads/main
+          ref: ${{ github.sha }}
+      - name: Validate the one-cycle exact release recovery
+        if: github.event_name == 'push'
+        env:
+          ACTOR: ${{ github.actor }}
+          CHANGED_FILES: ${{ runner.temp }}/publish-recovery-files
+          EVENT_AFTER: ${{ github.event.after }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          MAIN_COMMIT: ${{ github.sha }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$MAIN_COMMIT" ]]; then
+            echo "The recovery control checkout does not match the triggering SHA." >&2
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$MAIN_COMMIT" ]]; then
+            echo "main moved after the publish recovery was triggered." >&2
+            exit 1
+          fi
+          git diff --name-only "$EVENT_BEFORE" "$MAIN_COMMIT" > "$CHANGED_FILES"
+          MAIN_FIRST_PARENT="$(git rev-parse "${MAIN_COMMIT}^1")" \
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { validatePublishRecoveryTrigger } from "./scripts/release-workflow-validation.mjs";
+
+          validatePublishRecoveryTrigger({
+            actor: process.env.ACTOR,
+            changedFiles: readFileSync(process.env.CHANGED_FILES, "utf8")
+              .split("\n")
+              .filter((file) => file !== ""),
+            eventAfter: process.env.EVENT_AFTER,
+            eventBefore: process.env.EVENT_BEFORE,
+            eventName: process.env.EVENT_NAME,
+            eventRef: process.env.EVENT_REF,
+            mainCommit: process.env.MAIN_COMMIT,
+            mainFirstParent: process.env.MAIN_FIRST_PARENT,
+            sourceReleaseCommit: process.env.SOURCE_RELEASE_COMMIT,
+            sourceRunAttempt: Number(process.env.SOURCE_RELEASE_RUN_ATTEMPT),
+            sourceRunId: Number(process.env.SOURCE_RELEASE_RUN_ID),
+            workflowRunAttempt: Number(process.env.WORKFLOW_RUN_ATTEMPT),
+          });
+          EOF
+      - name: Check out the exact release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ env.SOURCE_RELEASE_COMMIT }}
+      - name: Read the exact Release Please source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_FILE: ${{ runner.temp }}/release-please-source-run.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RELEASE_RUN_ID}" \
+            > "$SOURCE_RUN_FILE"
       - name: Download the exact Release Please result
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: release-please-result-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
-          path: release-please-result
+          name: release-please-result-${{ env.SOURCE_RELEASE_RUN_ID }}-${{ env.SOURCE_RELEASE_RUN_ATTEMPT }}
+          path: ${{ runner.temp }}/release-please-result
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ env.SOURCE_RELEASE_RUN_ID }}
       - name: Reject an untrusted Release Please workflow run
         id: trust
         env:
@@ -54,8 +127,13 @@ jobs:
           EXPECTED_REPOSITORY_URL: git+https://github.com/cometapi-dev/cometapi-node.git
           EXPECTED_WORKFLOW: Release Please
           EXPECTED_WORKFLOW_PATH: .github/workflows/release-please.yml
-          RELEASE_RESULT: release-please-result/result.json
-          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONTROL_SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_RESULT: ${{ runner.temp }}/release-please-result/result.json
+          SOURCE_RUN_FILE: ${{ runner.temp }}/release-please-source-run.json
+          SOURCE_RUN_ATTEMPT: ${{ env.SOURCE_RELEASE_RUN_ATTEMPT }}
+          SOURCE_RUN_ID: ${{ env.SOURCE_RELEASE_RUN_ID }}
+          WORKFLOW_SHA: ${{ env.SOURCE_RELEASE_COMMIT }}
         shell: bash
         run: |
           set -euo pipefail
@@ -66,8 +144,13 @@ jobs:
           fi
 
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]; then
-            echo "origin/main moved after the successful Release Please run." >&2
+          case "$EVENT_NAME" in
+            workflow_run) expected_main="$WORKFLOW_SHA" ;;
+            push) expected_main="$CONTROL_SHA" ;;
+            *) echo "Publish received an unsupported event." >&2; exit 1 ;;
+          esac
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$expected_main" ]]; then
+            echo "origin/main moved after the trusted publish event." >&2
             exit 1
           fi
 
@@ -78,13 +161,54 @@ jobs:
             validateReleaseWorkflowRun,
           } from "./scripts/release-workflow-validation.mjs";
 
-          const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
-          const run = validateReleaseWorkflowRun(event, {
+          const sourceRun = JSON.parse(
+            readFileSync(process.env.SOURCE_RUN_FILE, "utf8"),
+          );
+          const sourceEvent = {
+            action: "completed",
+            repository: { full_name: sourceRun.repository?.full_name },
+            workflow_run: {
+              conclusion: sourceRun.conclusion,
+              event: sourceRun.event,
+              head_branch: sourceRun.head_branch,
+              head_repository: sourceRun.head_repository,
+              head_sha: sourceRun.head_sha,
+              id: sourceRun.id,
+              name: sourceRun.name,
+              path: sourceRun.path,
+              run_attempt: sourceRun.run_attempt,
+            },
+          };
+          const run = validateReleaseWorkflowRun(sourceEvent, {
             checkedOutSha: process.env.WORKFLOW_SHA,
             repository: process.env.EXPECTED_REPOSITORY,
             workflowName: process.env.EXPECTED_WORKFLOW,
             workflowPath: process.env.EXPECTED_WORKFLOW_PATH,
           });
+          if (
+            run.runId !== Number(process.env.SOURCE_RUN_ID) ||
+            run.runAttempt !== Number(process.env.SOURCE_RUN_ATTEMPT)
+          ) {
+            throw new Error(
+              "Release workflow source run ID or attempt changed before publication.",
+            );
+          }
+          if (process.env.EVENT_NAME === "workflow_run") {
+            const eventRun = validateReleaseWorkflowRun(
+              JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")),
+              {
+                checkedOutSha: process.env.WORKFLOW_SHA,
+                repository: process.env.EXPECTED_REPOSITORY,
+                workflowName: process.env.EXPECTED_WORKFLOW,
+                workflowPath: process.env.EXPECTED_WORKFLOW_PATH,
+              },
+            );
+            if (JSON.stringify(eventRun) !== JSON.stringify(run)) {
+              throw new Error(
+                "Release workflow source run differs from the workflow_run event.",
+              );
+            }
+          }
           const manifest = JSON.parse(readFileSync("package.json", "utf8"));
           if (
             manifest.repository?.type !== "git" ||

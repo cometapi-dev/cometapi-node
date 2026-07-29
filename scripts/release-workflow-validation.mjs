@@ -11,6 +11,19 @@ const RELEASE_PR_FOOTER =
 const RELEASE_WORKFLOW_JOB =
   "Prepare a reviewed release pull request or GitHub release";
 const RELEASE_WORKFLOW_STEP = "Run Release Please";
+const PUBLISH_RECOVERY = Object.freeze({
+  actor: "tensornull",
+  changedFiles: Object.freeze([
+    ".github/workflows/publish.yml",
+    "RELEASING.md",
+    "scripts/release-workflow-validation.mjs",
+    "tests/release-workflow-validation.test.mjs",
+    "tests/workflow-contract.test.mjs",
+  ]),
+  releaseCommit: "c98b514227858cd183c781270a7f78f65b577e82",
+  releaseRunAttempt: 1,
+  releaseRunId: 30469181724,
+});
 
 function fail(message) {
   throw new Error(message);
@@ -60,6 +73,79 @@ function stablePatch(version, label) {
     fail(`Release workflow ${label} must be a stable 0.1.x version.`);
   }
   return Number(match[1]);
+}
+
+export function validatePublishRecoveryTrigger({
+  actor,
+  changedFiles,
+  eventAfter,
+  eventBefore,
+  eventName,
+  eventRef,
+  mainCommit,
+  mainFirstParent,
+  sourceReleaseCommit,
+  sourceRunAttempt,
+  sourceRunId,
+  workflowRunAttempt,
+}) {
+  requireEqual(actor, PUBLISH_RECOVERY.actor, "publish recovery actor");
+  requireEqual(eventName, "push", "publish recovery event");
+  requireEqual(eventRef, "refs/heads/main", "publish recovery ref");
+  requireCommit(eventAfter, "publish recovery event after SHA");
+  requireCommit(eventBefore, "publish recovery event before SHA");
+  requireCommit(mainCommit, "publish recovery main commit");
+  requireCommit(mainFirstParent, "publish recovery main first parent");
+  requireCommit(sourceReleaseCommit, "publish recovery source release commit");
+  requireEqual(
+    eventAfter,
+    mainCommit,
+    "publish recovery event and main commit agreement",
+  );
+  requireEqual(
+    eventBefore,
+    PUBLISH_RECOVERY.releaseCommit,
+    "publish recovery event before SHA",
+  );
+  requireEqual(
+    mainFirstParent,
+    PUBLISH_RECOVERY.releaseCommit,
+    "publish recovery main first parent",
+  );
+  requireEqual(
+    sourceReleaseCommit,
+    PUBLISH_RECOVERY.releaseCommit,
+    "publish recovery source release commit",
+  );
+  requirePositiveInteger(sourceRunId, "publish recovery source run ID");
+  requireEqual(
+    sourceRunId,
+    PUBLISH_RECOVERY.releaseRunId,
+    "publish recovery source run ID",
+  );
+  requirePositiveInteger(
+    sourceRunAttempt,
+    "publish recovery source run attempt",
+  );
+  requireEqual(
+    sourceRunAttempt,
+    PUBLISH_RECOVERY.releaseRunAttempt,
+    "publish recovery source run attempt",
+  );
+  requirePositiveInteger(workflowRunAttempt, "publish recovery run attempt");
+  if (!Array.isArray(changedFiles)) {
+    fail("Release workflow publish recovery changed files must be an array.");
+  }
+  requireEqual(
+    JSON.stringify([...changedFiles].sort()),
+    JSON.stringify([...PUBLISH_RECOVERY.changedFiles].sort()),
+    "publish recovery changed files",
+  );
+  return {
+    releaseCommit: PUBLISH_RECOVERY.releaseCommit,
+    releaseRunAttempt: PUBLISH_RECOVERY.releaseRunAttempt,
+    releaseRunId: PUBLISH_RECOVERY.releaseRunId,
+  };
 }
 
 function releaseTitle(version) {
