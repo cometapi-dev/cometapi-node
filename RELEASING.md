@@ -232,8 +232,9 @@ The repository maintains four independently auditable workflows:
   first failure. Standalone and release smoke jobs share one repository-wide
   concurrency group. Scheduled and manual live execution requires
   `LIVE_SMOKE_ENABLED=true`.
-- `release-please.yml`: patch-only versioning, an explicit `cometapi` component,
-  separate pull requests, and an explicit component/version title. It requires
+- `release-please.yml`: patch-only versioning, an explicit `cometapi` branch
+  component, separate pull requests, and the pinned root-package title
+  `chore(main): release <version>`. It requires
   `RELEASE_PLEASE_ENABLED=true` and uses the default `GITHUB_TOKEN`. The
   authorized repository baseline keeps default workflow permissions read-only
   and allows Actions to create pull requests; it does not make bot review valid

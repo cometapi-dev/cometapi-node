@@ -114,11 +114,13 @@ a human owner reviews its exact final head. Default workflow permissions remain
 read-only, bot approval is never accepted, and the workflow does not modify the
 repository setting. Patch-only versioning prevents an implicit 0.2 bump during
 this maintenance window. The temporary anchor must be removed in that release
-PR before merge. The explicit component does not enter the public tag; the only
-accepted patch tag is `v0.1.1`. Publication is triggered from the successful
-attempt-qualified Release Please push run and independently verifies that run's
-schema-v2 result artifact, default-branch commit, tag, immutable Release, and
-package artifact before the existing bounded live smoke and npm OIDC steps. A
+PR before merge. The explicit component identifies the temporary branch but,
+for this root package, does not enter the Release Please title or public tag;
+the only accepted patch tag is `v0.1.1`. Publication is triggered from the
+successful attempt-qualified Release Please push run and independently verifies
+that run's schema-v2 result artifact, default-branch commit, tag, immutable
+Release, and package artifact before the existing bounded live smoke and npm
+OIDC steps. A
 push rerun is bounded to the same run ID, SHA, candidate, Release-producing
 attempt, and exact Release state; manual preparation remains attempt-1-only.
 The Release notes must equal the reviewed `CHANGELOG` entry. The post-merge run also
