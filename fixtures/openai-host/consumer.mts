@@ -1,5 +1,5 @@
 import { CometAPI, type CometAPIOptions } from "cometapi";
-import { APIPromise, OpenAI, PagePromise } from "openai";
+import { APIPromise, type ClientOptions, OpenAI, PagePromise } from "openai";
 import type {
   ChatCompletion,
   ChatCompletionChunk,
@@ -17,6 +17,32 @@ const options: CometAPIOptions = {
 };
 const client = new CometAPI(options);
 const upstream: OpenAI = client;
+
+const unsupportedProviderOptions: CometAPIOptions = {
+  // @ts-expect-error CometAPI does not expose OpenAI provider routing.
+  provider: {} as NonNullable<ClientOptions["provider"]>,
+};
+const unsupportedWorkloadIdentityOptions: CometAPIOptions = {
+  // @ts-expect-error CometAPI owns API-key authentication.
+  workloadIdentity: {} as NonNullable<ClientOptions["workloadIdentity"]>,
+};
+const unsupportedBrowserOptions: CometAPIOptions = {
+  // @ts-expect-error Browser-side long-lived key use is unsupported.
+  dangerouslyAllowBrowser: true,
+};
+
+client.withOptions({
+  // @ts-expect-error withOptions must not expose OpenAI provider routing.
+  provider: {} as NonNullable<ClientOptions["provider"]>,
+});
+client.withOptions({
+  // @ts-expect-error withOptions must not expose workload identity authentication.
+  workloadIdentity: {} as NonNullable<ClientOptions["workloadIdentity"]>,
+});
+client.withOptions({
+  // @ts-expect-error withOptions must not expose the browser safety bypass.
+  dangerouslyAllowBrowser: true,
+});
 
 const chat: APIPromise<ChatCompletion> = client.chat.completions.create({
   messages: [{ content: "Reply with OK.", role: "user" }],
@@ -40,4 +66,14 @@ const responseStream: APIPromise<Stream<ResponseStreamEvent>> =
   });
 const models: PagePromise<ModelsPage, Model> = client.models.list();
 
-void [chat, chatStream, models, response, responseStream, upstream];
+void [
+  chat,
+  chatStream,
+  models,
+  response,
+  responseStream,
+  unsupportedBrowserOptions,
+  unsupportedProviderOptions,
+  unsupportedWorkloadIdentityOptions,
+  upstream,
+];

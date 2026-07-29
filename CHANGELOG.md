@@ -9,13 +9,6 @@ follows Keep a Changelog, and versions follow Semantic Versioning.
 
 - prepare 0.1.0 stable release ([#27](https://github.com/cometapi-dev/cometapi-node/issues/27)) ([f5f6731](https://github.com/cometapi-dev/cometapi-node/commit/f5f6731ba9a5bb0fbfdc1ed256c3e66e3c03ca96))
 
-## [Unreleased]
-
-### Documentation
-
-- Recorded the verified stable `0.1.0` release evidence and the deferred Release
-  Please automation follow-up.
-
 ## [0.1.0-alpha.3] - 2026-07-27
 
 ### Fixed

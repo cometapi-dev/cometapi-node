@@ -8,6 +8,11 @@ defaulting the client to CometAPI.
 > is complete, and the package is available from npm's default `latest` dist-tag.
 > The supported API is limited to the contract-tested 0.1 surface documented
 > here and in [COMPATIBILITY.md](./COMPATIBILITY.md).
+>
+> A `0.1.1` maintenance release is being prepared to correct the public options
+> contract and restore the normal Release Please path. It is not released until
+> the immutable release, npm OIDC publication, and public-registry verification
+> complete.
 
 ## Supported 0.1 surface
 
@@ -162,6 +167,21 @@ const response = await client.chat.completions.create(
 );
 ```
 
+Starting with 0.1.1, the public type matches the runtime boundary that 0.1.0
+intended. The SDK owns CometAPI routing, authentication, and the Node-only
+secret boundary. Consequently, `provider`, `workloadIdentity`, and
+`dangerouslyAllowBrowser` are not `CometAPIOptions`. They are rejected both by
+the TypeScript declarations and at runtime when plain JavaScript or a type cast
+bypasses those declarations. The same restriction applies to inherited
+`withOptions` calls. A rejection is an official OpenAI `OpenAIError` and names
+only the forbidden field; it never includes the supplied value.
+
+Supported options remain available, including `timeout`, `maxRetries`, `fetch`,
+`fetchOptions`, `defaultHeaders`, `defaultQuery`, `logger`, `organization`,
+`project`, `webhookSecret`, `adminAPIKey`, and per-request options. The client
+continues to derive its CometAPI API key and base URL from the documented
+constructor and environment settings.
+
 ## Direct OpenAI client interoperability
 
 Applications may also configure the official client directly. This is an
@@ -225,6 +245,10 @@ GitHub Actions, trusted live tests, and npm publication remain separate evidence
 layers and must not be represented as another. Because published npm artifacts
 are immutable, the `0.1.0` tarball retains its candidate-era README; this
 post-release status update first ships in a later package version.
+
+The `0.1.1` options-contract and Release Please repair is in progress. Until its
+full release sequence completes, npm `latest` remains `0.1.0` and this candidate
+must not be described as published. No 0.2 provider adapter work is included.
 
 See:
 

@@ -27,11 +27,32 @@ only for CometAPI defaults and public branding:
 1. An explicit constructor `apiKey` wins over `COMETAPI_KEY`.
 2. An explicit constructor `baseURL` wins over `COMETAPI_BASE_URL`.
 3. The default base URL is `https://api.cometapi.com/v1`.
-4. Other documented OpenAI client options pass through unchanged.
+4. Other documented and supported OpenAI client options pass through unchanged.
+
+The public `CometAPIOptions` type excludes the upstream `provider`,
+`workloadIdentity`, and `dangerouslyAllowBrowser` fields in addition to the
+CometAPI-owned `apiKey` and `baseURL` fields. Provider and workload-identity
+routing conflict with the API key and base URL that this client injects.
+Browser-side long-lived key use is outside the 0.1 security boundary. These
+fields never represented valid CometAPI behavior, so their removal from the
+public type is a 0.1.1 contract correction rather than a supported feature
+removal.
+
+The inherited `withOptions` path is constrained to the same
+`CometAPIOptions` contract. Both the constructor and `withOptions` validate
+runtime objects before delegating upstream so plain JavaScript and type casts
+cannot restore a forbidden routing, authentication, or browser bypass. A
+forbidden field is rejected when its value is not `undefined`; the error names
+the field but never serializes its value.
 
 Missing or blank CometAPI credentials and blank explicit base URLs are rejected
 before transport through the official `OpenAIError` family. Configuration
 validation must not introduce an unrelated SDK-specific error hierarchy.
+
+Options such as `timeout`, `maxRetries`, `fetch`, `fetchOptions`,
+`defaultHeaders`, `defaultQuery`, `logger`, `organization`, `project`,
+`webhookSecret`, and `adminAPIKey` remain pass-through configuration. This
+restriction does not expand the 0.1 resource surface.
 
 The official dependency owns HTTP transport, request and response models,
 errors, retries, timeouts, pagination, streaming parsing, stream lifecycle, and
@@ -90,6 +111,37 @@ static dist-tag because that would make stable and prerelease policy diverge.
 Trusted Publishing remains the default authentication path. The only token
 path is an explicitly enabled protected-environment fallback that rejects every
 version except `0.1.0-alpha.1` and every dist-tag except `next`.
+
+For normal stable patches, Release Please owns the reviewed version/changelog
+PR and the immutable tag and GitHub Release. The configuration uses an explicit
+`cometapi` component and stable versioning so a root package does not fall into
+the single-package tag-discovery ambiguity encountered during 0.1.0. Because a
+GitHub Release created with the default `GITHUB_TOKEN` does not start a separate
+`release.published` workflow, publication is chained from the successful
+Release Please workflow. The handoff accepts only the canonical repository's
+successful first-attempt `push` run for `main` at the still-current exact `main`
+SHA. The release workflow records `release_created`, SHA, tag, version, URL,
+repository, workflow identity, run ID, and attempt in an exact-run artifact.
+Publication downloads and validates that artifact before checking the tag and
+immutable Release. Runs that fail while preparing a pull request are filtered
+out; any successful run without the exact Release Please-created result, tag,
+and immutable Release fails before live or registry access. The release outcome
+and package artifact are verified independently.
+
+Release Please and publication remain separate trust domains. Release Please
+does not receive npm OIDC permission; `id-token: write` remains limited to the
+protected publish job. Repository variables gate both flows, and reruns remain
+fail-closed on exact tag, artifact, dist-tag, integrity, and provenance state.
+Release Please itself rejects attempt 2 or later before repository mutation;
+the explicitly enabled preparation path uses a new manual dispatch, while only
+a new `push` run can enter publication. A merged release PR is accepted for
+tagging only after a distinct repository administrator approved its final head.
+The workflow checks the triggering SHA against the fetched `main` tip both at
+checkout and immediately before Release Please mutation, so an older queued run
+cannot release a newer default-branch commit.
+It also rejects any pending merged release PR whose merge commit is not the
+current push SHA. Manual dispatch is therefore release-inert: it may prepare a
+branch only when no merged release PR is awaiting a tag.
 
 ## Testing layers
 
