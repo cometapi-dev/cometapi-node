@@ -202,6 +202,9 @@ describe("GitHub Actions workflow contract", () => {
       "continue-on-error: ${{ steps.preflight.outputs.mode == 'release' }}",
     );
     expect(contents).not.toContain("token:");
+    expect(contents).toMatch(
+      /^ {2}push:\n {4}branches:\n {6}- main\n {4}paths:\n {6}- package\.json$/m,
+    );
     expect(contents).toMatch(/^ {2}workflow_dispatch:$/m);
     expect(contents).toContain("group: release-please-main");
     expect(releasePlease).toContain("RUN_ATTEMPT: ${{ github.run_attempt }}");

@@ -238,9 +238,12 @@ The repository maintains four independently auditable workflows:
   `RELEASE_PLEASE_ENABLED=true` and uses the default `GITHUB_TOKEN`. The
   authorized repository baseline keeps default workflow permissions read-only
   and allows Actions to create pull requests; it does not make bot review valid
-  release approval. A manual dispatch is attempt-1-only, runs with GitHub Release
-  creation disabled, and prepares exactly one action-authored patch PR after the
-  variable is enabled. A new dispatch may revalidate an unchanged canonical PR
+  release approval. Automatic push execution is limited to `main` commits that
+  change canonical `package.json`, so ordinary repair and documentation merges
+  cannot be mistaken for an already published version. A manual dispatch is
+  attempt-1-only, runs with GitHub Release creation disabled, and prepares
+  exactly one action-authored patch PR after the variable is enabled. A new
+  dispatch may revalidate an unchanged canonical PR
   even when Release Please returns no PR output. The preparation run succeeds
   only after independently verifying the canonical branch, title,
   machine-readable body, pending label, four expected release files, and 0.1.x
