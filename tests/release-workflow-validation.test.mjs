@@ -11,6 +11,7 @@ import {
   validateMergedReleasePullRequest,
   validateOpenReleasePullRequestCollisions,
   validatePostActionPullRequestSnapshot,
+  validatePublishRecoveryTrigger,
   validateReleasePleaseCommitMessages,
   validateReleasePleaseCompletion,
   validateReleasePleaseMutationConfiguration,
@@ -156,6 +157,69 @@ describe("Release Please generated files", () => {
         releaseNotes(),
       ),
     ).toThrow(/pull request notes/i);
+  });
+});
+
+describe("Publish recovery trigger", () => {
+  const recoveryCommit = "c98b514227858cd183c781270a7f78f65b577e82";
+  const recoveryFiles = [
+    ".github/workflows/publish.yml",
+    "RELEASING.md",
+    "scripts/release-workflow-validation.mjs",
+    "tests/release-workflow-validation.test.mjs",
+    "tests/workflow-contract.test.mjs",
+  ];
+
+  function recoveryTrigger(overrides = {}) {
+    return {
+      actor: "tensornull",
+      changedFiles: recoveryFiles,
+      eventAfter: BRANCH_SHA,
+      eventBefore: recoveryCommit,
+      eventName: "push",
+      eventRef: "refs/heads/main",
+      mainCommit: BRANCH_SHA,
+      mainFirstParent: recoveryCommit,
+      sourceReleaseCommit: recoveryCommit,
+      sourceRunAttempt: 1,
+      sourceRunId: 30469181724,
+      workflowRunAttempt: 1,
+      ...overrides,
+    };
+  }
+
+  it("accepts only the reviewed one-cycle recovery merge", () => {
+    expect(validatePublishRecoveryTrigger(recoveryTrigger())).toEqual({
+      releaseCommit: recoveryCommit,
+      releaseRunAttempt: 1,
+      releaseRunId: 30469181724,
+    });
+  });
+
+  it.each([
+    ["actor", { actor: "github-actions[bot]" }],
+    ["event", { eventName: "workflow_dispatch" }],
+    ["ref", { eventRef: "refs/heads/dev" }],
+    ["before SHA", { eventBefore: RELEASE_SHA }],
+    ["after SHA", { eventAfter: RELEASE_SHA }],
+    ["first parent", { mainFirstParent: RELEASE_SHA }],
+    ["source commit", { sourceReleaseCommit: RELEASE_SHA }],
+    ["source run ID", { sourceRunId: 30469181725 }],
+    ["source attempt", { sourceRunAttempt: 2 }],
+    ["missing file", { changedFiles: recoveryFiles.slice(1) }],
+    ["extra file", { changedFiles: [...recoveryFiles, "package.json"] }],
+  ])("rejects recovery trigger drift in %s", (_name, overrides) => {
+    expect(() =>
+      validatePublishRecoveryTrigger(recoveryTrigger(overrides)),
+    ).toThrow(/release workflow/i);
+  });
+
+  it("accepts a rerun of the same immutable recovery event", () => {
+    expect(
+      validatePublishRecoveryTrigger(
+        recoveryTrigger({ workflowRunAttempt: 2 }),
+      ),
+    ).toMatchObject({ releaseRunId: 30469181724 });
   });
 });
 
