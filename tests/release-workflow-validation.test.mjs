@@ -65,7 +65,7 @@ function pullRequestFixture({ merged = false, version = "0.1.1" } = {}) {
     mergedAt: merged ? "2026-07-29T00:00:00Z" : null,
     number: 31,
     state: merged ? "closed" : "open",
-    title: `chore(main): release cometapi ${version}`,
+    title: `chore(main): release ${version}`,
   };
 }
 
@@ -324,6 +324,15 @@ describe("Release Please pull request preparation", () => {
       pullRequestNumber: 31,
       version: "0.1.1",
     });
+  });
+
+  it("rejects an invented component in the pinned root-package title", () => {
+    const state = preparedState();
+    state.actionPullRequests[0].title = "chore(main): release cometapi 0.1.1";
+    state.pullRequest.title = "chore(main): release cometapi 0.1.1";
+    expect(() => validatePreparedReleasePullRequest(state)).toThrow(
+      /release pull request title/i,
+    );
   });
 
   it("accepts an unchanged existing action-authored PR when the action returns no output", () => {

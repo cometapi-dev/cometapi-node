@@ -63,7 +63,7 @@ function stablePatch(version, label) {
 }
 
 function releaseTitle(version) {
-  return `chore(main): release cometapi ${version}`;
+  return `chore(main): release ${version}`;
 }
 
 function normalizeMarkdown(value, label) {
