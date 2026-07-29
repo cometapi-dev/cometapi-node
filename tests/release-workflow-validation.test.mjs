@@ -1,6 +1,10 @@
+import { fileURLToPath, URL } from "node:url";
+
+import { getFileInfo } from "prettier";
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyPushReleasePresence,
   extractReleaseNotesFromChangelog,
   validatePreparedReleasePullRequest,
   validateGitHubRelease,
@@ -129,6 +133,139 @@ function releaseFixture({
     target_commitish: RELEASE_SHA,
   };
 }
+
+describe("Release Please generated files", () => {
+  it("leaves the action-owned CHANGELOG byte-for-byte unchanged by Prettier", async () => {
+    const changelog = fileURLToPath(
+      new URL("../CHANGELOG.md", import.meta.url),
+    );
+
+    await expect(
+      getFileInfo(changelog, { ignorePath: ".prettierignore" }),
+    ).resolves.toMatchObject({ ignored: true });
+    expect(
+      extractReleaseNotesFromChangelog(
+        `# Changelog\n\n${releaseNotes()}\n\n## [0.1.0] - 2026-07-28\n\nPrevious.`,
+        "0.1.1",
+      ),
+    ).toBe(releaseNotes());
+    expect(() =>
+      validateReleasePleasePullRequestBody(
+        releaseBody().replace("supported options", "different options"),
+        "0.1.1",
+        releaseNotes(),
+      ),
+    ).toThrow(/pull request notes/i);
+  });
+});
+
+describe("Release Please push classification", () => {
+  function publishedCurrentRelease(overrides = {}) {
+    return {
+      draft: false,
+      immutable: true,
+      prerelease: false,
+      tag_name: "v0.1.0",
+      target_commitish: RELEASE_SHA,
+      ...overrides,
+    };
+  }
+
+  it("ignores a metadata-only push whose current version remains published", () => {
+    expect(
+      classifyPushReleasePresence({
+        currentRelease: publishedCurrentRelease(),
+        currentTagCommit: RELEASE_SHA,
+        headCommit: BRANCH_SHA,
+        manifestVersion: "0.1.0",
+        packageChanged: false,
+        previousVersion: "0.1.0",
+        version: "0.1.0",
+      }),
+    ).toEqual({ mode: "ignore", version: "0.1.0" });
+  });
+
+  it("classifies an exact next-patch push as a release", () => {
+    expect(
+      classifyPushReleasePresence({
+        currentRelease: null,
+        currentTagCommit: null,
+        headCommit: RELEASE_SHA,
+        manifestVersion: "0.1.1",
+        packageChanged: true,
+        previousVersion: "0.1.0",
+        version: "0.1.1",
+      }),
+    ).toEqual({ mode: "release", version: "0.1.1" });
+  });
+
+  it.each([
+    [
+      "unchanged unpublished version",
+      { currentRelease: null, currentTagCommit: null },
+    ],
+    ["minor bump", { previousVersion: "0.1.0", version: "0.2.0" }],
+    ["skipped patch", { previousVersion: "0.1.0", version: "0.1.2" }],
+    ["metadata-only package change", { packageChanged: true }],
+    ["manifest drift", { manifestVersion: "0.1.1" }],
+    [
+      "published-version tag without a Release",
+      { currentRelease: null, currentTagCommit: RELEASE_SHA },
+    ],
+    ["published-version Release without a tag", { currentTagCommit: null }],
+    [
+      "mutable published Release",
+      { currentRelease: publishedCurrentRelease({ immutable: false }) },
+    ],
+    [
+      "mismatched published target",
+      {
+        currentRelease: publishedCurrentRelease({
+          target_commitish: BRANCH_SHA,
+        }),
+      },
+    ],
+    [
+      "candidate tag on another commit",
+      {
+        currentRelease: publishedCurrentRelease({
+          tag_name: "v0.1.1",
+          target_commitish: BRANCH_SHA,
+        }),
+        currentTagCommit: BRANCH_SHA,
+        previousVersion: "0.1.0",
+        version: "0.1.1",
+      },
+    ],
+  ])("rejects a %s push", (_name, overrides) => {
+    expect(() =>
+      classifyPushReleasePresence({
+        currentRelease: publishedCurrentRelease(),
+        currentTagCommit: RELEASE_SHA,
+        headCommit: RELEASE_SHA,
+        manifestVersion: "0.1.0",
+        packageChanged: false,
+        previousVersion: "0.1.0",
+        version: "0.1.0",
+        ...overrides,
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
+  it("rejects an unchanged-version rerun even if the historical tag exists", () => {
+    expect(() =>
+      classifyPushReleasePresence({
+        currentRelease: publishedCurrentRelease(),
+        currentTagCommit: RELEASE_SHA,
+        headCommit: BRANCH_SHA,
+        manifestVersion: "0.1.0",
+        packageChanged: true,
+        previousVersion: "0.1.0",
+        version: "0.1.0",
+      }),
+    ).toThrow(/package\.json push must change/i);
+  });
+});
 
 function attemptEvidenceFixture(
   attempt,

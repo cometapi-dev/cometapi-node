@@ -239,8 +239,11 @@ The repository maintains four independently auditable workflows:
   authorized repository baseline keeps default workflow permissions read-only
   and allows Actions to create pull requests; it does not make bot review valid
   release approval. Automatic push execution is limited to `main` commits that
-  change canonical `package.json`, so ordinary repair and documentation merges
-  cannot be mistaken for an already published version. A manual dispatch is
+  change canonical `package.json`; an in-job before/after check then classifies
+  unchanged published versions without mutation and requires release pushes to
+  increment exactly one patch. Ordinary repair and documentation merges that do
+  not change `package.json` therefore cannot be mistaken for an already
+  published version. A manual dispatch is
   attempt-1-only, runs with GitHub Release creation disabled, and prepares
   exactly one action-authored patch PR after the variable is enabled. A new
   dispatch may revalidate an unchanged canonical PR
@@ -456,6 +459,12 @@ Stable release additionally requires the complete supported-runtime matrix,
 executed README examples against the packed artifact, release-PR/tag/changelog/
 manifest version agreement, reviewed security and compatibility status, and
 post-publication registry evidence.
+
+`CHANGELOG.md` is owned by Release Please and excluded from Prettier so the
+action-generated release notes remain byte-for-byte identical to the release
+PR body. Release validators still require the exact dated stable-patch section,
+the four-file candidate shape, and exact PR-body note equality; secret,
+standalone-content, and public-preview checks continue to scan the file.
 
 The 0.1.1 repair used one explicit `last-release-sha` boundary at the immutable
 0.1.0 release commit, `1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca`, only for

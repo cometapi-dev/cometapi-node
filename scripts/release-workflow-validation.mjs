@@ -913,6 +913,87 @@ export function validateReleasePresenceBeforeAction({
   return { exists: true, ...evidence };
 }
 
+export function classifyPushReleasePresence({
+  currentRelease,
+  currentTagCommit,
+  headCommit,
+  manifestVersion,
+  packageChanged,
+  previousVersion,
+  version,
+}) {
+  requireCommit(headCommit, "push head commit");
+  requireBoolean(packageChanged, "push package.json change state");
+  const previousPatch = stablePatch(previousVersion, "push previous version");
+  const currentPatch = stablePatch(version, "push current version");
+  requireEqual(
+    manifestVersion,
+    version,
+    "push manifest and package version agreement",
+  );
+  const releaseExists = currentRelease !== null && currentRelease !== undefined;
+  const tagExists = currentTagCommit !== null && currentTagCommit !== undefined;
+  if (releaseExists !== tagExists) {
+    fail(
+      "Release workflow current tag and GitHub Release existence must agree.",
+    );
+  }
+  if (currentPatch === previousPatch) {
+    if (packageChanged) {
+      fail(
+        "Release workflow package.json push must change the stable package version.",
+      );
+    }
+    if (!releaseExists) {
+      fail(
+        "Release workflow ignored push must retain the exact published current version.",
+      );
+    }
+    requireCommit(currentTagCommit, "published current tag commit");
+    requireEqual(
+      currentTagCommit,
+      currentRelease?.target_commitish,
+      "published current release target",
+    );
+    requireEqual(
+      currentRelease?.tag_name,
+      `v${version}`,
+      "published current release tag",
+    );
+    requireEqual(
+      currentRelease?.draft,
+      false,
+      "published current release draft state",
+    );
+    requireEqual(
+      currentRelease?.prerelease,
+      false,
+      "published current release prerelease state",
+    );
+    requireEqual(
+      currentRelease?.immutable,
+      true,
+      "published current release immutable state",
+    );
+    return { mode: "ignore", version };
+  }
+  if (currentPatch !== previousPatch + 1) {
+    fail("Release workflow push must increment exactly one stable patch.");
+  }
+  if (!packageChanged) {
+    fail("Release workflow version-changing push must include package.json.");
+  }
+  if (releaseExists) {
+    requireCommit(currentTagCommit, "candidate tag commit");
+    if (currentTagCommit !== headCommit) {
+      fail(
+        "Release workflow candidate tag must target the triggering commit before recovery.",
+      );
+    }
+  }
+  return { mode: "release", version };
+}
+
 export function validateReleasePleaseCompletion({
   actionResult,
   attempts,
