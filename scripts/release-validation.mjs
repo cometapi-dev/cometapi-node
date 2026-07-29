@@ -863,16 +863,13 @@ function validateReleasePleaseState({
   const manifestVersion = releaseManifest?.["."];
   const hasBootstrapVersion = Object.hasOwn(packageConfig, "release-as");
   const bootstrapVersion = packageConfig["release-as"];
+  const stableBoundary = "1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca";
+  const stableTitlePattern = "chore${scope}: release${component} ${version}";
 
   requireExact(
     packageConfig["release-type"],
     "node",
     "Release Please release-type",
-  );
-  requireExact(
-    packageConfig.versioning,
-    "prerelease",
-    "Release Please versioning",
   );
   requireExact(
     packageConfig["changelog-path"],
@@ -900,6 +897,11 @@ function validateReleasePleaseState({
 
   let releaseState;
   if (isPrerelease && packageConfig.prerelease === true) {
+    requireExact(
+      packageConfig.versioning,
+      "prerelease",
+      "Release Please versioning",
+    );
     if (prerelease?.split(".")[0] !== "alpha") {
       throw new Error(
         "Release Please alpha-active state requires alpha prereleases.",
@@ -912,6 +914,11 @@ function validateReleasePleaseState({
     );
     releaseState = "alpha-active";
   } else if (isPrerelease && packageConfig.prerelease === false) {
+    requireExact(
+      packageConfig.versioning,
+      "prerelease",
+      "Release Please versioning",
+    );
     if (!/^0\.1\.0-alpha\.(?:0|[1-9]\d*)$/.test(version)) {
       throw new Error(
         "Release Please stable promotion requires a 0.1.0-alpha.N package version.",
@@ -932,9 +939,9 @@ function validateReleasePleaseState({
     }
     releaseState = "stable-promotion";
   } else if (!isPrerelease && packageConfig.prerelease === false) {
-    if (version !== "0.1.0") {
+    if (!/^0\.1\.(?:0|[1-9]\d*)$/.test(version)) {
       throw new Error(
-        "Release Please stable candidate must be exactly version 0.1.0.",
+        "Release Please stable maintenance must remain within 0.1.x.",
       );
     }
     if (Object.hasOwn(packageConfig, "prerelease-type")) {
@@ -943,14 +950,53 @@ function validateReleasePleaseState({
       );
     }
     requireExact(
-      packageConfig["skip-github-release"],
+      packageConfig.versioning,
+      "default",
+      "Release Please versioning",
+    );
+    requireExact(
+      packageConfig.component,
+      "cometapi",
+      "Release Please component",
+    );
+    requireExact(
+      releaseConfig["separate-pull-requests"],
       true,
+      "Release Please separate-pull-requests",
+    );
+    requireExact(
+      releaseConfig.label,
+      "autorelease: pending",
+      "Release Please pending label",
+    );
+    requireExact(
+      releaseConfig["release-label"],
+      "autorelease: tagged",
+      "Release Please release label",
+    );
+    requireExact(
+      packageConfig["pull-request-title-pattern"],
+      stableTitlePattern,
+      "Release Please pull-request-title-pattern",
+    );
+    requireExact(
+      packageConfig["skip-github-release"],
+      false,
       "Release Please skip-github-release",
     );
     if (Object.hasOwn(packageConfig, "draft")) {
       throw new Error("Release Please stable candidate must remove draft.");
     }
-    releaseState = "stable-candidate";
+    const lastReleaseSha = releaseConfig["last-release-sha"];
+    if (
+      lastReleaseSha !== undefined &&
+      (version !== "0.1.0" || lastReleaseSha !== stableBoundary)
+    ) {
+      throw new Error(
+        "Release Please last-release-sha is allowed only as the exact one-cycle 0.1.0 boundary.",
+      );
+    }
+    releaseState = "stable-maintenance";
   } else {
     throw new Error(
       "Release Please prerelease settings do not match the package release channel.",
@@ -978,6 +1024,11 @@ function validateReleasePleaseState({
     if (hasBootstrapVersion) {
       throw new Error(
         "The one-time Release Please release-as setting must be removed before publication.",
+      );
+    }
+    if (Object.hasOwn(releaseConfig, "last-release-sha")) {
+      throw new Error(
+        "The one-cycle Release Please last-release-sha must be removed before publication.",
       );
     }
   } else if (manifestVersion !== version && bootstrapVersion !== version) {

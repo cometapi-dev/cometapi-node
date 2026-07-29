@@ -1,11 +1,48 @@
-import { OpenAI, type ClientOptions } from "openai";
+import { OpenAI, OpenAIError, type ClientOptions } from "openai";
 
 import { resolveBaseURL, resolveCometAPIKey } from "./config.js";
+
+const UNSUPPORTED_COMETAPI_OPTIONS = [
+  "provider",
+  "workloadIdentity",
+  "dangerouslyAllowBrowser",
+] as const satisfies readonly (keyof ClientOptions)[];
+type UnsupportedCometAPIOption = (typeof UNSUPPORTED_COMETAPI_OPTIONS)[number];
+
+function sanitizeOptions<T extends Partial<ClientOptions>>(
+  options: T,
+): Omit<T, UnsupportedCometAPIOption> {
+  const {
+    provider,
+    workloadIdentity,
+    dangerouslyAllowBrowser,
+    ...supportedOptions
+  } = options;
+  const unsupportedOptions = {
+    provider,
+    workloadIdentity,
+    dangerouslyAllowBrowser,
+  };
+
+  for (const option of UNSUPPORTED_COMETAPI_OPTIONS) {
+    if (unsupportedOptions[option] !== undefined) {
+      throw new OpenAIError(
+        `The \`${option}\` option is not supported by CometAPI.`,
+      );
+    }
+  }
+
+  return supportedOptions;
+}
 
 /** Public constructor options accepted by {@link CometAPI}. */
 export interface CometAPIOptions extends Omit<
   ClientOptions,
-  "apiKey" | "baseURL"
+  | "apiKey"
+  | "baseURL"
+  | "provider"
+  | "workloadIdentity"
+  | "dangerouslyAllowBrowser"
 > {
   /** CometAPI API key. Defaults to `COMETAPI_KEY`. */
   apiKey?: string;
@@ -23,15 +60,20 @@ export interface CometAPIOptions extends Omit<
  */
 export class CometAPI extends OpenAI {
   constructor(options: CometAPIOptions = {}) {
+    const supportedOptions = sanitizeOptions(options);
     const {
       apiKey: explicitAPIKey,
       baseURL: explicitBaseURL,
       ...openAIOptions
-    } = options;
+    } = supportedOptions;
     super({
       ...openAIOptions,
       apiKey: resolveCometAPIKey(explicitAPIKey),
       baseURL: resolveBaseURL(explicitBaseURL),
     });
+  }
+
+  override withOptions(options: Partial<CometAPIOptions>): this {
+    return super.withOptions(sanitizeOptions(options));
   }
 }

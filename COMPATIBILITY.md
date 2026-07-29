@@ -6,6 +6,9 @@ Package line: `0.1.x`
 Stable release: `0.1.0`; the immutable release workflow and separate
 post-publication registry verification completed on 2026-07-28.
 
+Maintenance candidate: `0.1.1`; the options-contract and Release Please repair
+is not a release claim until its remote release and registry evidence completes.
+
 This matrix defines the contract-tested 0.1 compatibility surface. Inheritance
 from the official OpenAI client does not by itself establish CometAPI support.
 Release and live-compatibility claims require their corresponding CI, registry,
@@ -36,6 +39,29 @@ Missing or blank credentials and blank explicit base URLs fail before transport
 as official `OpenAIError` instances. HTTP responses continue to use the more
 specific official `APIError` subclasses. This distinction is part of the tested
 error contract.
+
+## Client options contract
+
+The 0.1 client keeps supported OpenAI transport and observability options, while
+reserving CometAPI routing, authentication, and the browser security boundary.
+The 0.1.0 declarations mistakenly admitted the three reserved fields even
+though they could not produce valid, supported CometAPI behavior; 0.1.1 corrects
+that contract:
+
+| Option group                                                                                 | Contract                                     |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `timeout`, `maxRetries`, `fetch`, `fetchOptions`, `defaultHeaders`, `defaultQuery`, `logger` | Supported constructor pass-through           |
+| `organization`, `project`, `webhookSecret`, `adminAPIKey`                                    | Supported constructor pass-through           |
+| Per-request options                                                                          | Supported for the contract-tested operations |
+| `provider`, `workloadIdentity`, `dangerouslyAllowBrowser`                                    | Rejected by declarations and at runtime      |
+
+`provider` and `workloadIdentity` would conflict with the CometAPI API key and
+base URL injected by the SDK. `dangerouslyAllowBrowser` would cross the 0.1
+long-lived-key boundary. The constructor and `withOptions` enforce the same
+rule. Runtime rejections use the official OpenAI `OpenAIError`, identify only
+the forbidden field, and do not include its value. Compile-time negative tests
+are executed by TypeScript against source and packed ESM/CommonJS declarations;
+runtime tests cover plain JavaScript and type-cast bypasses.
 
 ## Inherited but unsupported in 0.1
 

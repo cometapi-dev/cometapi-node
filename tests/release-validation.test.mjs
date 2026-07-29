@@ -120,15 +120,25 @@ function fixture(version = "0.1.0-alpha.1") {
             }
           : {
               "release-type": "node",
-              versioning: "prerelease",
+              versioning: "default",
               prerelease: false,
-              "skip-github-release": true,
+              component: "cometapi",
+              "skip-github-release": false,
               "changelog-path": "CHANGELOG.md",
               "include-component-in-tag": false,
               "include-v-in-tag": true,
               "include-v-in-release-name": true,
+              "pull-request-title-pattern":
+                "chore${scope}: release${component} ${version}",
             },
       },
+      ...(isPrerelease
+        ? {}
+        : {
+            label: "autorelease: pending",
+            "release-label": "autorelease: tagged",
+            "separate-pull-requests": true,
+          }),
     },
     releaseManifest: { ".": version },
     sourceManifest,
@@ -666,11 +676,115 @@ describe("release metadata validation", () => {
     "rejects stable version %s outside the 0.1.0 promotion",
     (version) => {
       const values = fixture(version);
-      expect(() => validateReleaseMetadata(values)).toThrow(
-        /exactly version 0\.1\.0/,
-      );
+      expect(() => validateReleaseMetadata(values)).toThrow(/within 0\.1\.x/);
     },
   );
+
+  it("accepts a normal stable 0.1.1 patch release state", () => {
+    const values = fixture("0.1.1");
+    values.releaseConfig = {
+      label: "autorelease: pending",
+      "release-label": "autorelease: tagged",
+      "separate-pull-requests": true,
+      packages: {
+        ".": {
+          "changelog-path": "CHANGELOG.md",
+          component: "cometapi",
+          "include-component-in-tag": false,
+          "include-v-in-release-name": true,
+          "include-v-in-tag": true,
+          prerelease: false,
+          "pull-request-title-pattern":
+            "chore${scope}: release${component} ${version}",
+          "release-type": "node",
+          "skip-github-release": false,
+          versioning: "default",
+        },
+      },
+    };
+    values.releaseManifest = { ".": "0.1.1" };
+
+    expect(validateReleaseMetadata(values)).toMatchObject({
+      isPrerelease: false,
+      version: "0.1.1",
+    });
+  });
+
+  it.each([
+    ["component", (config) => delete config.packages["."].component],
+    [
+      "default versioning",
+      (config) => (config.packages["."].versioning = "prerelease"),
+    ],
+    [
+      "GitHub release",
+      (config) => (config.packages["."]["skip-github-release"] = true),
+    ],
+    [
+      "separate pull requests",
+      (config) => delete config["separate-pull-requests"],
+    ],
+    [
+      "release PR title",
+      (config) => delete config.packages["."]["pull-request-title-pattern"],
+    ],
+    ["pending label", (config) => delete config.label],
+    ["release label", (config) => delete config["release-label"]],
+  ])("rejects stable maintenance without %s configuration", (_name, mutate) => {
+    const values = fixture("0.1.1");
+    values.releaseConfig = {
+      label: "autorelease: pending",
+      "release-label": "autorelease: tagged",
+      "separate-pull-requests": true,
+      packages: {
+        ".": {
+          "changelog-path": "CHANGELOG.md",
+          component: "cometapi",
+          "include-component-in-tag": false,
+          "include-v-in-release-name": true,
+          "include-v-in-tag": true,
+          prerelease: false,
+          "pull-request-title-pattern":
+            "chore${scope}: release${component} ${version}",
+          "release-type": "node",
+          "skip-github-release": false,
+          versioning: "default",
+        },
+      },
+    };
+    values.releaseManifest = { ".": "0.1.1" };
+    mutate(values.releaseConfig);
+
+    expect(() => validateReleaseMetadata(values)).toThrow(/Release Please/);
+  });
+
+  it("allows the exact one-cycle stable boundary only before 0.1.1", () => {
+    const values = fixture("0.1.1");
+    values.releaseConfig = {
+      label: "autorelease: pending",
+      "last-release-sha": "1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca",
+      "release-label": "autorelease: tagged",
+      "separate-pull-requests": true,
+      packages: {
+        ".": {
+          "changelog-path": "CHANGELOG.md",
+          component: "cometapi",
+          "include-component-in-tag": false,
+          "include-v-in-release-name": true,
+          "include-v-in-tag": true,
+          prerelease: false,
+          "pull-request-title-pattern":
+            "chore${scope}: release${component} ${version}",
+          "release-type": "node",
+          "skip-github-release": false,
+          versioning: "default",
+        },
+      },
+    };
+    values.releaseManifest = { ".": "0.1.1" };
+
+    expect(() => validateReleaseMetadata(values)).toThrow(/last-release-sha/);
+  });
 
   it("rejects additional Release Please packages", () => {
     const values = fixture("0.1.0");

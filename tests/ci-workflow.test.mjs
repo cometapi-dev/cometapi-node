@@ -59,7 +59,7 @@ describe("blocking CI workflow", () => {
     ]);
     expect(releaseVerify.steps[trustGate]).toMatchObject({
       id: "trust",
-      name: "Reject an untrusted release target",
+      name: "Reject an untrusted Release Please workflow run",
       shell: "bash",
     });
     expect(releaseVerify.steps[validationInstall]).toEqual({
@@ -69,8 +69,7 @@ describe("blocking CI workflow", () => {
     expect(validationInstall).toBeGreaterThan(trustGate);
     expect(releaseVerify.steps[releaseGate]).toEqual({
       env: {
-        RELEASE_IS_PRERELEASE: "${{ github.event.release.prerelease }}",
-        RELEASE_TAG: "${{ github.event.release.tag_name }}",
+        RELEASE_TAG: "${{ steps.trust.outputs.release-tag }}",
       },
       id: "version",
       name: "Verify release metadata and derive the npm dist-tag",
@@ -78,7 +77,6 @@ describe("blocking CI workflow", () => {
         "set -euo pipefail",
         "node scripts/validate-release.mjs \\",
         '  --tag "$RELEASE_TAG" \\',
-        '  --release-prerelease "$RELEASE_IS_PRERELEASE" \\',
         "  --require-final \\",
         '  --require-releasable-docs >> "$GITHUB_OUTPUT"',
         "",

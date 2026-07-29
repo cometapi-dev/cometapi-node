@@ -1,7 +1,7 @@
 import { OpenAIError } from "openai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CometAPI } from "../src/index.js";
+import { CometAPI, type CometAPIOptions } from "../src/index.js";
 import { createMockFetch, jsonResponse } from "./helpers/http.js";
 
 const ENV_KEYS = [
@@ -28,6 +28,23 @@ function captureConfigurationError(
   let caught: unknown;
   try {
     new CometAPI(options);
+  } catch (error) {
+    caught = error;
+  }
+
+  expect(caught).toBeInstanceOf(OpenAIError);
+  expect(caught).toBeInstanceOf(Error);
+  expect((caught as Error).constructor).toBe(OpenAIError);
+  return caught as OpenAIError;
+}
+
+function captureWithOptionsError(
+  client: CometAPI,
+  options: Partial<CometAPIOptions>,
+): OpenAIError {
+  let caught: unknown;
+  try {
+    client.withOptions(options);
   } catch (error) {
     caught = error;
   }
@@ -73,6 +90,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const key of ENV_KEYS) {
     const value = savedEnvironment.get(key);
     if (value === undefined) {
@@ -196,6 +214,106 @@ describe("CometAPI configuration", () => {
     );
   });
 
+  it.each([
+    ["provider", { provider: { credential: "provider-secret-must-not-leak" } }],
+    [
+      "workloadIdentity",
+      {
+        workloadIdentity: {
+          clientSecret: "workload-secret-must-not-leak",
+        },
+      },
+    ],
+    ["dangerouslyAllowBrowser", { dangerouslyAllowBrowser: true }],
+  ])(
+    "rejects the unsupported %s constructor option with a secret-free OpenAIError",
+    (optionName, unsupportedOptions) => {
+      const apiKey = "unsupported-constructor-key-must-not-leak";
+      const logger = createLogger();
+      const error = captureConfigurationError({
+        apiKey,
+        logger,
+        logLevel: "debug",
+        ...unsupportedOptions,
+      } as unknown as CometAPIOptions);
+
+      expect(error.message).toContain(`\`${optionName}\``);
+      expect(error.message).toMatch(/not supported by CometAPI/i);
+      expectSecretFreeError(
+        error,
+        [
+          apiKey,
+          "provider-secret-must-not-leak",
+          "workload-secret-must-not-leak",
+        ],
+        logger,
+      );
+    },
+  );
+
+  it.each([
+    ["provider", { provider: { credential: "provider-secret-must-not-leak" } }],
+    [
+      "workloadIdentity",
+      {
+        workloadIdentity: {
+          clientSecret: "workload-secret-must-not-leak",
+        },
+      },
+    ],
+    ["dangerouslyAllowBrowser", { dangerouslyAllowBrowser: true }],
+  ])(
+    "rejects the unsupported %s withOptions override with a secret-free OpenAIError",
+    (optionName, unsupportedOptions) => {
+      const apiKey = "unsupported-with-options-key-must-not-leak";
+      const logger = createLogger();
+      const client = new CometAPI({ apiKey, logger, logLevel: "debug" });
+      const error = captureWithOptionsError(
+        client,
+        unsupportedOptions as unknown as Partial<CometAPIOptions>,
+      );
+
+      expect(error.message).toContain(`\`${optionName}\``);
+      expect(error.message).toMatch(/not supported by CometAPI/i);
+      expectSecretFreeError(
+        error,
+        [
+          apiKey,
+          "provider-secret-must-not-leak",
+          "workload-secret-must-not-leak",
+        ],
+        logger,
+      );
+    },
+  );
+
+  it("cannot enable browser use by changing an accessor after validation", () => {
+    const browserKey = "browser-accessor-key-must-not-leak";
+    const logger = createLogger();
+    let reads = 0;
+    const options = Object.defineProperty(
+      { apiKey: browserKey, logger, logLevel: "debug" },
+      "dangerouslyAllowBrowser",
+      {
+        enumerable: true,
+        get() {
+          reads += 1;
+          return reads === 1 ? undefined : true;
+        },
+      },
+    );
+    vi.stubGlobal("window", { document: {} });
+    vi.stubGlobal("navigator", {});
+
+    const error = captureConfigurationError(
+      options as unknown as CometAPIOptions,
+    );
+
+    expect(reads).toBe(1);
+    expect(error.message).toMatch(/browser-like environment/i);
+    expectSecretFreeError(error, [browserKey], logger);
+  });
+
   it("preserves inherited public client options across withOptions", async () => {
     const original = createMockFetch(() =>
       jsonResponse({ object: "list", data: [] }),
@@ -203,12 +321,21 @@ describe("CometAPI configuration", () => {
     const overridden = createMockFetch(() =>
       jsonResponse({ object: "list", data: [] }),
     );
+    const logger = createLogger();
     const client = new CometAPI({
+      adminAPIKey: "test-admin-key",
       apiKey: "test-lifecycle-key",
       baseURL: "https://original.example.test/v1",
+      defaultHeaders: { "x-default-option": "preserved" },
+      defaultQuery: { source: "with-options" },
       fetch: original.fetch,
+      fetchOptions: { cache: "no-store" },
+      logger,
       maxRetries: 0,
+      organization: "test-organization",
+      project: "test-project",
       timeout: 2_000,
+      webhookSecret: "test-webhook-secret",
     });
 
     const derived = client.withOptions({
@@ -219,14 +346,22 @@ describe("CometAPI configuration", () => {
     await derived.models.list();
 
     expect(derived).toBeInstanceOf(CometAPI);
+    expect(derived.adminAPIKey).toBe("test-admin-key");
+    expect(derived.logger).toBe(logger);
     expect(derived.maxRetries).toBe(0);
+    expect(derived.organization).toBe("test-organization");
+    expect(derived.project).toBe("test-project");
     expect(derived.timeout).toBe(1_000);
+    expect(derived.webhookSecret).toBe("test-webhook-secret");
     expect(original.requests).toHaveLength(0);
-    expect(overridden.requests[0]?.url).toBe(
-      "https://derived.example.test/v1/models",
+    const request = overridden.requests[0];
+    expect(request?.url).toBe(
+      "https://derived.example.test/v1/models?source=with-options",
     );
-    expect(overridden.requests[0]?.headers.get("authorization")).toBe(
+    expect(request?.headers.get("authorization")).toBe(
       "Bearer test-lifecycle-key",
     );
+    expect(request?.headers.get("x-default-option")).toBe("preserved");
+    expect(request?.init?.cache).toBe("no-store");
   });
 });
