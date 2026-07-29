@@ -454,12 +454,15 @@ executed README examples against the packed artifact, release-PR/tag/changelog/
 manifest version agreement, reviewed security and compatibility status, and
 post-publication registry evidence.
 
-The 0.1.1 repair uses one explicit `last-release-sha` boundary at the immutable
-0.1.0 release commit, `1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca`. It exists
-only to prevent pre-0.1.0 features from being rediscovered while the normal
-Release Please history is repaired. The generated 0.1.1 PR must remove that
-temporary override before merge; future releases must discover the Release
-Please-created `v0.1.1` boundary normally.
+The 0.1.1 repair used one explicit `last-release-sha` boundary at the immutable
+0.1.0 release commit, `1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca`, only for
+the initial preparation dispatch. That dispatch proved the normal action-owned
+0.1.1 PR without rediscovering pre-0.1.0 features. A normal topic PR then removes
+the temporary override and records final candidate approval on `main`; a fresh
+preparation dispatch refreshes the action-owned release PR from that state. The
+finalization commit must use a releasable `fix:` subject so Release Please
+updates the generated notes and cannot treat the old branch as unchanged.
+Future releases discover the Release Please-created `v0.1.1` boundary normally.
 
 Before enabling the repaired workflow, create the standard
 `autorelease: pending` and `autorelease: tagged` labels if they are still
@@ -494,8 +497,13 @@ The `GITHUB_TOKEN`-created PR's `pull_request` CI starts in GitHub's
 approval-required state. A human with write access must explicitly authorize
 those workflow runs before their results can satisfy required checks; this is
 separate from the final-head administrator review.
-Remove the one-cycle `last-release-sha` from that branch, complete the
-release-ready documentation, run the full matrix on its final head, and obtain
+After the finalization topic PR removes the one-cycle `last-release-sha` and
+completes the release-ready documentation on `main`, start a new first-attempt
+manual dispatch. Require it to refresh the same action-owned release PR with
+only the four generated release files and release notes identical to the
+generated CHANGELOG section. Require the refreshed release commit to have the
+post-finalization `main` commit as its direct parent; an unchanged older head is
+not a refreshed candidate. Run the full matrix on that final head and obtain
 approval from a different human repository administrator. The release-PR merge
 creates the `push` run that may tag and publish. A later push cannot tag an older
 outstanding release PR; its merge SHA must equal the triggering SHA before
