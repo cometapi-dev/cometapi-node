@@ -232,10 +232,10 @@ then returns non-zero if any violation exists. It must require
 `git+https://github.com/cometapi-dev/cometapi-node.git` as `repository.url`, the
 same value required by publish validation.
 
-Maintainers perform this transition in the reviewed implementation or
-finalization PR before Release Please preparation; the generated release PR
-remains limited to its four release files. Validate the exact committed state
-with:
+Maintainers land this transition in a reviewed implementation or finalization
+PR before Release Please preparation. After Release Please creates or refreshes
+the generated four-file release PR, validate that PR's exact final committed
+state with:
 
 ```bash
 release_version="$(node -p "require('./package.json').version")"
@@ -535,19 +535,19 @@ and post-action validation; a later `COMMENTED` or `CHANGES_REQUESTED` review,
 or any head change, invalidates the approval.
 
 The release-PR merge creates the only `push` run that may call Release Please in
-release mode. From that merge through post-action validation, do not edit the
+release mode. From that merge through successful registry verification and the
+final readback, do not start a new Release Please workflow or rerun any run
+except the bounded source-run retry described below; publication freezes the
+complete Release Please run set. Through post-action validation, do not edit the
 release PR, change its labels or review, or mutate its branch. Keep `main` frozen
 at the release commit through successful registry verification and the final
 variable and Environment-policy readback; every handoff, tag, and pre-publish
-gate requires that exact identity. Do not start or rerun any other Release
-Please workflow from the tag handoff through registry verification and final
-readback because publication freezes the complete Release Please run set. A
-rerun may retry the same release candidate only while no tag or Release exists.
-If an earlier attempt of that same run already created the Release, same-run
-reconciliation is allowed only after proving the exact run ID, SHA, tag, bot
-author, immutable state, target, URL, notes, and publication time inside one
-earlier Release Please step. It may only reconcile labels and write the
-attempt-qualified result artifact.
+gate requires that exact identity. A rerun may retry the same release candidate
+only while no tag or Release exists. If an earlier attempt of that same run
+already created the Release, same-run reconciliation is allowed only after
+proving the exact run ID, SHA, tag, bot author, immutable state, target, URL,
+notes, and publication time inside one earlier Release Please step. It may only
+reconcile labels and write the attempt-qualified result artifact.
 
 The successful Release Please `workflow_run` enters an unprivileged handoff,
 which validates the exact result and immutable Release before dispatching
