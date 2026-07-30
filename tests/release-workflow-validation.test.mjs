@@ -11,7 +11,7 @@ import {
   validateMergedReleasePullRequest,
   validateOpenReleasePullRequestCollisions,
   validatePostActionPullRequestSnapshot,
-  validatePublishDeploymentRecoveryTrigger,
+  validatePublishWorkflowDispatchRecoveryTrigger,
   validatePublishRecoveryEvidence,
   validateReleasePleaseCommitMessages,
   validateReleasePleaseCompletion,
@@ -161,9 +161,9 @@ describe("Release Please generated files", () => {
   });
 });
 
-describe("Publish deployment recovery trigger", () => {
+describe("Publish workflow dispatch recovery trigger", () => {
   const recoveryCommit = "c98b514227858cd183c781270a7f78f65b577e82";
-  const controlParent = "22c313d4f80c53ba01672dd35cc27b621d5ec9ce";
+  const controlParent = "8a80d8272a490ed6a7b47eede45aaeccae03c819";
   const recoveryFiles = [
     ".github/workflows/publish.yml",
     "RELEASING.md",
@@ -178,23 +178,18 @@ describe("Publish deployment recovery trigger", () => {
       changedFiles: recoveryFiles,
       controlCommit: BRANCH_SHA,
       controlFirstParent: controlParent,
-      deploymentCreator: "tensornull",
-      deploymentEnvironment: "npm",
-      deploymentId: 456789,
-      deploymentRef: "v0.1.1",
-      deploymentReleaseCommit: recoveryCommit,
-      deploymentReleaseTag: "v0.1.1",
-      deploymentSha: recoveryCommit,
-      deploymentSourceRunAttempt: 1,
-      deploymentSourceRunId: 30471665743,
-      deploymentTask: "npm-publish-recovery",
-      eventName: "deployment",
+      eventName: "workflow_dispatch",
       eventRef: "refs/tags/v0.1.1",
       eventSha: recoveryCommit,
       mainCommit: BRANCH_SHA,
+      releaseCommit: recoveryCommit,
+      releaseTag: "v0.1.1",
+      sourcePublishRunAttempt: 1,
+      sourcePublishRunId: 30471665743,
       sourceReleaseCommit: recoveryCommit,
       sourceRunAttempt: 1,
       sourceRunId: 30469181724,
+      task: "npm-publish-recovery",
       triggeringActor: "tensornull",
       workflowRunAttempt: 1,
       ...overrides,
@@ -202,34 +197,30 @@ describe("Publish deployment recovery trigger", () => {
   }
 
   it("accepts only the reviewed one-cycle recovery merge", () => {
-    expect(validatePublishDeploymentRecoveryTrigger(recoveryTrigger())).toEqual(
-      {
-        releaseCommit: recoveryCommit,
-        releaseRunAttempt: 1,
-        releaseRunId: 30469181724,
-        sourcePublishRunAttempt: 1,
-        sourcePublishRunId: 30471665743,
-      },
-    );
+    expect(
+      validatePublishWorkflowDispatchRecoveryTrigger(recoveryTrigger()),
+    ).toEqual({
+      releaseCommit: recoveryCommit,
+      releaseRunAttempt: 1,
+      releaseRunId: 30469181724,
+      sourcePublishRunAttempt: 1,
+      sourcePublishRunId: 30471665743,
+    });
   });
 
   it.each([
     ["actor", { actor: "github-actions[bot]" }],
     ["triggering actor", { triggeringActor: "other-maintainer" }],
-    ["event", { eventName: "push" }],
+    ["event", { eventName: "deployment" }],
     ["ref", { eventRef: "refs/heads/main" }],
     ["event SHA", { eventSha: RELEASE_SHA }],
     ["control commit", { controlCommit: RELEASE_SHA }],
     ["first parent", { controlFirstParent: RELEASE_SHA }],
-    ["deployment creator", { deploymentCreator: "github-actions[bot]" }],
-    ["deployment environment", { deploymentEnvironment: "production" }],
-    ["deployment ref", { deploymentRef: "main" }],
-    ["deployment SHA", { deploymentSha: RELEASE_SHA }],
-    ["deployment task", { deploymentTask: "deploy" }],
-    ["payload release commit", { deploymentReleaseCommit: RELEASE_SHA }],
-    ["payload release tag", { deploymentReleaseTag: "v0.1.0" }],
-    ["payload source run", { deploymentSourceRunId: 30471665744 }],
-    ["payload source attempt", { deploymentSourceRunAttempt: 2 }],
+    ["release input", { releaseCommit: RELEASE_SHA }],
+    ["release tag input", { releaseTag: "v0.1.0" }],
+    ["source Publish run", { sourcePublishRunId: 30471665744 }],
+    ["source Publish attempt", { sourcePublishRunAttempt: 2 }],
+    ["task", { task: "publish" }],
     ["source commit", { sourceReleaseCommit: RELEASE_SHA }],
     ["source run ID", { sourceRunId: 30469181725 }],
     ["source attempt", { sourceRunAttempt: 2 }],
@@ -237,13 +228,15 @@ describe("Publish deployment recovery trigger", () => {
     ["extra file", { changedFiles: [...recoveryFiles, "package.json"] }],
   ])("rejects recovery trigger drift in %s", (_name, overrides) => {
     expect(() =>
-      validatePublishDeploymentRecoveryTrigger(recoveryTrigger(overrides)),
+      validatePublishWorkflowDispatchRecoveryTrigger(
+        recoveryTrigger(overrides),
+      ),
     ).toThrow(/release workflow/i);
   });
 
   it("accepts a rerun of the same immutable recovery event", () => {
     expect(
-      validatePublishDeploymentRecoveryTrigger(
+      validatePublishWorkflowDispatchRecoveryTrigger(
         recoveryTrigger({ workflowRunAttempt: 2 }),
       ),
     ).toMatchObject({ releaseRunId: 30469181724 });

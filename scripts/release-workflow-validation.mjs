@@ -24,9 +24,8 @@ const PUBLISH_RECOVERY = Object.freeze({
     "tests/release-workflow-validation.test.mjs",
     "tests/workflow-contract.test.mjs",
   ]),
-  controlParent: "22c313d4f80c53ba01672dd35cc27b621d5ec9ce",
-  deploymentEnvironment: "npm",
-  deploymentTask: "npm-publish-recovery",
+  dispatchControlParent: "8a80d8272a490ed6a7b47eede45aaeccae03c819",
+  dispatchTask: "npm-publish-recovery",
   failedPublishJobId: 90643868523,
   liveJobId: 90643725110,
   releaseCommit: "c98b514227858cd183c781270a7f78f65b577e82",
@@ -89,28 +88,23 @@ function stablePatch(version, label) {
   return Number(match[1]);
 }
 
-export function validatePublishDeploymentRecoveryTrigger({
+export function validatePublishWorkflowDispatchRecoveryTrigger({
   actor,
   changedFiles,
   controlCommit,
   controlFirstParent,
-  deploymentCreator,
-  deploymentEnvironment,
-  deploymentId,
-  deploymentRef,
-  deploymentReleaseCommit,
-  deploymentReleaseTag,
-  deploymentSha,
-  deploymentSourceRunAttempt,
-  deploymentSourceRunId,
-  deploymentTask,
   eventName,
   eventRef,
   eventSha,
   mainCommit,
+  releaseCommit,
+  releaseTag,
+  sourcePublishRunAttempt,
+  sourcePublishRunId,
   sourceReleaseCommit,
   sourceRunAttempt,
   sourceRunId,
+  task,
   triggeringActor,
   workflowRunAttempt,
 }) {
@@ -120,7 +114,7 @@ export function validatePublishDeploymentRecoveryTrigger({
     PUBLISH_RECOVERY.actor,
     "publish recovery triggering actor",
   );
-  requireEqual(eventName, "deployment", "publish recovery event");
+  requireEqual(eventName, "workflow_dispatch", "publish recovery event");
   requireEqual(
     eventRef,
     `refs/tags/${PUBLISH_RECOVERY.releaseTag}`,
@@ -143,8 +137,18 @@ export function validatePublishDeploymentRecoveryTrigger({
   );
   requireEqual(
     controlFirstParent,
-    PUBLISH_RECOVERY.controlParent,
+    PUBLISH_RECOVERY.dispatchControlParent,
     "publish recovery control first parent",
+  );
+  requireEqual(
+    releaseCommit,
+    PUBLISH_RECOVERY.releaseCommit,
+    "publish recovery input release commit",
+  );
+  requireEqual(
+    releaseTag,
+    PUBLISH_RECOVERY.releaseTag,
+    "publish recovery input release tag",
   );
   requireEqual(
     sourceReleaseCommit,
@@ -166,65 +170,25 @@ export function validatePublishDeploymentRecoveryTrigger({
     PUBLISH_RECOVERY.releaseRunAttempt,
     "publish recovery source run attempt",
   );
-  requirePositiveInteger(deploymentId, "publish recovery deployment ID");
-  requireEqual(
-    deploymentCreator,
-    PUBLISH_RECOVERY.actor,
-    "publish recovery deployment creator",
-  );
-  requireEqual(
-    deploymentEnvironment,
-    PUBLISH_RECOVERY.deploymentEnvironment,
-    "publish recovery deployment environment",
-  );
-  requireEqual(
-    deploymentRef,
-    PUBLISH_RECOVERY.releaseTag,
-    "publish recovery deployment ref",
-  );
-  requireCommit(deploymentSha, "publish recovery deployment SHA");
-  requireEqual(
-    deploymentSha,
-    PUBLISH_RECOVERY.releaseCommit,
-    "publish recovery deployment SHA",
-  );
-  requireEqual(
-    deploymentTask,
-    PUBLISH_RECOVERY.deploymentTask,
-    "publish recovery deployment task",
-  );
-  requireCommit(
-    deploymentReleaseCommit,
-    "publish recovery deployment payload release commit",
-  );
-  requireEqual(
-    deploymentReleaseCommit,
-    PUBLISH_RECOVERY.releaseCommit,
-    "publish recovery deployment payload release commit",
-  );
-  requireEqual(
-    deploymentReleaseTag,
-    PUBLISH_RECOVERY.releaseTag,
-    "publish recovery deployment payload release tag",
-  );
   requirePositiveInteger(
-    deploymentSourceRunId,
-    "publish recovery deployment payload source run ID",
+    sourcePublishRunId,
+    "publish recovery source Publish run ID",
   );
   requireEqual(
-    deploymentSourceRunId,
+    sourcePublishRunId,
     PUBLISH_RECOVERY.sourcePublishRunId,
-    "publish recovery deployment payload source run ID",
+    "publish recovery source Publish run ID",
   );
   requirePositiveInteger(
-    deploymentSourceRunAttempt,
-    "publish recovery deployment payload source run attempt",
+    sourcePublishRunAttempt,
+    "publish recovery source Publish run attempt",
   );
   requireEqual(
-    deploymentSourceRunAttempt,
+    sourcePublishRunAttempt,
     PUBLISH_RECOVERY.sourcePublishRunAttempt,
-    "publish recovery deployment payload source run attempt",
+    "publish recovery source Publish run attempt",
   );
+  requireEqual(task, PUBLISH_RECOVERY.dispatchTask, "publish recovery task");
   requirePositiveInteger(workflowRunAttempt, "publish recovery run attempt");
   if (!Array.isArray(changedFiles)) {
     fail("Release workflow publish recovery changed files must be an array.");
