@@ -1,18 +1,28 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 
 import { getFileInfo } from "prettier";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 import {
+  classifyReleasePleaseHandoff,
   classifyPushReleasePresence,
   extractReleaseNotesFromChangelog,
+  snapshotReleasePleaseRuns,
   validatePreparedReleasePullRequest,
   validateGitHubRelease,
   validateMergedReleasePullRequest,
   validateOpenReleasePullRequestCollisions,
   validatePostActionPullRequestSnapshot,
+  validateNpmEnvironmentState,
+  validatePublishWorkflowContract,
+  validatePublishWorkflowDispatchTrigger,
   validatePublishWorkflowDispatchRecoveryTrigger,
   validatePublishRecoveryEvidence,
+  validateRegistryProvenance,
+  validateRegistryProvenanceInvocation,
+  validateRegistryStateBeforePublish,
   validateReleasePleaseCommitMessages,
   validateReleasePleaseCompletion,
   validateReleasePleaseMutationConfiguration,
@@ -31,6 +41,12 @@ const RELEASE_BRANCH = "release-please--branches--main--components--cometapi";
 const RELEASE_SHA = "a".repeat(40);
 const BRANCH_SHA = "b".repeat(40);
 const RUN_ID = 123456789;
+const PUBLISH_WORKFLOW = parse(
+  readFileSync(
+    new URL("../.github/workflows/publish.yml", import.meta.url),
+    "utf8",
+  ),
+);
 
 function releaseNotes(version = "0.1.1") {
   return `## [${version}](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0...v${version}) (2026-07-29)
@@ -161,11 +177,135 @@ describe("Release Please generated files", () => {
   });
 });
 
+describe("Release Please publication handoff", () => {
+  function handoffFixture({ uploadConclusion = "success" } = {}) {
+    const artifactName = `release-please-result-${RUN_ID}-1`;
+    return {
+      artifacts:
+        uploadConclusion === "success"
+          ? [
+              {
+                expired: false,
+                name: artifactName,
+                workflow_run: { id: RUN_ID },
+              },
+            ]
+          : [],
+      jobs: [
+        {
+          conclusion: "success",
+          name: "Prepare a reviewed release pull request or GitHub release",
+          run_attempt: 1,
+          run_id: RUN_ID,
+          status: "completed",
+          steps: [
+            {
+              conclusion: uploadConclusion,
+              name: "Upload the exact Release Please result",
+              status: "completed",
+            },
+          ],
+        },
+      ],
+      runAttempt: 1,
+      runId: RUN_ID,
+    };
+  }
+
+  it("dispatches only a release run with its exact result artifact", () => {
+    expect(classifyReleasePleaseHandoff(handoffFixture())).toEqual({
+      artifactName: `release-please-result-${RUN_ID}-1`,
+      hasResult: true,
+    });
+  });
+
+  it("treats a successful preparation run as a release-inert handoff", () => {
+    expect(
+      classifyReleasePleaseHandoff(
+        handoffFixture({ uploadConclusion: "skipped" }),
+      ),
+    ).toEqual({
+      artifactName: `release-please-result-${RUN_ID}-1`,
+      hasResult: false,
+    });
+  });
+
+  it.each([
+    ["missing release artifact", (value) => value.artifacts.splice(0)],
+    [
+      "duplicate release artifact",
+      (value) => value.artifacts.push(value.artifacts[0]),
+    ],
+    [
+      "expired release artifact",
+      (value) => (value.artifacts[0].expired = true),
+    ],
+    [
+      "preparation artifact",
+      (value) => {
+        value.jobs[0].steps[0].conclusion = "skipped";
+      },
+    ],
+    [
+      "failed upload step",
+      (value) => (value.jobs[0].steps[0].conclusion = "failure"),
+    ],
+  ])("rejects %s", (_name, mutate) => {
+    const fixture = handoffFixture();
+    mutate(fixture);
+    expect(() => classifyReleasePleaseHandoff(fixture)).toThrow(
+      /release workflow/i,
+    );
+  });
+});
+
+describe("Release Please run-set freeze", () => {
+  function runFixture({
+    id = RUN_ID,
+    runAttempt = 1,
+    status = "completed",
+  } = {}) {
+    return {
+      conclusion: status === "completed" ? "success" : null,
+      event: "push",
+      head_sha: RELEASE_SHA,
+      id,
+      name: "Release Please",
+      path: ".github/workflows/release-please.yml",
+      repository: { full_name: REPOSITORY },
+      run_attempt: runAttempt,
+      status,
+    };
+  }
+
+  it("creates one deterministic snapshot only from completed runs", () => {
+    const older = runFixture({ id: RUN_ID - 1 });
+    const current = runFixture();
+    expect(snapshotReleasePleaseRuns([current, older])).toBe(
+      snapshotReleasePleaseRuns([older, current]),
+    );
+  });
+
+  it("changes the snapshot when an old run is rerun", () => {
+    expect(snapshotReleasePleaseRuns([runFixture()])).not.toBe(
+      snapshotReleasePleaseRuns([runFixture({ runAttempt: 2 })]),
+    );
+  });
+
+  it.each([
+    ["active run", [runFixture({ status: "in_progress" })]],
+    ["duplicate run", [runFixture(), runFixture()]],
+  ])("rejects an %s", (_name, runs) => {
+    expect(() => snapshotReleasePleaseRuns(runs)).toThrow(/release workflow/i);
+  });
+});
+
 describe("Publish workflow dispatch recovery trigger", () => {
   const recoveryCommit = "c98b514227858cd183c781270a7f78f65b577e82";
-  const controlParent = "8a80d8272a490ed6a7b47eede45aaeccae03c819";
+  const controlParent = "5f493045a2205fe19904ca5be36f5bbf23378aec";
   const recoveryFiles = [
     ".github/workflows/publish.yml",
+    ".github/workflows/release-please.yml",
     "RELEASING.md",
     "scripts/release-workflow-validation.mjs",
     "tests/release-workflow-validation.test.mjs",
@@ -177,11 +317,14 @@ describe("Publish workflow dispatch recovery trigger", () => {
       actor: "tensornull",
       changedFiles: recoveryFiles,
       controlCommit: BRANCH_SHA,
+      controlCommitInput: BRANCH_SHA,
       controlFirstParent: controlParent,
       eventName: "workflow_dispatch",
-      eventRef: "refs/tags/v0.1.1",
-      eventSha: recoveryCommit,
+      eventRef: "refs/heads/main",
+      eventSha: BRANCH_SHA,
       mainCommit: BRANCH_SHA,
+      operation: "recover-v0.1.1",
+      recoveryPolicyId: 60000000,
       releaseCommit: recoveryCommit,
       releaseTag: "v0.1.1",
       sourcePublishRunAttempt: 1,
@@ -189,9 +332,9 @@ describe("Publish workflow dispatch recovery trigger", () => {
       sourceReleaseCommit: recoveryCommit,
       sourceRunAttempt: 1,
       sourceRunId: 30469181724,
-      task: "npm-publish-recovery",
       triggeringActor: "tensornull",
       workflowRunAttempt: 1,
+      workflowSha: BRANCH_SHA,
       ...overrides,
     };
   }
@@ -212,15 +355,19 @@ describe("Publish workflow dispatch recovery trigger", () => {
     ["actor", { actor: "github-actions[bot]" }],
     ["triggering actor", { triggeringActor: "other-maintainer" }],
     ["event", { eventName: "deployment" }],
-    ["ref", { eventRef: "refs/heads/main" }],
+    ["ref", { eventRef: "refs/tags/v0.1.1" }],
     ["event SHA", { eventSha: RELEASE_SHA }],
+    ["workflow SHA", { workflowSha: RELEASE_SHA }],
     ["control commit", { controlCommit: RELEASE_SHA }],
+    ["control input", { controlCommitInput: RELEASE_SHA }],
+    ["main commit", { mainCommit: RELEASE_SHA }],
     ["first parent", { controlFirstParent: RELEASE_SHA }],
     ["release input", { releaseCommit: RELEASE_SHA }],
     ["release tag input", { releaseTag: "v0.1.0" }],
     ["source Publish run", { sourcePublishRunId: 30471665744 }],
     ["source Publish attempt", { sourcePublishRunAttempt: 2 }],
-    ["task", { task: "publish" }],
+    ["operation", { operation: "release" }],
+    ["recovery policy", { recoveryPolicyId: 0 }],
     ["source commit", { sourceReleaseCommit: RELEASE_SHA }],
     ["source run ID", { sourceRunId: 30469181725 }],
     ["source attempt", { sourceRunAttempt: 2 }],
@@ -240,6 +387,758 @@ describe("Publish workflow dispatch recovery trigger", () => {
         recoveryTrigger({ workflowRunAttempt: 2 }),
       ),
     ).toMatchObject({ releaseRunId: 30469181724 });
+  });
+});
+
+describe("Publish tag dispatch trigger", () => {
+  function tagTrigger(overrides = {}) {
+    return {
+      actor: "github-actions[bot]",
+      controlCommit: RELEASE_SHA,
+      eventName: "workflow_dispatch",
+      eventRef: "refs/tags/v0.1.1",
+      eventSha: RELEASE_SHA,
+      operation: "release",
+      releaseCommit: RELEASE_SHA,
+      releaseTag: "v0.1.1",
+      sourceReleaseCommit: RELEASE_SHA,
+      sourceRunAttempt: 1,
+      sourceRunId: RUN_ID,
+      triggeringActor: "github-actions[bot]",
+      workflowRunAttempt: 1,
+      workflowSha: RELEASE_SHA,
+      ...overrides,
+    };
+  }
+
+  it("accepts a bot handoff bound to the exact stable tag", () => {
+    expect(validatePublishWorkflowDispatchTrigger(tagTrigger())).toEqual({
+      releaseCommit: RELEASE_SHA,
+      releaseRunAttempt: 1,
+      releaseRunId: RUN_ID,
+      releaseTag: "v0.1.1",
+    });
+  });
+
+  it.each([
+    ["actor", { actor: "tensornull" }],
+    ["triggering actor", { triggeringActor: "tensornull" }],
+    ["event", { eventName: "push" }],
+    ["operation", { operation: "recover-v0.1.1" }],
+    ["ref", { eventRef: "refs/heads/main" }],
+    ["event SHA", { eventSha: BRANCH_SHA }],
+    ["workflow SHA", { workflowSha: BRANCH_SHA }],
+    ["control commit", { controlCommit: BRANCH_SHA }],
+    ["source commit", { sourceReleaseCommit: BRANCH_SHA }],
+    ["tag", { releaseTag: "v0.2.0", eventRef: "refs/tags/v0.2.0" }],
+    ["stable boundary", { releaseTag: "v0.1.0", eventRef: "refs/tags/v0.1.0" }],
+    ["source run", { sourceRunId: 0 }],
+    ["source attempt", { sourceRunAttempt: 0 }],
+    ["run attempt", { workflowRunAttempt: 0 }],
+  ])("rejects tag handoff drift in %s", (_name, overrides) => {
+    expect(() =>
+      validatePublishWorkflowDispatchTrigger(tagTrigger(overrides)),
+    ).toThrow(/release workflow/i);
+  });
+
+  it("allows an idempotent rerun of the same tag handoff", () => {
+    expect(
+      validatePublishWorkflowDispatchTrigger(
+        tagTrigger({ workflowRunAttempt: 2 }),
+      ),
+    ).toMatchObject({ releaseRunId: RUN_ID });
+  });
+});
+
+describe("Publish workflow dispatch contract", () => {
+  function workflowContract(mutate) {
+    const workflow = JSON.parse(JSON.stringify(PUBLISH_WORKFLOW));
+    mutate?.(workflow);
+    return workflow;
+  }
+
+  it("requires the permanent tag-handoff inputs", () => {
+    expect(validatePublishWorkflowContract(workflowContract())).toEqual({
+      supportsTagDispatch: true,
+    });
+  });
+
+  it.each([
+    [
+      "optional control input",
+      (workflow) => {
+        workflow.on.workflow_dispatch.inputs.control_commit.required = false;
+      },
+    ],
+    [
+      "workflow_run trigger",
+      (workflow) => {
+        workflow.on.workflow_run.workflows = ["CI"];
+      },
+    ],
+    [
+      "cancellable publish concurrency",
+      (workflow) => {
+        workflow.concurrency["cancel-in-progress"] = true;
+      },
+    ],
+    [
+      "missing recovery policy input",
+      (workflow) => {
+        delete workflow.on.workflow_dispatch.inputs.recovery_policy_id;
+      },
+    ],
+    [
+      "handoff environment",
+      (workflow) => {
+        workflow.jobs.handoff.environment = "npm";
+      },
+    ],
+    [
+      "extra actions writer",
+      (workflow) => {
+        workflow.jobs.verify.permissions = { actions: "write" };
+      },
+    ],
+    [
+      "explicit verify permissions",
+      (workflow) => {
+        workflow.jobs.verify.permissions = { contents: "read" };
+      },
+    ],
+    [
+      "explicit live-smoke permissions",
+      (workflow) => {
+        workflow.jobs["live-smoke"].permissions = { contents: "write" };
+      },
+    ],
+    [
+      "missing recovery annotation permission",
+      (workflow) => {
+        delete workflow.jobs.publish.permissions.checks;
+      },
+    ],
+    [
+      "missing Release Please run snapshot",
+      (workflow) => {
+        delete workflow.jobs.verify.outputs["release-please-snapshot"];
+      },
+    ],
+    [
+      "unfrozen Release Please run snapshot",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        step.env.RELEASE_PLEASE_SNAPSHOT = "untrusted";
+      },
+    ],
+    [
+      "unbound recovery policy ID",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        step.env.RECOVERY_POLICY_ID = "untrusted";
+      },
+    ],
+    [
+      "repacked recovery artifact",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) =>
+            name === "Download the prior live-verified release artifact",
+        );
+        step.if = "inputs.publish_operation == 'release'";
+      },
+    ],
+    [
+      "unchecked recovery artifact digest",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) =>
+            name === "Download the prior live-verified release artifact",
+        );
+        delete step.with["digest-mismatch"];
+      },
+    ],
+    [
+      "different uploaded artifact",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) => name === "Upload the verified release artifact",
+        );
+        step.with.path = "release-artifacts/*.tgz";
+      },
+    ],
+    [
+      "live-smoke dependency",
+      (workflow) => {
+        workflow.jobs["live-smoke"].needs = ["handoff", "verify"];
+      },
+    ],
+    [
+      "elevated live-smoke permissions",
+      (workflow) => {
+        workflow.jobs["live-smoke"].permissions = { contents: "write" };
+      },
+    ],
+    [
+      "missing bounded live smoke",
+      (workflow) => {
+        const step = workflow.jobs["live-smoke"].steps.find(
+          ({ name }) => name === "Run the bounded live smoke",
+        );
+        step.run = "true";
+      },
+    ],
+    [
+      "tag dispatch gate",
+      (workflow) => {
+        workflow.jobs.verify.if = workflow.jobs.verify.if.replace(
+          "github.sha == inputs.release_commit",
+          "true",
+        );
+      },
+    ],
+    [
+      "handoff dispatch ref",
+      (workflow) => {
+        const step = workflow.jobs.handoff.steps.find(
+          ({ name }) => name === "Dispatch the exact immutable tag",
+        );
+        step.run = step.run.replace('-f ref="$RELEASE_TAG"', '-f ref="main"');
+      },
+    ],
+    [
+      "handoff run discovery",
+      (workflow) => {
+        const step = workflow.jobs.handoff.steps.find(
+          ({ name }) => name === "Dispatch the exact immutable tag",
+        );
+        step.run = step.run.replace(
+          "tag-dispatch-runs-before.json",
+          "untrusted-before.json",
+        );
+      },
+    ],
+    [
+      "handoff waits for the queued tag run",
+      (workflow) => {
+        const step = workflow.jobs.handoff.steps.find(
+          ({ name }) => name === "Dispatch the exact immutable tag",
+        );
+        step.run +=
+          '\ngh api "repos/${GITHUB_REPOSITORY}/actions/runs/${publish_run_id}/jobs"';
+      },
+    ],
+    [
+      "preparation handoff gate",
+      (workflow) => {
+        const step = workflow.jobs.handoff.steps.find(
+          ({ name }) => name === "Dispatch the exact immutable tag",
+        );
+        delete step.if;
+      },
+    ],
+    [
+      "publication command",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Publish the exact artifact with provenance",
+        );
+        step.run = "npm publish";
+      },
+    ],
+    [
+      "unpaginated environment policies",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        step.run = step.run.replace(
+          'gh api --paginate --slurp \\\n  "repos/${GITHUB_REPOSITORY}/environments/npm/deployment-branch-policies?per_page=100"',
+          'gh api "repos/${GITHUB_REPOSITORY}/environments/npm/deployment-branch-policies"',
+        );
+      },
+    ],
+    [
+      "missing registry verification token",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        delete step.env.GH_TOKEN;
+      },
+    ],
+    [
+      "normal live-smoke condition",
+      (workflow) => {
+        const step = workflow.jobs["live-smoke"].steps.find(
+          ({ name }) => name === "Run the bounded live smoke",
+        );
+        step.if = "always()";
+      },
+    ],
+    [
+      "normal live-smoke command",
+      (workflow) => {
+        const step = workflow.jobs["live-smoke"].steps.find(
+          ({ name }) => name === "Run the bounded live smoke",
+        );
+        step.run = "true";
+      },
+    ],
+    [
+      "recovery live-smoke condition",
+      (workflow) => {
+        const step = workflow.jobs["live-smoke"].steps.find(
+          ({ name }) => name === "Reuse the successful bounded live smoke",
+        );
+        step.if = "always()";
+      },
+    ],
+    [
+      "recovery artifact identity",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) =>
+            name === "Download the prior live-verified release artifact",
+        );
+        step.with["artifact-ids"] = "1";
+      },
+    ],
+    [
+      "recovery artifact condition",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) =>
+            name === "Download the prior live-verified release artifact",
+        );
+        step.if = "always()";
+      },
+    ],
+    [
+      "normal artifact condition",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) => name === "Pack the exact release artifact",
+        );
+        step.if = "always()";
+      },
+    ],
+    [
+      "publication order",
+      (workflow) => {
+        const steps = workflow.jobs.publish.steps;
+        const publishIndex = steps.findIndex(
+          ({ name }) => name === "Publish the exact artifact with provenance",
+        );
+        const verifyIndex = steps.findIndex(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        [steps[publishIndex], steps[verifyIndex]] = [
+          steps[verifyIndex],
+          steps[publishIndex],
+        ];
+      },
+    ],
+  ])("rejects %s", (_name, mutate) => {
+    expect(() =>
+      validatePublishWorkflowContract(workflowContract(mutate)),
+    ).toThrow(/release workflow/i);
+  });
+});
+
+describe("npm publication state", () => {
+  function environmentFixture() {
+    return {
+      can_admins_bypass: false,
+      deployment_branch_policy: {
+        custom_branch_policies: true,
+        protected_branches: false,
+      },
+      id: 18800205839,
+      name: "npm",
+      protection_rules: [
+        {
+          prevent_self_review: false,
+          reviewers: [
+            {
+              reviewer: { id: 129579691, login: "tensornull" },
+              type: "User",
+            },
+          ],
+          type: "required_reviewers",
+        },
+        { type: "branch_policy" },
+      ],
+    };
+  }
+  const tagPolicy = { id: 55718965, name: "v*", type: "tag" };
+  const mainPolicy = { id: 60000000, name: "main", type: "branch" };
+
+  it("accepts only tag policy for a normal release", () => {
+    expect(
+      validateNpmEnvironmentState({
+        environment: environmentFixture(),
+        expectedPolicyIds: { "tag:v*": 55718965 },
+        operation: "release",
+        policies: [tagPolicy],
+      }),
+    ).toEqual({ policies: ["tag:v*"] });
+  });
+
+  it("accepts exactly the temporary main and permanent tag policies for recovery", () => {
+    expect(
+      validateNpmEnvironmentState({
+        environment: environmentFixture(),
+        expectedPolicyIds: {
+          "branch:main": 60000000,
+          "tag:v*": 55718965,
+        },
+        operation: "recover-v0.1.1",
+        policies: [tagPolicy, mainPolicy],
+      }),
+    ).toEqual({ policies: ["branch:main", "tag:v*"] });
+  });
+
+  it("rejects a same-name recovery policy replacement", () => {
+    expect(() =>
+      validateNpmEnvironmentState({
+        environment: environmentFixture(),
+        expectedPolicyIds: {
+          "branch:main": 60000001,
+          "tag:v*": 55718965,
+        },
+        operation: "recover-v0.1.1",
+        policies: [tagPolicy, mainPolicy],
+      }),
+    ).toThrow(/policy ID/i);
+  });
+
+  it.each([
+    [
+      "admin bypass",
+      {
+        environment: { ...environmentFixture(), can_admins_bypass: true },
+        policies: [tagPolicy],
+      },
+    ],
+    [
+      "reviewer",
+      {
+        environment: {
+          ...environmentFixture(),
+          protection_rules: [{ type: "branch_policy" }],
+        },
+        policies: [tagPolicy],
+      },
+    ],
+    [
+      "extra branch",
+      { environment: environmentFixture(), policies: [tagPolicy, mainPolicy] },
+    ],
+  ])("rejects normal-release environment drift in %s", (_name, fixture) => {
+    expect(() =>
+      validateNpmEnvironmentState({
+        operation: "release",
+        ...fixture,
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
+  it("accepts the unpublished candidate and preserves next", () => {
+    expect(
+      validateRegistryStateBeforePublish({
+        exactVersion: null,
+        latestVersion: "0.1.0",
+        nextVersion: "0.1.0-alpha.3",
+        version: "0.1.1",
+      }),
+    ).toMatchObject({ previousVersion: "0.1.0" });
+  });
+
+  it("accepts an idempotent replay only at the same exact version", () => {
+    expect(
+      validateRegistryStateBeforePublish({
+        exactVersion: "0.1.1",
+        latestVersion: "0.1.1",
+        nextVersion: "0.1.0-alpha.3",
+        version: "0.1.1",
+      }),
+    ).toMatchObject({ exactVersion: "0.1.1" });
+  });
+
+  it.each([
+    [
+      "wrong latest",
+      {
+        exactVersion: null,
+        latestVersion: "0.1.1",
+        nextVersion: "0.1.0-alpha.3",
+        version: "0.1.1",
+      },
+    ],
+    [
+      "changed next",
+      {
+        exactVersion: null,
+        latestVersion: "0.1.0",
+        nextVersion: "0.1.0-alpha.4",
+        version: "0.1.1",
+      },
+    ],
+    [
+      "wrong exact",
+      {
+        exactVersion: "0.1.2",
+        latestVersion: "0.1.0",
+        nextVersion: "0.1.0-alpha.3",
+        version: "0.1.1",
+      },
+    ],
+    [
+      "0.2 release",
+      {
+        exactVersion: null,
+        latestVersion: "0.1.1",
+        nextVersion: "0.1.0-alpha.3",
+        version: "0.2.0",
+      },
+    ],
+  ])("rejects registry drift in %s", (_name, fixture) => {
+    expect(() => validateRegistryStateBeforePublish(fixture)).toThrow(
+      /release workflow/i,
+    );
+  });
+
+  const provenanceDigest = "c".repeat(128);
+
+  function provenanceFixture({
+    commit = BRANCH_SHA,
+    mutate,
+    runAttempt = 1,
+    runId = RUN_ID,
+    workflowRef = "refs/heads/main",
+  } = {}) {
+    const statement = {
+      _type: "https://in-toto.io/Statement/v1",
+      predicateType: "https://slsa.dev/provenance/v1",
+      subject: [
+        {
+          digest: { sha512: provenanceDigest },
+          name: "pkg:npm/cometapi@0.1.1",
+        },
+      ],
+      predicate: {
+        buildDefinition: {
+          buildType:
+            "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1",
+          externalParameters: {
+            workflow: {
+              path: ".github/workflows/publish.yml",
+              ref: workflowRef,
+              repository: "https://github.com/cometapi-dev/cometapi-node",
+            },
+          },
+          internalParameters: {
+            github: {
+              event_name: "workflow_dispatch",
+              repository_id: "1307188651",
+              repository_owner_id: "225111184",
+            },
+          },
+          resolvedDependencies: [
+            {
+              digest: { gitCommit: commit },
+              uri: `git+https://github.com/cometapi-dev/cometapi-node@${workflowRef}`,
+            },
+          ],
+        },
+        runDetails: {
+          builder: { id: "https://github.com/actions/runner/github-hosted" },
+          metadata: {
+            invocationId: `https://github.com/cometapi-dev/cometapi-node/actions/runs/${runId}/attempts/${runAttempt}`,
+          },
+        },
+      },
+    };
+    mutate?.(statement);
+    return {
+      attestations: {
+        attestations: [
+          {
+            bundle: {
+              dsseEnvelope: {
+                payload: Buffer.from(JSON.stringify(statement)).toString(
+                  "base64",
+                ),
+              },
+            },
+            predicateType: "https://slsa.dev/provenance/v1",
+          },
+        ],
+      },
+      commit,
+      runAttempt,
+      runId,
+      sha512: provenanceDigest,
+      version: "0.1.1",
+      workflowRef,
+    };
+  }
+
+  it("binds the disclosed recovery provenance to main and its control commit", () => {
+    expect(validateRegistryProvenance(provenanceFixture())).toEqual({
+      commit: BRANCH_SHA,
+      provenanceRunAttempt: 1,
+      provenanceRunId: RUN_ID,
+      version: "0.1.1",
+      workflowRef: "refs/heads/main",
+    });
+  });
+
+  it("binds normal provenance to the immutable tag and release commit", () => {
+    expect(
+      validateRegistryProvenance(
+        provenanceFixture({
+          commit: RELEASE_SHA,
+          workflowRef: "refs/tags/v0.1.1",
+        }),
+      ),
+    ).toMatchObject({
+      commit: RELEASE_SHA,
+      workflowRef: "refs/tags/v0.1.1",
+    });
+  });
+
+  it.each([
+    [
+      "workflow path",
+      (statement) => {
+        statement.predicate.buildDefinition.externalParameters.workflow.path =
+          "/.github/workflows/other.yml";
+      },
+    ],
+    [
+      "workflow ref",
+      (statement) => {
+        statement.predicate.buildDefinition.externalParameters.workflow.ref =
+          "refs/heads/dev";
+      },
+    ],
+    [
+      "source commit",
+      (statement) => {
+        statement.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit =
+          RELEASE_SHA;
+      },
+    ],
+    [
+      "event",
+      (statement) => {
+        statement.predicate.buildDefinition.internalParameters.github.event_name =
+          "push";
+      },
+    ],
+    [
+      "subject digest",
+      (statement) => {
+        statement.subject[0].digest.sha512 = "d".repeat(128);
+      },
+    ],
+    [
+      "invocation",
+      (statement) => {
+        statement.predicate.runDetails.metadata.invocationId = `https://github.com/other/repository/actions/runs/${RUN_ID}/attempts/2`;
+      },
+    ],
+  ])("rejects provenance drift in %s", (_name, mutate) => {
+    expect(() =>
+      validateRegistryProvenance(provenanceFixture({ mutate })),
+    ).toThrow(/release workflow/i);
+  });
+
+  function provenanceInvocation(overrides = {}) {
+    const run = {
+      conclusion: "failure",
+      event: "workflow_dispatch",
+      head_branch: "main",
+      head_sha: BRANCH_SHA,
+      id: RUN_ID,
+      name: "Publish",
+      path: ".github/workflows/publish.yml",
+      repository: { full_name: REPOSITORY },
+      run_attempt: 1,
+      status: "completed",
+    };
+    const jobs = [
+      {
+        head_sha: BRANCH_SHA,
+        name: "Publish with npm Trusted Publishing",
+        run_attempt: 1,
+        run_id: RUN_ID,
+        runner_id: 42,
+        steps: [
+          {
+            conclusion: "success",
+            name: "Publish the exact artifact with provenance",
+            status: "completed",
+          },
+        ],
+      },
+    ];
+    return {
+      commit: BRANCH_SHA,
+      jobs,
+      run,
+      runAttempt: 1,
+      runId: RUN_ID,
+      workflowRef: "refs/heads/main",
+      ...overrides,
+    };
+  }
+
+  it("accepts a prior failed run only when its npm publish step succeeded", () => {
+    expect(
+      validateRegistryProvenanceInvocation(provenanceInvocation()),
+    ).toEqual({
+      commit: BRANCH_SHA,
+      runAttempt: 1,
+      runId: RUN_ID,
+      workflowRef: "refs/heads/main",
+    });
+  });
+
+  it("accepts the current in-progress run after its publish step succeeds", () => {
+    const fixture = provenanceInvocation();
+    fixture.run.status = "in_progress";
+    fixture.run.conclusion = null;
+    expect(validateRegistryProvenanceInvocation(fixture)).toMatchObject({
+      runId: RUN_ID,
+    });
+  });
+
+  it.each([
+    ["run attempt", (fixture) => (fixture.run.run_attempt = 2)],
+    ["workflow", (fixture) => (fixture.run.path = ".github/workflows/ci.yml")],
+    ["ref", (fixture) => (fixture.run.head_branch = "dev")],
+    ["commit", (fixture) => (fixture.run.head_sha = RELEASE_SHA)],
+    ["runner", (fixture) => (fixture.jobs[0].runner_id = 0)],
+    [
+      "publish step",
+      (fixture) => (fixture.jobs[0].steps[0].conclusion = "failure"),
+    ],
+  ])("rejects provenance invocation drift in %s", (_name, mutate) => {
+    const fixture = provenanceInvocation();
+    mutate(fixture);
+    expect(() => validateRegistryProvenanceInvocation(fixture)).toThrow(
+      /release workflow/i,
+    );
   });
 });
 
@@ -373,7 +1272,7 @@ describe("Release Please push classification", () => {
     };
   }
 
-  it("ignores a metadata-only push whose current version remains published", () => {
+  it("prepares a source-only push whose current version remains published", () => {
     expect(
       classifyPushReleasePresence({
         currentRelease: publishedCurrentRelease(),
@@ -384,7 +1283,7 @@ describe("Release Please push classification", () => {
         previousVersion: "0.1.0",
         version: "0.1.0",
       }),
-    ).toEqual({ mode: "ignore", version: "0.1.0" });
+    ).toEqual({ mode: "prepare", version: "0.1.0" });
   });
 
   it("classifies an exact next-patch push as a release", () => {
@@ -408,7 +1307,6 @@ describe("Release Please push classification", () => {
     ],
     ["minor bump", { previousVersion: "0.1.0", version: "0.2.0" }],
     ["skipped patch", { previousVersion: "0.1.0", version: "0.1.2" }],
-    ["metadata-only package change", { packageChanged: true }],
     ["manifest drift", { manifestVersion: "0.1.1" }],
     [
       "published-version tag without a Release",
@@ -454,8 +1352,8 @@ describe("Release Please push classification", () => {
     ).toThrow(/release workflow/i);
   });
 
-  it("rejects an unchanged-version rerun even if the historical tag exists", () => {
-    expect(() =>
+  it("prepares a package metadata change without a premature version bump", () => {
+    expect(
       classifyPushReleasePresence({
         currentRelease: publishedCurrentRelease(),
         currentTagCommit: RELEASE_SHA,
@@ -465,7 +1363,7 @@ describe("Release Please push classification", () => {
         previousVersion: "0.1.0",
         version: "0.1.0",
       }),
-    ).toThrow(/package\.json push must change/i);
+    ).toEqual({ mode: "prepare", version: "0.1.0" });
   });
 });
 
@@ -845,6 +1743,19 @@ describe("release PR review validation", () => {
         eventName: "workflow_dispatch",
         releaseBranch: RELEASE_BRANCH,
         releaseCommit: RELEASE_SHA,
+        repository: REPOSITORY,
+      }),
+    ).toBeNull();
+  });
+
+  it("allows an ordinary source fix push to prepare a release PR", () => {
+    expect(
+      selectPendingReleasePullRequest([], {
+        eventName: "push",
+        operation: "prepare",
+        releaseBranch: RELEASE_BRANCH,
+        releaseCommit: RELEASE_SHA,
+        releaseExists: false,
         repository: REPOSITORY,
       }),
     ).toBeNull();

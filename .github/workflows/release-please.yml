@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - package.json
   workflow_dispatch:
 
 permissions:
@@ -77,10 +75,17 @@ jobs:
           node scripts/validate-release.mjs
           node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
-          import { validateReleasePleaseMutationConfiguration } from "./scripts/release-workflow-validation.mjs";
+          import { parse } from "yaml";
+          import {
+            validatePublishWorkflowContract,
+            validateReleasePleaseMutationConfiguration,
+          } from "./scripts/release-workflow-validation.mjs";
 
           validateReleasePleaseMutationConfiguration(
             JSON.parse(readFileSync("release-please-config.json", "utf8")),
+          );
+          validatePublishWorkflowContract(
+            parse(readFileSync(".github/workflows/publish.yml", "utf8")),
           );
           EOF
       - name: Reject commit-level version overrides
@@ -221,9 +226,15 @@ jobs:
           EOF
           )"
           echo "operation=${operation}" >> "$GITHUB_OUTPUT"
-          if [[ "$operation" == "ignore" ]]; then
-            echo "The push did not change the published package version; no release mutation is needed."
+          if [[ "$operation" == "prepare" ]]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "run-created-at=${run_created_at}" >> "$GITHUB_OUTPUT"
+            echo "The source push will prepare or refresh the canonical patch PR."
             exit 0
+          fi
+          if [[ "$operation" != "release" ]]; then
+            echo "Release Please returned an unsupported push operation." >&2
+            exit 1
           fi
 
           ATTEMPTS_FILE="$attempts_file" RELEASE_FILE="$release_file" \
@@ -369,6 +380,7 @@ jobs:
           RELEASE_BRANCH: release-please--branches--main--components--cometapi
           RELEASE_EXISTS: ${{ steps.release-state.outputs.exists || 'false' }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          OPERATION: ${{ steps.release-state.outputs.operation || 'prepare' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -398,6 +410,7 @@ jobs:
           }));
           const releasePullRequest = selectPendingReleasePullRequest(pulls, {
             eventName: process.env.EVENT_NAME,
+            operation: process.env.OPERATION,
             releaseBranch: process.env.RELEASE_BRANCH,
             releaseCommit: process.env.GITHUB_SHA,
             releaseExists: process.env.RELEASE_EXISTS === "true",
@@ -412,7 +425,7 @@ jobs:
           if [[ -z "$release_pr_number" ]]; then
             echo "mode=prepare" >> "$GITHUB_OUTPUT"
             echo "release-pr-number=" >> "$GITHUB_OUTPUT"
-            echo "This first-attempt manual run may prepare exactly one release PR."
+            echo "This first-attempt run may prepare exactly one release PR."
             exit 0
           fi
           echo "mode=release" >> "$GITHUB_OUTPUT"
@@ -432,6 +445,7 @@ jobs:
           EXPECTED_BRANCH_EXISTS: ${{ steps.branch-state.outputs.branch-exists }}
           EXPECTED_BRANCH_SHA: ${{ steps.branch-state.outputs.branch-sha }}
           EXPECTED_MODE: ${{ steps.preflight.outputs.mode }}
+          EXPECTED_OPERATION: ${{ steps.release-state.outputs.operation || 'prepare' }}
           EXPECTED_PR_NUMBER: ${{ steps.preflight.outputs.release-pr-number }}
           EXPECTED_RELEASE_EXISTS: ${{ steps.release-state.outputs.exists || 'false' }}
           EXPECTED_SHA: ${{ github.sha }}
@@ -499,6 +513,7 @@ jobs:
           });
           const releasePullRequest = selectPendingReleasePullRequest(pulls, {
             eventName: process.env.EVENT_NAME,
+            operation: process.env.EXPECTED_OPERATION,
             releaseBranch: process.env.RELEASE_BRANCH,
             releaseCommit: process.env.GITHUB_SHA,
             releaseExists: process.env.EXPECTED_RELEASE_EXISTS === "true",
@@ -603,7 +618,7 @@ jobs:
           EOF
           fi
       - name: Reconfirm the exact release state before mutation
-        if: github.event_name == 'push' && steps.release-state.outputs.operation != 'ignore'
+        if: github.event_name == 'push' && steps.preflight.outputs.mode == 'release'
         env:
           EXPECTED_RELEASE_EXISTS: ${{ steps.release-state.outputs.exists }}
           GH_TOKEN: ${{ github.token }}
@@ -670,6 +685,19 @@ jobs:
           EOF
           if [[ "$release_exists" != "$EXPECTED_RELEASE_EXISTS" ]]; then
             echo "The exact tag or Release changed after preflight." >&2
+            exit 1
+          fi
+      - name: Require the exact current main commit immediately before mutation
+        if: steps.release-state.outputs.operation != 'ignore'
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [[ "$(git rev-parse HEAD)" != "$EXPECTED_SHA" ||
+                "$(git rev-parse refs/remotes/origin/main)" != "$EXPECTED_SHA" ]]; then
+            echo "main moved immediately before the Release Please mutation." >&2
             exit 1
           fi
       - name: Run Release Please
@@ -1107,14 +1135,20 @@ jobs:
           git fetch --no-tags origin \
             "+refs/tags/${tag}:refs/tags/${tag}"
           final_tag_commit="$(git rev-parse --verify "refs/tags/${tag}^{commit}")"
+          tagged_publish_workflow="$RUNNER_TEMP/release-tag-publish.yml"
+          git show "refs/tags/${tag}:.github/workflows/publish.yml" \
+            > "$tagged_publish_workflow"
           mkdir -p release-please-result
           COMPLETION_FILE="$completion_file" FINAL_RELEASE_FILE="$final_release_file" \
-            FINAL_TAG_COMMIT="$final_tag_commit" VERSION="$version" \
+            FINAL_TAG_COMMIT="$final_tag_commit" \
+            TAGGED_PUBLISH_WORKFLOW="$tagged_publish_workflow" VERSION="$version" \
             node --input-type=module <<'EOF'
           import { readFileSync, writeFileSync } from "node:fs";
+          import { parse } from "yaml";
           import {
             extractReleaseNotesFromChangelog,
             validateGitHubRelease,
+            validatePublishWorkflowContract,
             validateReleasePleaseActionResult,
           } from "./scripts/release-workflow-validation.mjs";
 
@@ -1133,6 +1167,9 @@ jobs:
               tag: completion.tagName,
               tagCommit: process.env.FINAL_TAG_COMMIT,
             },
+          );
+          validatePublishWorkflowContract(
+            parse(readFileSync(process.env.TAGGED_PUBLISH_WORKFLOW, "utf8")),
           );
           const result = {
             actionOutcome: completion.actionOutcome,
