@@ -1,13 +1,13 @@
 # CometAPI TypeScript and Node.js SDK Roadmap
 
-Status: 0.1.1 options-contract and Release Please maintenance in progress
-Last updated: 2026-07-29
+Status: Stable 0.1.1 and Repository foundation complete
+Last updated: 2026-07-30
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
-Stable `0.1.0` completed the immutable GitHub Release, bounded live smoke, OIDC
-publication, provenance, signature, and separate post-publication install
-checks on 2026-07-28.
+Stable `0.1.1` completed the corrected options contract, immutable GitHub
+Release, bounded live smoke, OIDC publication, provenance, signature, separate
+public-install verification, and recovery-path cleanup on 2026-07-30.
 
 ## Product Target
 
@@ -23,22 +23,22 @@ available from npm. The immutable `0.1.0-alpha.2` GitHub release failed locally
 before invoking npm because its publication guard rejected the fixed
 `actions/setup-node` authentication placeholder. `0.1.0-alpha.3` completed the
 OIDC, provenance, ownership, and public-install verification sequence and is
-available from npm's `next` channel. Stable `0.1.0` is available from npm's
+available from npm's `next` channel. Stable `0.1.1` is available from npm's
 default `latest` channel with verified provenance and public-install evidence.
 
 ## Milestones
 
-| Milestone                  | Status      | User outcome                                                                                                                              |
-| -------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository foundation      | In progress | The repository has reproducible development, contribution, security, and release processes.                                               |
-| Private Remote Validation  | Complete    | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.      |
-| Public Preview             | Complete    | The public repository has blocking CI, repository rules, security reporting, protected environments, and authorized live-smoke evidence.  |
-| 0.1.x Registry Alpha       | Complete    | Early adopters can install a functional, provenance-verified prerelease from npm's `next` channel through the OIDC-only publication path. |
-| 0.1.0 Stable               | Complete    | Users can install a fully verified package from npm's default channel.                                                                    |
-| 0.1.1 maintenance patch    | In progress | Users receive the corrected public options contract through the repaired, reviewed normal release path.                                   |
-| 0.2.0 provider-native text | Planned     | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                          |
-| 0.3.0 CometAPI resources   | Planned     | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                           |
-| Media and task APIs        | Later       | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                    |
+| Milestone                  | Status   | User outcome                                                                                                                                   |
+| -------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository foundation      | Complete | The repository has reproducible development, contribution, security, and release processes.                                                    |
+| Private Remote Validation  | Complete | The sanitized private repository passes real credential-free default-branch CI; public-only controls and live tests remain disabled.           |
+| Public Preview             | Complete | The public repository has blocking CI, repository rules, security reporting, protected environments, and authorized live-smoke evidence.       |
+| 0.1.x Registry Alpha       | Complete | Early adopters can install a functional, provenance-verified prerelease from npm's `next` channel through the OIDC-only publication path.      |
+| 0.1.0 Stable               | Complete | Users can install a fully verified package from npm's default channel.                                                                         |
+| 0.1.1 maintenance patch    | Complete | Users receive the corrected options contract; the permanent tag-bound release architecture is installed and the one-time recovery is recorded. |
+| 0.2.0 provider-native text | Planned  | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                               |
+| 0.3.0 CometAPI resources   | Planned  | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                                |
+| Media and task APIs        | Later    | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                         |
 
 ## Repository Foundation
 
@@ -95,48 +95,35 @@ URL. The canonical repository is
 and `https://github.com/cometapi-dev/cometapi-node/issues` for `bugs.url`.
 `CODEOWNERS` remains absent until a real multi-maintainer model exists.
 
-Foundation remains in progress after stable `0.1.0`. The post-merge Release
-Please [run 30345116433](https://github.com/cometapi-dev/cometapi-node/actions/runs/30345116433)
-ran after a draft `v0.1.0` Release had been created but before that draft was
-published or had a tag. With no discoverable Release Please release boundary,
-it scanned older Conventional Commits, including the initial feature, and
-generated an unrequested `0.2.0` temporary branch commit. Pull-request creation
-then failed independently because the repository did not authorize GitHub
-Actions to create or approve pull requests at that time. The run did not change
-`main`, create a tag or published Release, or publish to npm.
+The failed post-`0.1.0` Release Please
+[run 30345116433](https://github.com/cometapi-dev/cometapi-node/actions/runs/30345116433)
+had no published tag boundary to discover, generated an unrequested `0.2.0`
+temporary-branch commit, and then encountered a separate Actions pull-request
+authorization failure. The `0.1.1` repair made the `cometapi` component and
+patch-only versioning explicit, anchored only its initial preparation to the
+immutable `0.1.0` commit, and restored Release Please ownership of the reviewed
+version/changelog PR, tag, and immutable GitHub Release. The stale branch was
+verified as failure-only evidence before replacement; it is not a 0.2 base.
 
-The 0.1.1 maintenance work makes the component and stable-patch policy
-explicit, used the exact 0.1.0 release commit to anchor only the initial repair
-dispatch, and restores Release Please ownership of the reviewed
-version/changelog PR plus the immutable tag and GitHub Release. A normal topic
-PR removes that temporary anchor and records final candidate approval before a
-fresh preparation dispatch refreshes the action-owned release PR. The scoped
-Release Please job now uses the repository's enabled Actions PR authorization
-to create and label the normal PR;
-a human owner reviews its exact final head. Default workflow permissions remain
-read-only, bot approval is never accepted, and the workflow does not modify the
-repository setting. Patch-only versioning prevents an implicit 0.2 bump during
-this maintenance window. The explicit component identifies the temporary
-branch but, for this root package, does not enter the Release Please title or public tag;
-the only accepted patch tag is `v0.1.1`. Publication is triggered from the
-successful attempt-qualified Release Please push run and independently verifies
-that run's schema-v2 result artifact, default-branch commit, tag, immutable
-Release, and package artifact before the existing bounded live smoke and npm
-OIDC steps. A push rerun is bounded to the same run ID, SHA, candidate,
-Release-producing
-attempt, and exact Release state; manual preparation remains attempt-1-only.
-The Release notes must equal the reviewed `CHANGELOG` entry. The post-merge run
-also requires an administrator's approval on the release PR's final head.
+Release Please created the action-authored, exact-head-approved `0.1.1` release
+PR and immutable `v0.1.1` Release. Two publication runs then stopped before npm
+mutation: one because a downloaded result file entered the formatting scan, and
+one because a main-context deployment could not enter the tag-only npm
+Environment. The explicitly authorized one-time recovery reused only the exact
+already verified artifact and bounded live evidence, then published through npm
+OIDC. [PR #41](https://github.com/cometapi-dev/cometapi-node/pull/41) removed
+every fixed recovery input, prior-evidence reuse branch, and temporary `main`
+policy path.
 
-The exact stale 0.2 branch was revalidated as failure-only evidence with no
-associated PR or independent work, then deleted. Release Please recreated the
-canonical branch for the action-owned 0.1.1 PR; it must never be treated as the
-start of 0.2. Repository foundation may become Complete only after the real
-0.1.1 release flow, public
-registry installation, and a separate post-release documentation PR recording
-ROADMAP and RELEASING evidence succeed. Until then,
-`RELEASE_PLEASE_ENABLED` remains a temporary release-operation control,
-`latest` remains `0.1.0`, and `next` remains `0.1.0-alpha.3`.
+The permanent state is `RELEASE_PLEASE_ENABLED=false`,
+`LIVE_SMOKE_ENABLED=true`, and exactly one npm Environment deployment policy,
+`tag:v*`. Current stable publication uses an unprivileged Release Please
+handoff followed by an immutable-tag dispatch, fresh verification and live
+smoke, and tag-bound npm OIDC. Stable `0.1.1` itself has main-bound provenance
+from the disclosed recovery, so the next explicitly authorized stable patch is
+the first end-to-end registry execution of the permanent tag-bound path. Full
+evidence is recorded in
+[RELEASING.md](./RELEASING.md#stable-011-release-evidence).
 
 ## Private Remote Validation
 
@@ -274,41 +261,44 @@ Explicit non-goals:
 - Provider-neutral message translation.
 - Image, video, audio, batch, fine-tuning, and realtime APIs.
 
-## 0.1.1: Options Contract and Release Repair
+## 0.1.1: Options Contract and Release Repair (Complete)
 
-This maintenance patch aligns the declarations with the supported 0.1 runtime
+Stable `0.1.1` aligns the declarations with the supported 0.1 runtime
 boundary. `CometAPIOptions` and `withOptions` exclude `provider`,
 `workloadIdentity`, and `dangerouslyAllowBrowser`; runtime objects that bypass
 the declarations receive a secret-free official `OpenAIError`. Existing
 transport, observability, organization, project, webhook, and admin-key options
 remain available. The supported resource list does not change.
 
-The patch also restores a normal stable Release Please path with explicit
-component identity, patch versioning, pull-request configuration, one-cycle
-0.1.0 history anchoring, normal `v0.1.1` tag and immutable GitHub Release
-creation, and a trusted `workflow_run` handoff to the existing exact-artifact,
-bounded-live, and npm OIDC gates. Regression tests must reject stale manifest
-state, a 0.2 bump, missing PR configuration, an unrelated stale branch, hostile
-workflow events, unsafe or mismatched recovery attempts, mismatched action
-outputs, missing final-head approval, and declaration or runtime option
-bypasses.
+The patch also installs the permanent stable Release Please path with explicit
+component identity, patch versioning, pull-request configuration, normal
+`v0.1.1` tag and immutable GitHub Release creation, and a trusted `workflow_run`
+handoff to immutable-tag-only exact-artifact, bounded-live, and npm OIDC gates.
+Its initial preparation used and then removed a one-cycle `0.1.0` history
+anchor; that anchor is not part of the permanent configuration. Regression
+tests reject stale manifest state, a 0.2 bump, missing PR configuration, an
+unrelated stale branch, hostile workflow events, unsafe or mismatched same-run
+Release reconciliation attempts, mismatched action outputs, missing final-head
+approval, and declaration or runtime option bypasses.
 
-Exit criteria:
+Completion evidence:
 
 - Source and packed ESM/CommonJS declarations pass executed TypeScript negative
   tests, while runtime bypass tests preserve official error identity and do not
   expose option values.
-- The repair PR and generated 0.1.1 release PR pass required CI on their exact
-  final heads, and the release PR receives human-owner review.
-- Release Please creates the exact immutable `v0.1.1` Release; the existing
-  three-request live smoke and npm OIDC publication pass without changing
-  `next=0.1.0-alpha.3`.
+- The repair PR and generated `0.1.1` release PR passed required CI on their
+  exact final heads, and a distinct human administrator formally approved the
+  action-authored release PR's final head.
+- Release Please created the exact immutable `v0.1.1` Release. The bounded
+  three-request live smoke and npm OIDC publication completed through the
+  disclosed one-time recovery without changing `next=0.1.0-alpha.3`.
 - A public-registry install verifies ESM, CommonJS, declarations, supported
   mocked calls, one effective OpenAI installation, API error identity,
   integrity, signatures, and provenance.
-- After publication, maintainers restore `RELEASE_PLEASE_ENABLED=false` while
-  keeping `LIVE_SMOKE_ENABLED=true`. A separate post-release documentation PR
-  records the evidence and only then marks Repository foundation Complete.
+- After publication, maintainers restored `RELEASE_PLEASE_ENABLED=false`, kept
+  `LIVE_SMOKE_ENABLED=true`, restored the sole `tag:v*` policy, and merged the
+  recovery-path cleanup. The evidence is recorded in
+  [RELEASING.md](./RELEASING.md#stable-011-release-evidence).
 
 ## 0.2.0: Provider-Native Text Adapters
 
@@ -373,14 +363,17 @@ The repository will maintain:
 - `release-please.yml` for the reviewed version and changelog PR and the
   corresponding immutable tag and GitHub Release.
 - `publish.yml` for trusted Release Please completion, immutable-release and
-  `main`-ancestry enforcement, exact
-  tarball verification, a protected release-tag live smoke, npm OIDC
-  publication, and dist-tag, integrity, provenance, signature, and registry
-  verification.
+  `main`-ancestry enforcement, an unprivileged handoff to the exact immutable
+  tag, exact tarball verification, a fresh protected release-tag live smoke,
+  npm OIDC publication, and dist-tag, integrity, provenance, signature, and
+  registry verification. Only the tag-bound dispatch can reach verification,
+  live, or publication authority.
 
-All workflow files must pass local `actionlint`. Until each workflow executes
-successfully in the actual GitHub repository, release reports must state that
-remote Actions behavior remains unverified.
+All workflow files must pass local `actionlint`. The permanent tag-bound
+publication contract has passed static, mutation, pull-request, and
+default-branch CI, but `0.1.1` used the disclosed main-context recovery. Until a
+later stable patch executes the permanent path through registry publication,
+release reports must keep that remote end-to-end qualification explicit.
 
 The initial manual alpha preparation starts with an empty version manifest and
 a temporary `release-as: 0.1.0-alpha.1` setting. Its reviewed pull request must
@@ -411,12 +404,19 @@ versioning and the `cometapi` component, an action-created and human-reviewed
 Release Please PR, and automated immutable tag and GitHub Release creation after
 merge. Because the default `GITHUB_TOKEN` cannot cause a second workflow through
 a `release.published` event, `publish.yml` starts from successful Release Please
-workflow completion and re-establishes trust from exact repository state.
-Failed pull-request preparation runs are filtered out; any successful run
-without a schema-v2 attempt-bound release result, the exact tag, and immutable
-Release fails before live or registry access. Only a successful canonical
-attempt-qualified `push` run for the still-current exact `main` SHA can enter
-artifact verification. A push retry may recover only the same run ID, SHA,
+workflow completion and re-establishes trust from exact repository state. The
+main-context `workflow_run` can enter only an unprivileged handoff, which
+validates the attempt-bound result, immutable Release, tag, and current `main`,
+then dispatches the same workflow with `ref=v<version>`. Verification, live
+smoke, the npm Environment, and OIDC are reachable only from that tag-bound
+`workflow_dispatch`.
+Failed pull-request preparation runs are filtered out, while a successful
+preparation run whose result-upload step was skipped remains release-inert. Any
+purported release handoff without a schema-v2 attempt-bound result, the exact
+tag, and immutable Release fails before live or registry access. Only a
+successful canonical
+attempt-qualified `push` run for the still-current exact `main` SHA can create
+the tag handoff. A push retry may reconcile only the same run ID, SHA,
 candidate, and exact bot-authored immutable Release published inside one
 earlier Release Please step; manual preparation
 reruns remain forbidden.
