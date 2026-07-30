@@ -32,22 +32,9 @@ on:
         description: Successful Release Please run attempt.
         required: true
         type: string
-      source_publish_run_id:
-        description: Failed Publish run used only by an authorized recovery.
-        required: false
-        type: string
-      source_publish_run_attempt:
-        description: Failed Publish attempt used only by an authorized recovery.
-        required: false
-        type: string
-      recovery_policy_id:
-        description: Captured temporary main deployment-policy ID for recovery.
-        required: false
-        type: string
 
 permissions:
   actions: read
-  checks: read
   contents: read
 
 concurrency:
@@ -309,23 +296,12 @@ jobs:
     if: >-
       vars.RELEASE_PLEASE_ENABLED == 'true' &&
       github.event_name == 'workflow_dispatch' &&
-      ((inputs.publish_operation == 'release' &&
-        startsWith(github.ref, 'refs/tags/v0.1.') &&
-        github.ref == format('refs/tags/{0}', inputs.release_tag) &&
-        github.sha == inputs.release_commit &&
-        github.workflow_sha == inputs.control_commit &&
-        inputs.control_commit == inputs.release_commit) ||
-       (inputs.publish_operation == 'recover-v0.1.1' &&
-        inputs.recovery_policy_id != '' &&
-        github.ref == 'refs/heads/main' &&
-        github.sha == inputs.control_commit &&
-        github.workflow_sha == inputs.control_commit &&
-        inputs.release_commit == 'c98b514227858cd183c781270a7f78f65b577e82' &&
-        inputs.release_tag == 'v0.1.1' &&
-        inputs.release_run_id == '30469181724' &&
-        inputs.release_run_attempt == '1' &&
-        inputs.source_publish_run_id == '30471665743' &&
-        inputs.source_publish_run_attempt == '1'))
+      inputs.publish_operation == 'release' &&
+      startsWith(github.ref, 'refs/tags/v0.1.') &&
+      github.ref == format('refs/tags/{0}', inputs.release_tag) &&
+      github.sha == inputs.release_commit &&
+      github.workflow_sha == inputs.control_commit &&
+      inputs.control_commit == inputs.release_commit
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -338,9 +314,7 @@ jobs:
       dist-tag: ${{ steps.version.outputs.dist-tag }}
       release-commit: ${{ steps.trust.outputs.release-commit }}
       release-tag: ${{ steps.trust.outputs.release-tag }}
-      publish-operation: ${{ inputs.publish_operation }}
       release-please-snapshot: ${{ steps.release-please-snapshot.outputs.digest }}
-      reuse-live-smoke: ${{ steps.recovery-evidence.outputs.reuse-live-smoke }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out the workflow control commit
@@ -352,21 +326,15 @@ jobs:
       - name: Validate the exact workflow dispatch
         env:
           ACTOR: ${{ github.actor }}
-          CHANGED_FILES: ${{ runner.temp }}/publish-recovery-files
           CONTROL_COMMIT: ${{ github.workflow_sha }}
-          CONTROL_COMMIT_INPUT: ${{ inputs.control_commit }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
-          MAIN_COMMIT: ${{ github.workflow_sha }}
           OPERATION: ${{ inputs.publish_operation }}
           RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_RUN_ATTEMPT: ${{ inputs.release_run_attempt }}
           RELEASE_RUN_ID: ${{ inputs.release_run_id }}
-          RECOVERY_POLICY_ID: ${{ inputs.recovery_policy_id }}
-          SOURCE_PUBLISH_RUN_ATTEMPT: ${{ inputs.source_publish_run_attempt }}
-          SOURCE_PUBLISH_RUN_ID: ${{ inputs.source_publish_run_id }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
@@ -374,37 +342,16 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$(git rev-parse HEAD)" != "$CONTROL_COMMIT" ]]; then
-            echo "The recovery control checkout does not match the triggering SHA." >&2
+            echo "The tag dispatch checkout does not match the triggering SHA." >&2
             exit 1
           fi
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          MAIN_COMMIT="$(git rev-parse refs/remotes/origin/main)"
-          case "$OPERATION" in
-            recover-v0.1.1)
-              if [[ "$MAIN_COMMIT" != "$CONTROL_COMMIT" ]]; then
-                echo "main moved after the publish recovery was triggered." >&2
-                exit 1
-              fi
-              CONTROL_FIRST_PARENT="$(git rev-parse "${CONTROL_COMMIT}^1")"
-              git diff --name-only "$CONTROL_FIRST_PARENT" "$CONTROL_COMMIT" > "$CHANGED_FILES"
-              ;;
-            release)
-              if [[ "$MAIN_COMMIT" != "$RELEASE_COMMIT" ]]; then
-                echo "The tag release commit is no longer the exact origin/main tip." >&2
-                exit 1
-              fi
-              CONTROL_FIRST_PARENT=""
-              : > "$CHANGED_FILES"
-              ;;
-            *) echo "Publish received an unsupported operation." >&2; exit 1 ;;
-          esac
-          MAIN_COMMIT="$MAIN_COMMIT" CONTROL_FIRST_PARENT="$CONTROL_FIRST_PARENT" \
-            node --input-type=module <<'EOF'
-          import { readFileSync } from "node:fs";
-          import {
-            validatePublishWorkflowDispatchRecoveryTrigger,
-            validatePublishWorkflowDispatchTrigger,
-          } from "./scripts/release-workflow-validation.mjs";
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$RELEASE_COMMIT" ]]; then
+            echo "The tag release commit is no longer the exact origin/main tip." >&2
+            exit 1
+          fi
+          node --input-type=module <<'EOF'
+          import { validatePublishWorkflowDispatchTrigger } from "./scripts/release-workflow-validation.mjs";
 
           const dispatchIdentity = {
             actor: process.env.ACTOR,
@@ -415,7 +362,6 @@ jobs:
             operation: process.env.OPERATION,
             releaseCommit: process.env.RELEASE_COMMIT,
             releaseTag: process.env.RELEASE_TAG,
-            recoveryPolicyId: Number(process.env.RECOVERY_POLICY_ID),
             sourceReleaseCommit: process.env.SOURCE_RELEASE_COMMIT,
             sourceRunAttempt: Number(process.env.SOURCE_RELEASE_RUN_ATTEMPT),
             sourceRunId: Number(process.env.SOURCE_RELEASE_RUN_ID),
@@ -423,48 +369,7 @@ jobs:
             workflowRunAttempt: Number(process.env.WORKFLOW_RUN_ATTEMPT),
             workflowSha: process.env.WORKFLOW_SHA,
           };
-          if (process.env.OPERATION === "release") {
-            validatePublishWorkflowDispatchTrigger(dispatchIdentity);
-          } else {
-            validatePublishWorkflowDispatchRecoveryTrigger({
-              ...dispatchIdentity,
-              changedFiles: readFileSync(process.env.CHANGED_FILES, "utf8")
-                .split("\n")
-                .filter((file) => file !== ""),
-              controlCommitInput: process.env.CONTROL_COMMIT_INPUT,
-              controlFirstParent: process.env.CONTROL_FIRST_PARENT,
-              mainCommit: process.env.MAIN_COMMIT,
-              sourcePublishRunAttempt: Number(
-                process.env.SOURCE_PUBLISH_RUN_ATTEMPT,
-              ),
-              sourcePublishRunId: Number(process.env.SOURCE_PUBLISH_RUN_ID),
-            });
-          }
-          EOF
-      - name: Require the only recovery dispatch for this control commit
-        if: inputs.publish_operation == 'recover-v0.1.1'
-        env:
-          CONTROL_COMMIT: ${{ inputs.control_commit }}
-          CURRENT_RUN_ID: ${{ github.run_id }}
-          GH_TOKEN: ${{ github.token }}
-          RECOVERY_DISPATCH_RUNS: ${{ runner.temp }}/publish-recovery-dispatch-runs.json
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100" \
-            > "$RECOVERY_DISPATCH_RUNS"
-          node --input-type=module <<'EOF'
-          import { readFileSync } from "node:fs";
-          import { validateUniquePublishRecoveryRun } from "./scripts/release-workflow-validation.mjs";
-
-          validateUniquePublishRecoveryRun({
-            controlCommit: process.env.CONTROL_COMMIT,
-            currentRunId: Number(process.env.CURRENT_RUN_ID),
-            responses: JSON.parse(
-              readFileSync(process.env.RECOVERY_DISPATCH_RUNS, "utf8"),
-            ),
-          });
+          validatePublishWorkflowDispatchTrigger(dispatchIdentity);
           EOF
       - name: Freeze the Release Please run set
         id: release-please-snapshot
@@ -487,62 +392,6 @@ jobs:
           );
           const digest = createHash("sha256").update(snapshot).digest("hex");
           appendFileSync(process.env.GITHUB_OUTPUT, `digest=${digest}\n`);
-          EOF
-      - name: Validate the prior artifact and bounded live evidence
-        id: recovery-evidence
-        if: inputs.publish_operation == 'recover-v0.1.1'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RECOVERY_ANNOTATIONS: ${{ runner.temp }}/publish-recovery-annotations.json
-          RECOVERY_ARTIFACTS: ${{ runner.temp }}/publish-recovery-artifacts.json
-          RECOVERY_JOBS: ${{ runner.temp }}/publish-recovery-jobs.json
-          RECOVERY_LIVE_LOG: ${{ runner.temp }}/publish-recovery-live.log
-          RECOVERY_RUN: ${{ runner.temp }}/publish-recovery-run.json
-          SOURCE_PUBLISH_ATTEMPT: ${{ inputs.source_publish_run_attempt }}
-          SOURCE_PUBLISH_RUN_ID: ${{ inputs.source_publish_run_id }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}" \
-            > "$RECOVERY_RUN"
-          gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/attempts/${SOURCE_PUBLISH_ATTEMPT}/jobs?per_page=100" \
-            > "$RECOVERY_JOBS"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/artifacts" \
-            > "$RECOVERY_ARTIFACTS"
-          gh api "repos/${GITHUB_REPOSITORY}/check-runs/90643868523/annotations" \
-            > "$RECOVERY_ANNOTATIONS"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/90643725110/logs" \
-            > "$RECOVERY_LIVE_LOG"
-          if [[ "$(grep -Fc 'Live smoke passed 3 sequential requests with a 16-token output cap.' "$RECOVERY_LIVE_LOG")" != "1" ]]; then
-            echo "The source run no longer proves the exact bounded live smoke." >&2
-            exit 1
-          fi
-
-          node --input-type=module <<'EOF'
-          import { appendFileSync, readFileSync } from "node:fs";
-          import { validatePublishRecoveryEvidence } from "./scripts/release-workflow-validation.mjs";
-
-          const result = validatePublishRecoveryEvidence({
-            annotations: JSON.parse(
-              readFileSync(process.env.RECOVERY_ANNOTATIONS, "utf8"),
-            ),
-            artifacts: JSON.parse(
-              readFileSync(process.env.RECOVERY_ARTIFACTS, "utf8"),
-            ).artifacts,
-            jobs: JSON.parse(readFileSync(process.env.RECOVERY_JOBS, "utf8")).jobs,
-            run: JSON.parse(readFileSync(process.env.RECOVERY_RUN, "utf8")),
-          });
-          appendFileSync(
-            process.env.GITHUB_OUTPUT,
-            [
-              `artifact-id=${result.artifactId}`,
-              `artifact-name=${result.artifactName}`,
-              `live-job-id=${result.liveJobId}`,
-              "reuse-live-smoke=true",
-              "",
-            ].join("\n"),
-          );
           EOF
       - name: Check out the exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -576,8 +425,6 @@ jobs:
           EXPECTED_REPOSITORY_URL: git+https://github.com/cometapi-dev/cometapi-node.git
           EXPECTED_WORKFLOW: Release Please
           EXPECTED_WORKFLOW_PATH: .github/workflows/release-please.yml
-          CONTROL_SHA: ${{ inputs.control_commit }}
-          OPERATION: ${{ inputs.publish_operation }}
           RELEASE_RESULT: ${{ runner.temp }}/release-please-result/result.json
           SOURCE_RUN_FILE: ${{ runner.temp }}/release-please-source-run.json
           SOURCE_RUN_ATTEMPT: ${{ env.SOURCE_RELEASE_RUN_ATTEMPT }}
@@ -593,21 +440,10 @@ jobs:
           fi
 
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          case "$OPERATION" in
-            recover-v0.1.1)
-              if [[ "$(git rev-parse refs/remotes/origin/main)" != "$CONTROL_SHA" ]]; then
-                echo "origin/main moved after the trusted recovery event." >&2
-                exit 1
-              fi
-              ;;
-            release)
-              if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]; then
-                echo "The release commit is no longer the exact origin/main tip." >&2
-                exit 1
-              fi
-              ;;
-            *) echo "Publish received an unsupported operation." >&2; exit 1 ;;
-          esac
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]; then
+            echo "The release commit is no longer the exact origin/main tip." >&2
+            exit 1
+          fi
 
           node --input-type=module <<'EOF'
           import { appendFileSync, readFileSync } from "node:fs";
@@ -754,19 +590,7 @@ jobs:
           npm run test:live-contract
           npm run test:compat -- --lane locked
           npm run check:self-contained
-      - name: Download the prior live-verified release artifact
-        if: inputs.publish_operation == 'recover-v0.1.1'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          artifact-ids: ${{ steps.recovery-evidence.outputs.artifact-id }}
-          path: release-artifacts
-          merge-multiple: true
-          digest-mismatch: error
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.source_publish_run_id }}
       - name: Pack the exact release artifact
-        if: inputs.publish_operation == 'release'
         shell: bash
         run: |
           set -euo pipefail
@@ -817,37 +641,21 @@ jobs:
     # without required reviewers and add COMETAPI_KEY before publishing a release.
     environment: live-smoke
     steps:
-      - name: Reuse the successful bounded live smoke
-        if: needs.verify.outputs.publish-operation == 'recover-v0.1.1'
-        env:
-          REUSE_LIVE_SMOKE: ${{ needs.verify.outputs.reuse-live-smoke }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$REUSE_LIVE_SMOKE" != "true" ]]; then
-            echo "The exact recovery run did not validate bounded live evidence." >&2
-            exit 1
-          fi
       - name: Check out the verified release tag
-        if: needs.verify.outputs.publish-operation == 'release'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ needs.verify.outputs.release-commit }}
       - name: Set up Node.js 24
-        if: needs.verify.outputs.publish-operation == 'release'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.x
           cache: npm
       - name: Install locked dependencies
-        if: needs.verify.outputs.publish-operation == 'release'
         run: npm ci
       - name: Build the release tag
-        if: needs.verify.outputs.publish-operation == 'release'
         run: npm run build
       - name: Run the bounded live smoke
-        if: needs.verify.outputs.publish-operation == 'release'
         env:
           COMETAPI_KEY: ${{ secrets.COMETAPI_KEY }}
           COMETAPI_LIVE_SMOKE: "1"
@@ -872,7 +680,6 @@ jobs:
       url: https://www.npmjs.com/package/cometapi/v/${{ needs.verify.outputs.version }}
     permissions:
       actions: read
-      checks: read
       contents: read
       deployments: read
       id-token: write
@@ -900,20 +707,11 @@ jobs:
         env:
           CONTROL_COMMIT: ${{ needs.verify.outputs.control-commit }}
           CONTROL_VALIDATOR: ${{ runner.temp }}/release-workflow-validation.mjs
-          CURRENT_RUN_ID: ${{ github.run_id }}
           ENVIRONMENT_FILE: ${{ runner.temp }}/npm-environment.json
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
-          OPERATION: ${{ needs.verify.outputs.publish-operation }}
           POLICIES_FILE: ${{ runner.temp }}/npm-deployment-policies.json
-          RECOVERY_ANNOTATIONS: ${{ runner.temp }}/publish-recovery-annotations-before-publish.json
-          RECOVERY_ARTIFACTS: ${{ runner.temp }}/publish-recovery-artifacts-before-publish.json
-          RECOVERY_DISPATCH_RUNS: ${{ runner.temp }}/publish-recovery-dispatch-runs-before-publish.json
-          RECOVERY_JOBS: ${{ runner.temp }}/publish-recovery-jobs-before-publish.json
-          RECOVERY_LIVE_LOG: ${{ runner.temp }}/publish-recovery-live-before-publish.log
-          RECOVERY_POLICY_ID: ${{ inputs.recovery_policy_id }}
-          RECOVERY_RUN: ${{ runner.temp }}/publish-recovery-run-before-publish.json
           RELEASE_COMMIT: ${{ needs.verify.outputs.release-commit }}
           RELEASE_FILE: ${{ runner.temp }}/github-release-before-publish.json
           RELEASE_RUN_ATTEMPT: ${{ inputs.release_run_attempt }}
@@ -923,8 +721,6 @@ jobs:
           RELEASE_PLEASE_ENABLED: ${{ vars.RELEASE_PLEASE_ENABLED }}
           RELEASE_PLEASE_RUNS: ${{ runner.temp }}/release-please-runs-before-publish.json
           RELEASE_PLEASE_SNAPSHOT: ${{ needs.verify.outputs.release-please-snapshot }}
-          SOURCE_PUBLISH_RUN_ATTEMPT: ${{ inputs.source_publish_run_attempt }}
-          SOURCE_PUBLISH_RUN_ID: ${{ inputs.source_publish_run_id }}
           VERSION: ${{ needs.verify.outputs.version }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         shell: bash
@@ -943,33 +739,17 @@ jobs:
             echo "The release tag no longer resolves to the verified commit." >&2
             exit 1
           fi
-          case "$OPERATION" in
-            release)
-              if [[ "$EVENT_REF" != "refs/tags/${RELEASE_TAG}" ||
-                    "$EVENT_SHA" != "$RELEASE_COMMIT" ||
-                    "$WORKFLOW_SHA" != "$RELEASE_COMMIT" ||
-                    "$CONTROL_COMMIT" != "$RELEASE_COMMIT" ]]; then
-                echo "The tag publication identity changed while awaiting approval." >&2
-                exit 1
-              fi
-              if [[ "$main_commit" != "$RELEASE_COMMIT" ]]; then
-                echo "The release commit is no longer the exact origin/main tip." >&2
-                exit 1
-              fi
-              ;;
-            recover-v0.1.1)
-              if [[ "$EVENT_REF" != "refs/heads/main" ||
-                    "$EVENT_SHA" != "$CONTROL_COMMIT" ||
-                    "$WORKFLOW_SHA" != "$CONTROL_COMMIT" ||
-                    "$main_commit" != "$CONTROL_COMMIT" ||
-                    "$RELEASE_COMMIT" != "c98b514227858cd183c781270a7f78f65b577e82" ||
-                    "$RELEASE_TAG" != "v0.1.1" ]]; then
-                echo "The exact main recovery identity changed while awaiting approval." >&2
-                exit 1
-              fi
-              ;;
-            *) echo "Publish received an unsupported operation." >&2; exit 1 ;;
-          esac
+          if [[ "$EVENT_REF" != "refs/tags/${RELEASE_TAG}" ||
+                "$EVENT_SHA" != "$RELEASE_COMMIT" ||
+                "$WORKFLOW_SHA" != "$RELEASE_COMMIT" ||
+                "$CONTROL_COMMIT" != "$RELEASE_COMMIT" ]]; then
+            echo "The tag publication identity changed while awaiting approval." >&2
+            exit 1
+          fi
+          if [[ "$main_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "The release commit is no longer the exact origin/main tip." >&2
+            exit 1
+          fi
 
           git show "${CONTROL_COMMIT}:scripts/release-workflow-validation.mjs" \
             > "$CONTROL_VALIDATOR"
@@ -986,44 +766,6 @@ jobs:
           if [[ "$RELEASE_PLEASE_ENABLED" != "true" ]]; then
             echo "RELEASE_PLEASE_ENABLED changed while publication awaited approval." >&2
             exit 1
-          fi
-
-          if [[ "$OPERATION" == "recover-v0.1.1" ]]; then
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}" \
-              > "$RECOVERY_RUN"
-            gh api \
-              "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/attempts/${SOURCE_PUBLISH_RUN_ATTEMPT}/jobs?per_page=100" \
-              > "$RECOVERY_JOBS"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/artifacts" \
-              > "$RECOVERY_ARTIFACTS"
-            gh api "repos/${GITHUB_REPOSITORY}/check-runs/90643868523/annotations" \
-              > "$RECOVERY_ANNOTATIONS"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/90643725110/logs" \
-              > "$RECOVERY_LIVE_LOG"
-            if [[ "$(grep -Fc 'Live smoke passed 3 sequential requests with a 16-token output cap.' "$RECOVERY_LIVE_LOG")" != "1" ]]; then
-              echo "The bounded live evidence changed while publication awaited approval." >&2
-              exit 1
-            fi
-            node --input-type=module <<'EOF'
-          import { readFileSync } from "node:fs";
-          import { pathToFileURL } from "node:url";
-
-          const { validatePublishRecoveryEvidence } = await import(
-            pathToFileURL(process.env.CONTROL_VALIDATOR)
-          );
-          validatePublishRecoveryEvidence({
-            annotations: JSON.parse(
-              readFileSync(process.env.RECOVERY_ANNOTATIONS, "utf8"),
-            ),
-            artifacts: JSON.parse(
-              readFileSync(process.env.RECOVERY_ARTIFACTS, "utf8"),
-            ).artifacts,
-            jobs: JSON.parse(
-              readFileSync(process.env.RECOVERY_JOBS, "utf8"),
-            ).jobs,
-            run: JSON.parse(readFileSync(process.env.RECOVERY_RUN, "utf8")),
-          });
-          EOF
           fi
 
           for state in in_progress queued waiting requested pending; do
@@ -1135,14 +877,8 @@ jobs:
             environment: JSON.parse(
               readFileSync(process.env.ENVIRONMENT_FILE, "utf8"),
             ),
-            expectedPolicyIds:
-              process.env.OPERATION === "recover-v0.1.1"
-                ? {
-                    "branch:main": Number(process.env.RECOVERY_POLICY_ID),
-                    "tag:v*": 55718965,
-                  }
-                : { "tag:v*": 55718965 },
-            operation: process.env.OPERATION,
+            expectedPolicyIds: { "tag:v*": 55718965 },
+            operation: "release",
             policies: JSON.parse(
               readFileSync(process.env.POLICIES_FILE, "utf8"),
             ).branch_policies,
@@ -1154,27 +890,6 @@ jobs:
             version,
           });
           EOF
-
-          if [[ "$OPERATION" == "recover-v0.1.1" ]]; then
-            gh api --paginate --slurp \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100" \
-              > "$RECOVERY_DISPATCH_RUNS"
-            node --input-type=module <<'EOF'
-          import { readFileSync } from "node:fs";
-          import { pathToFileURL } from "node:url";
-
-          const { validateUniquePublishRecoveryRun } = await import(
-            pathToFileURL(process.env.CONTROL_VALIDATOR)
-          );
-          validateUniquePublishRecoveryRun({
-            controlCommit: process.env.CONTROL_COMMIT,
-            currentRunId: Number(process.env.CURRENT_RUN_ID),
-            responses: JSON.parse(
-              readFileSync(process.env.RECOVERY_DISPATCH_RUNS, "utf8"),
-            ),
-          });
-          EOF
-          fi
       - name: Publish the exact artifact with provenance
         env:
           DIST_TAG: ${{ needs.verify.outputs.dist-tag }}

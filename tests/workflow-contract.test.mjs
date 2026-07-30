@@ -180,7 +180,7 @@ describe("GitHub Actions workflow contract", () => {
       expect(workflow(name)).toMatch(/^permissions:\n {2}contents: read$/m);
     }
     expect(workflow("publish.yml")).toMatch(
-      /^permissions:\n {2}actions: read\n {2}checks: read\n {2}contents: read$/m,
+      /^permissions:\n {2}actions: read\n {2}contents: read$/m,
     );
 
     const ci = workflow("ci.yml");
@@ -210,7 +210,7 @@ describe("GitHub Actions workflow contract", () => {
       /^ {4}permissions:/m,
     );
     const publish = job(publishWorkflow, "publish");
-    expect(publish).toContain("checks: read");
+    expect(publish).not.toContain("checks: read");
     expect(publish).toContain("id-token: write");
     expect(publish).toContain(
       "Release Please run set changed while publication awaited approval.",
@@ -408,24 +408,29 @@ describe("GitHub Actions workflow contract", () => {
     }
   });
 
-  it("hands Release Please releases to tag-bound publication with one exact main recovery", () => {
+  it("hands Release Please releases only to immutable-tag publication", () => {
     const publish = workflow("publish.yml");
     expect(publish).toMatch(
       /workflow_run:\n {4}workflows:\n {6}- Release Please\n {4}types:\n {6}- completed/,
     );
-    expect(publish).not.toMatch(/^ {2}release:/m);
+    expect(publish).not.toMatch(/^ {2}(push|release):/m);
     expect(publishWorkflow.on.workflow_dispatch).toBeDefined();
     expect(publishWorkflow.on.push).toBeUndefined();
-    expect(publishWorkflow.on.workflow_dispatch.inputs).toMatchObject({
-      control_commit: { required: true, type: "string" },
-      publish_operation: { required: true, type: "string" },
-      release_commit: { required: true, type: "string" },
-      release_run_attempt: { required: true, type: "string" },
-      release_run_id: { required: true, type: "string" },
-      release_tag: { required: true, type: "string" },
-      source_publish_run_attempt: { required: false, type: "string" },
-      source_publish_run_id: { required: false, type: "string" },
-    });
+    expect(
+      Object.keys(publishWorkflow.on.workflow_dispatch.inputs).sort(),
+    ).toEqual([
+      "control_commit",
+      "publish_operation",
+      "release_commit",
+      "release_run_attempt",
+      "release_run_id",
+      "release_tag",
+    ]);
+    for (const input of Object.values(
+      publishWorkflow.on.workflow_dispatch.inputs,
+    )) {
+      expect(input).toMatchObject({ required: true, type: "string" });
+    }
 
     const handoff = job(publish, "handoff");
     expect(handoff).toContain(
@@ -458,9 +463,6 @@ describe("GitHub Actions workflow contract", () => {
     expect(handoff).toContain(
       '$(git rev-parse refs/remotes/origin/main)" != "$RELEASE_COMMIT',
     );
-    expect(handoff).not.toContain(
-      'git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main',
-    );
 
     const verify = job(publish, "verify");
     expect(verify).toContain("github.event_name == 'workflow_dispatch'");
@@ -472,53 +474,26 @@ describe("GitHub Actions workflow contract", () => {
     );
     expect(verify).toContain("github.sha == inputs.release_commit");
     expect(verify).toContain("github.workflow_sha == inputs.control_commit");
-    expect(verify).toContain("inputs.publish_operation == 'recover-v0.1.1'");
-    expect(verify).toContain("github.ref == 'refs/heads/main'");
-    expect(verify).toContain("github.sha == inputs.control_commit");
-    expect(verify).toContain("SOURCE_RELEASE_COMMIT:");
-    expect(verify).toContain("c98b514227858cd183c781270a7f78f65b577e82");
-    expect(verify).toContain("SOURCE_RELEASE_RUN_ID:");
-    expect(verify).toContain("30469181724");
-    expect(verify).toContain("SOURCE_RELEASE_RUN_ATTEMPT:");
-    expect(verify).toContain(
-      "inputs.release_commit == 'c98b514227858cd183c781270a7f78f65b577e82'",
-    );
-    expect(verify).toContain("inputs.release_tag == 'v0.1.1'");
-    expect(verify).toContain("inputs.release_run_id == '30469181724'");
-    expect(verify).toContain("inputs.source_publish_run_id == '30471665743'");
+    expect(verify).toContain("inputs.control_commit == inputs.release_commit");
     expect(verify).toContain("validatePublishWorkflowDispatchTrigger");
-    expect(verify).toContain("validatePublishWorkflowDispatchRecoveryTrigger");
-    expect(verify).toContain("validateUniquePublishRecoveryRun");
-    expect(verify).toContain(
-      "Require the only recovery dispatch for this control commit",
-    );
-    expect(verify).toContain("CURRENT_RUN_ID: ${{ github.run_id }}");
-    expect(verify).toContain("gh api --paginate --slurp");
-    expect(verify).toContain(
-      "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
-    );
-    expect(verify).toContain("validatePublishRecoveryEvidence");
-    expect(verify).toContain(
+    expect(publishWorkflow.jobs.verify.if).not.toContain("refs/heads/main");
+    expect(verify).not.toContain("recover-v0.1.1");
+    expect(verify).not.toContain("source_publish");
+    expect(verify).not.toContain("recovery_policy");
+    expect(verify).not.toContain(
       "Download the prior live-verified release artifact",
     );
-    expect(verify).toContain(
-      "artifact-ids: ${{ steps.recovery-evidence.outputs.artifact-id }}",
-    );
-    expect(verify).toContain(
-      "if: inputs.publish_operation == 'recover-v0.1.1'",
-    );
-    expect(verify).toContain("if: inputs.publish_operation == 'release'");
+    expect(verify).toContain("Pack the exact release artifact");
+    expect(
+      publishWorkflow.jobs.verify.steps.find(
+        ({ name }) => name === "Pack the exact release artifact",
+      )?.if,
+    ).toBeUndefined();
     expect(verify).toContain("Select the exact release artifact");
-    expect(verify).toContain('if [[ "$MAIN_COMMIT" != "$RELEASE_COMMIT" ]]');
     expect(verify).toContain(
       'if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]',
     );
     expect(verify).toContain("github.triggering_actor");
-    expect(releaseWorkflowValidation).toContain("30471665743");
-    expect(releaseWorkflowValidation).toContain("8731956162");
-    expect(verify).toContain(
-      "Live smoke passed 3 sequential requests with a 16-token output cap.",
-    );
     expect(verify).toContain("ref: ${{ env.SOURCE_RELEASE_COMMIT }}");
     expect(verify).toContain("EXPECTED_WORKFLOW: Release Please");
     expect(verify).toContain(
@@ -538,12 +513,12 @@ describe("GitHub Actions workflow contract", () => {
     );
     expect(resultDownload).not.toContain("pattern:");
     expect(resultDownload).not.toContain("merge-multiple:");
-    expect(resultDownload).not.toContain("release-please-result-1");
     expect(resultDownload).not.toContain("github.run_attempt");
     expect(verify).toContain("validateReleasePleaseActionResult");
     expect(verify).toContain("validateGitHubRelease");
     expect(verify).toContain("runAttempt: run.runAttempt");
     expect(verify).toContain("runId: run.runId");
+
     expect(releaseWorkflowValidation).toContain("run?.run_attempt");
     expect(releaseWorkflowValidation).toContain(
       'requireEqual(result.schemaVersion, 2, "result schema version")',
@@ -555,6 +530,9 @@ describe("GitHub Actions workflow contract", () => {
     );
     expect(releaseWorkflowValidation).toContain("release?.immutable");
     expect(releaseWorkflowValidation).toContain("release?.target_commitish");
+    expect(releaseWorkflowValidation).not.toContain("recover-v0.1.1");
+    expect(releaseWorkflowValidation).not.toContain("30471665743");
+    expect(releaseWorkflowValidation).not.toContain("8731956162");
 
     expect(verify).toContain(
       "artifact-name: ${{ steps.artifact-name.outputs.name }}",
@@ -565,18 +543,14 @@ describe("GitHub Actions workflow contract", () => {
     expect(job(publish, "publish")).toContain(
       "name: ${{ needs.verify.outputs.artifact-name }}",
     );
+
     const liveSmoke = job(publish, "live-smoke");
     expect(publishWorkflow.jobs["live-smoke"].needs).toEqual(["verify"]);
-    expect(liveSmoke).toContain("Reuse the successful bounded live smoke");
-    expect(liveSmoke).toContain(
-      "if: needs.verify.outputs.publish-operation == 'recover-v0.1.1'",
-    );
-    expect(liveSmoke).toContain(
-      "if: needs.verify.outputs.publish-operation == 'release'",
-    );
-    expect(liveSmoke).toMatch(
-      /if: needs\.verify\.outputs\.publish-operation == 'release'\n[\s\S]*?run: npm run test:live/,
-    );
+    expect(liveSmoke).not.toContain("Reuse the successful bounded live smoke");
+    for (const step of publishWorkflow.jobs["live-smoke"].steps) {
+      expect(step.if).toBeUndefined();
+    }
+    expect(liveSmoke).toContain("run: npm run test:live");
 
     const publishJob = job(publish, "publish");
     expect(publishJob).not.toContain("github.event.workflow_run");
@@ -585,21 +559,10 @@ describe("GitHub Actions workflow contract", () => {
     );
     expect(publishJob).toContain("validateNpmEnvironmentState");
     expect(publishJob).toContain("validateRegistryStateBeforePublish");
-    expect(
-      matches(publish, /validatePublishRecoveryEvidence\(\{/g),
-    ).toHaveLength(2);
-    expect(
-      matches(publish, /validateUniquePublishRecoveryRun\(\{/g),
-    ).toHaveLength(2);
-    expect(publishJob).toContain("validateUniquePublishRecoveryRun");
-    expect(publishJob).toContain("CURRENT_RUN_ID: ${{ github.run_id }}");
-    expect(publishJob).toContain(
-      "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
-    );
-    expect(publishJob).toContain("gh api --paginate --slurp");
-    expect(publishJob).toContain(
-      "The bounded live evidence changed while publication awaited approval.",
-    );
+    expect(publishJob).toContain('expectedPolicyIds: { "tag:v*": 55718965 }');
+    expect(publishJob).not.toContain("branch:main");
+    expect(publishJob).not.toContain("RECOVERY_");
+    expect(publishJob).not.toContain("source_publish");
     expect(publishJob).toContain("validateRegistryProvenance");
     expect(publishJob).toContain("validateRegistryProvenanceInvocation");
     expect(publishJob).toContain("WORKFLOW_REF: ${{ github.ref }}");
@@ -611,15 +574,11 @@ describe("GitHub Actions workflow contract", () => {
     expect(publishJob).toContain(
       'npm view cometapi@next version)" != "0.1.0-alpha.3"',
     );
-    expect(publishJob).toContain("RELEASE_PLEASE_ENABLED");
     expect(publishJob).toContain(
       "RELEASE_PLEASE_ENABLED: ${{ vars.RELEASE_PLEASE_ENABLED }}",
     );
     expect(publishJob).not.toContain(
       "actions/variables/RELEASE_PLEASE_ENABLED",
-    );
-    expect(publishJob).toContain(
-      "RECOVERY_POLICY_ID: ${{ inputs.recovery_policy_id }}",
     );
     expect(publishJob).toContain(
       'if [[ "$main_commit" != "$RELEASE_COMMIT" ]]',
@@ -632,9 +591,6 @@ describe("GitHub Actions workflow contract", () => {
     expect(publishJob).toContain('writeFileSync("consumer.mts"');
     expect(publishJob).toContain('writeFileSync("consumer.cts"');
     expect(publishJob).toContain("./node_modules/.bin/tsc --noEmit");
-    expect(publishJob.indexOf("validateNpmEnvironmentState")).toBeLessThan(
-      publishJob.indexOf("Publish the exact artifact with provenance"),
-    );
     expect(
       publishJob.indexOf(
         "Reconfirm protected state immediately before publication",
@@ -654,8 +610,10 @@ describe("GitHub Actions workflow contract", () => {
       'git show "refs/tags/${tag}:.github/workflows/publish.yml"',
     );
     expect(publish).not.toContain("github.event.deployment");
+    expect(publish).not.toContain("recover-v0.1.1");
+    expect(publish).not.toContain("recovery_policy_id");
+    expect(publish).not.toContain("source_publish_run");
   });
-
   it("rejects an unrelated divergent Release Please branch", () => {
     const releasePlease = job(workflow("release-please.yml"), "release-please");
     expect(releasePlease).toContain(
