@@ -297,6 +297,40 @@ export function validatePublishWorkflowContract(workflow) {
     "Freeze the Release Please run set",
     "Publish Release Please snapshot",
   );
+  const uniqueRecoveryStep = requireUniqueStep(
+    jobs.verify,
+    "Require the only recovery dispatch for this control commit",
+    "Publish unique recovery dispatch",
+  );
+  requireEqual(
+    uniqueRecoveryStep?.if,
+    "inputs.publish_operation == 'recover-v0.1.1'",
+    "Publish unique recovery dispatch gate",
+  );
+  requireEqual(
+    uniqueRecoveryStep?.env?.CONTROL_COMMIT,
+    "${{ inputs.control_commit }}",
+    "Publish unique recovery control commit",
+  );
+  requireEqual(
+    uniqueRecoveryStep?.env?.CURRENT_RUN_ID,
+    "${{ github.run_id }}",
+    "Publish unique recovery current run ID",
+  );
+  for (const fragment of [
+    "gh api --paginate --slurp",
+    "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
+    "validateUniquePublishRecoveryRun",
+  ]) {
+    if (
+      typeof uniqueRecoveryStep?.run !== "string" ||
+      !uniqueRecoveryStep.run.includes(fragment)
+    ) {
+      fail(
+        `Release workflow Publish unique recovery dispatch must contain ${fragment}.`,
+      );
+    }
+  }
   for (const fragment of [
     "actions/workflows/release-please.yml/runs?per_page=100",
     "snapshotReleasePleaseRuns",
@@ -486,11 +520,18 @@ export function validatePublishWorkflowContract(workflow) {
     "${{ vars.RELEASE_PLEASE_ENABLED }}",
     "Publish Release Please variable context",
   );
+  requireEqual(
+    reconfirmStep?.env?.CURRENT_RUN_ID,
+    "${{ github.run_id }}",
+    "Publish recovery current run reconfirmation",
+  );
   for (const fragment of [
     "actions/workflows/release-please.yml/runs?per_page=100",
+    "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
     'gh api --paginate --slurp \\\n  "repos/${GITHUB_REPOSITORY}/environments/npm/deployment-branch-policies?per_page=100"',
     "{branch_policies: [.[].branch_policies[]]}",
     "snapshotReleasePleaseRuns",
+    "validateUniquePublishRecoveryRun",
     "expectedPolicyIds",
     "if (digest !== process.env.RELEASE_PLEASE_SNAPSHOT)",
   ]) {
@@ -502,6 +543,19 @@ export function validatePublishWorkflowContract(workflow) {
         `Release workflow Publish protected-state reconfirmation must contain ${fragment}.`,
       );
     }
+  }
+  requireEqual(
+    reconfirmStep.run.split("validateUniquePublishRecoveryRun").length - 1,
+    2,
+    "Publish recovery unique-run pre-publication reference count",
+  );
+  if (
+    reconfirmStep.run.indexOf("validateRegistryStateBeforePublish") >=
+    reconfirmStep.run.lastIndexOf("validateUniquePublishRecoveryRun")
+  ) {
+    fail(
+      "Release workflow Publish must revalidate the unique recovery run after registry state and before publication.",
+    );
   }
   const publishStep = requireUniqueStep(
     jobs.publish,
@@ -1175,6 +1229,105 @@ export function validatePublishWorkflowDispatchRecoveryTrigger({
     sourcePublishRunAttempt: PUBLISH_RECOVERY.sourcePublishRunAttempt,
     sourcePublishRunId: PUBLISH_RECOVERY.sourcePublishRunId,
   };
+}
+
+export function validateUniquePublishRecoveryRun({
+  controlCommit,
+  currentRunId,
+  responses,
+}) {
+  requireCommit(controlCommit, "publish recovery unique-run control commit");
+  requirePositiveInteger(
+    currentRunId,
+    "publish recovery unique-run current run ID",
+  );
+  if (!Array.isArray(responses) || responses.length === 0) {
+    fail(
+      "Release workflow publish recovery run responses must be a non-empty array.",
+    );
+  }
+
+  const runs = [];
+  let totalCount;
+  for (const response of responses) {
+    if (
+      response === null ||
+      typeof response !== "object" ||
+      Array.isArray(response)
+    ) {
+      fail("Release workflow publish recovery run response must be an object.");
+    }
+    if (!Number.isInteger(response.total_count) || response.total_count < 0) {
+      fail(
+        "Release workflow publish recovery response total count must be a non-negative integer.",
+      );
+    }
+    totalCount ??= response.total_count;
+    requireEqual(
+      response.total_count,
+      totalCount,
+      "publish recovery response total-count agreement",
+    );
+    if (!Array.isArray(response.workflow_runs)) {
+      fail(
+        "Release workflow publish recovery response workflow runs must be an array.",
+      );
+    }
+    runs.push(...response.workflow_runs);
+  }
+  requireEqual(
+    runs.length,
+    totalCount,
+    "publish recovery complete paginated run count",
+  );
+
+  const seen = new Set();
+  for (const run of runs) {
+    requirePositiveInteger(run?.id, "publish recovery candidate run ID");
+    if (seen.has(run.id)) {
+      fail(
+        "Release workflow publish recovery run set contains a duplicate run ID.",
+      );
+    }
+    seen.add(run.id);
+  }
+  requireEqual(totalCount, 1, "publish recovery exact control-run count");
+
+  const candidates = runs.filter(
+    (run) => run?.head_branch === "main" && run?.head_sha === controlCommit,
+  );
+  requireEqual(candidates.length, 1, "publish recovery matching run count");
+  const run = candidates[0];
+  requireEqual(run.id, currentRunId, "publish recovery current run ID");
+  requireEqual(run.event, "workflow_dispatch", "publish recovery run event");
+  requireEqual(run.name, "Publish", "publish recovery workflow name");
+  requireEqual(
+    run.path,
+    ".github/workflows/publish.yml",
+    "publish recovery workflow path",
+  );
+  requireEqual(
+    run.repository?.full_name,
+    "cometapi-dev/cometapi-node",
+    "publish recovery repository",
+  );
+  requireEqual(
+    run.head_repository?.full_name,
+    "cometapi-dev/cometapi-node",
+    "publish recovery head repository",
+  );
+  requireEqual(
+    run.actor?.login,
+    PUBLISH_RECOVERY.actor,
+    "publish recovery actor",
+  );
+  requireEqual(
+    run.triggering_actor?.login,
+    PUBLISH_RECOVERY.actor,
+    "publish recovery triggering actor",
+  );
+  requireEqual(run.run_attempt, 1, "publish recovery run attempt");
+  return { runAttempt: 1, runId: currentRunId };
 }
 
 function requireJob(job, { conclusion, id, name }) {

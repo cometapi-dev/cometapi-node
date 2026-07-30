@@ -488,6 +488,15 @@ describe("GitHub Actions workflow contract", () => {
     expect(verify).toContain("inputs.source_publish_run_id == '30471665743'");
     expect(verify).toContain("validatePublishWorkflowDispatchTrigger");
     expect(verify).toContain("validatePublishWorkflowDispatchRecoveryTrigger");
+    expect(verify).toContain("validateUniquePublishRecoveryRun");
+    expect(verify).toContain(
+      "Require the only recovery dispatch for this control commit",
+    );
+    expect(verify).toContain("CURRENT_RUN_ID: ${{ github.run_id }}");
+    expect(verify).toContain("gh api --paginate --slurp");
+    expect(verify).toContain(
+      "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
+    );
     expect(verify).toContain("validatePublishRecoveryEvidence");
     expect(verify).toContain(
       "Download the prior live-verified release artifact",
@@ -579,6 +588,15 @@ describe("GitHub Actions workflow contract", () => {
     expect(
       matches(publish, /validatePublishRecoveryEvidence\(\{/g),
     ).toHaveLength(2);
+    expect(
+      matches(publish, /validateUniquePublishRecoveryRun\(\{/g),
+    ).toHaveLength(2);
+    expect(publishJob).toContain("validateUniquePublishRecoveryRun");
+    expect(publishJob).toContain("CURRENT_RUN_ID: ${{ github.run_id }}");
+    expect(publishJob).toContain(
+      "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
+    );
+    expect(publishJob).toContain("gh api --paginate --slurp");
     expect(publishJob).toContain(
       "The bounded live evidence changed while publication awaited approval.",
     );

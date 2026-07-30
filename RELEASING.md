@@ -90,6 +90,26 @@ npm publication, and environment approvals require authorization from the
 current maintainer request. This document defines allowable mechanics but
 grants no standing remote-write permission.
 
+## Pull-request review identity
+
+GitHub does not allow a pull-request author to approve that same pull request,
+including when the author is an organization or repository administrator. The
+repository setting `can_approve_pull_request_reviews=true` authorizes eligible
+GitHub Actions workflows to submit approving pull-request reviews; it does not
+override this author-self-approval restriction. Before requesting a review,
+compare the PR author login with the intended reviewer login.
+
+If they are the same, never ask that reviewer to select the disabled `Approve`
+action and never describe a `COMMENTED` review as `APPROVED`. A ruleset that
+requires an approving review needs a different human reviewer. When the active
+ruleset requires zero approvals and the release procedure asks only for an
+owner's exact-head audit record, the author may submit a `Comment` review whose
+body names the reviewed commit; verify its `user.login`, `state=COMMENTED`, and
+`commit_id` through the reviews API before merge. Action-authored Release Please
+PRs remain different: the release workflow requires a formal, exact-head
+`APPROVED` review from a human repository administrator whose login differs
+from the bot author.
+
 ## Candidate verification gate
 
 Run from the repository root on a clean checkout:
@@ -361,8 +381,7 @@ The repository maintains four independently auditable workflows:
     '{before_policies: $before_policies[0],
       main_policy_id: null,
       control_commit: null,
-      recovery_run_id: null,
-      before_publish_run_ids: null}' > "$recovery_state"
+      recovery_run_id: null}' > "$recovery_state"
   chmod 600 "$recovery_state"
   echo "Recovery state: $recovery_state"
   policy_file="$(mktemp)"
@@ -430,7 +449,7 @@ The repository maintains four independently auditable workflows:
   ```
 
   Set `RELEASE_PLEASE_ENABLED=true`, resolve the current reviewed `main` SHA as
-  `control_commit`, save the existing Publish run IDs, and dispatch:
+  `control_commit`, record it, and dispatch:
 
   ```bash
   set -euo pipefail
@@ -439,14 +458,9 @@ The repository maintains four independently auditable workflows:
     "$recovery_state")"
   control_commit="$(gh api repos/cometapi-dev/cometapi-node/commits/main --jq '.sha')"
   [[ "$control_commit" =~ ^[0-9a-f]{40}$ ]]
-  before_runs="$(mktemp)"
-  gh api --paginate --slurp \
-    'repos/cometapi-dev/cometapi-node/actions/workflows/publish.yml/runs?event=workflow_dispatch&per_page=100' \
-    | jq '[.[].workflow_runs[].id]' > "$before_runs"
   state_next="${recovery_state}.next"
-  jq --arg control_commit "$control_commit" --slurpfile before_runs "$before_runs" \
-    '.control_commit = $control_commit |
-     .before_publish_run_ids = $before_runs[0]' \
+  jq --arg control_commit "$control_commit" \
+    '.control_commit = $control_commit' \
     "$recovery_state" > "$state_next"
   chmod 600 "$state_next"
   mv "$state_next" "$recovery_state"
@@ -476,8 +490,11 @@ The repository maintains four independently auditable workflows:
   JSON
   ```
 
-  The dispatch endpoint returns `204` without a run ID. Poll and subtract the
-  pre-dispatch set; never select a run merely because it is the latest:
+  The dispatch endpoint returns `204` without a run ID. Poll the exact
+  workflow/ref/SHA identity and require the API's unflattened `total_count` and
+  returned run set to both equal one; never select a run merely because it is
+  the latest. This exact filter and count check fail closed if GitHub truncates
+  a workflow-run search:
 
   ```bash
   set -euo pipefail
@@ -485,26 +502,38 @@ The repository maintains four independently auditable workflows:
   control_commit="$(jq -er \
     '.control_commit | select(type == "string" and test("^[0-9a-f]{40}$"))' \
     "$recovery_state")"
-  before_runs="$(mktemp)"
-  jq -e '.before_publish_run_ids | type == "array"' "$recovery_state" >/dev/null
-  jq '.before_publish_run_ids' "$recovery_state" > "$before_runs"
   actor="$(gh api user --jq '.login')"
   [[ "$actor" == "tensornull" ]]
   recovery_run_id=""
   for poll in {1..12}; do
-    after_runs="$(mktemp)"
+    run_pages="$(mktemp)"
     gh api --paginate --slurp \
-      'repos/cometapi-dev/cometapi-node/actions/workflows/publish.yml/runs?event=workflow_dispatch&per_page=100' \
-      | jq '[.[].workflow_runs[]]' > "$after_runs"
-    recovery_run_id="$(jq -r \
-      --arg actor "$actor" --arg control "$control_commit" \
-      --slurpfile before "$before_runs" \
-      '[.[] | select(.id as $id | ($before[0] | index($id) | not)) |
-        select(.actor.login == $actor and .triggering_actor.login == $actor and
-          .event == "workflow_dispatch" and .head_branch == "main" and
-          .head_sha == $control and .run_attempt == 1)] |
-       if length == 1 then .[0].id else empty end' "$after_runs")"
-    [[ -n "$recovery_run_id" ]] && break
+      "repos/cometapi-dev/cometapi-node/actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${control_commit}&per_page=100" \
+      > "$run_pages"
+    candidate_count="$(jq -er \
+      '([.[].total_count] | unique) as $counts |
+       if ($counts | length) == 1 then $counts[0] else error("inconsistent total_count") end' \
+      "$run_pages")"
+    if [[ "$candidate_count" -gt 1 ]]; then
+      echo "Multiple new Publish runs matched the recovery control commit." >&2
+      exit 1
+    fi
+    if [[ "$candidate_count" == "1" ]]; then
+      jq -e --arg actor "$actor" --arg control "$control_commit" \
+        '([.[].workflow_runs[]]) as $runs |
+         ([.[].total_count] | unique) == [1] and ($runs | length) == 1 and
+         $runs[0].head_branch == "main" and $runs[0].head_sha == $control and
+         $runs[0].name == "Publish" and
+         $runs[0].path == ".github/workflows/publish.yml" and
+         $runs[0].repository.full_name == "cometapi-dev/cometapi-node" and
+         $runs[0].head_repository.full_name == "cometapi-dev/cometapi-node" and
+         $runs[0].event == "workflow_dispatch" and
+         $runs[0].run_attempt == 1 and $runs[0].actor.login == $actor and
+         $runs[0].triggering_actor.login == $actor' \
+        "$run_pages" >/dev/null
+      recovery_run_id="$(jq -r '[.[].workflow_runs[]][0].id' "$run_pages")"
+      break
+    fi
     sleep 5
   done
   [[ "$recovery_run_id" =~ ^[1-9][0-9]*$ ]]
@@ -575,8 +604,18 @@ The repository maintains four independently auditable workflows:
   immediately before registry mutation and fails if a run was created, rerun, or
   remains active while the recovery was waiting. This makes the operator freeze
   observable rather than relying only on timing.
-  The one-time recovery accepts only the first workflow attempt; a rerun or a
-  second dispatch is forbidden even when all other inputs match.
+  The operator must create only one first-attempt recovery dispatch and must not
+  rerun or replace it. Both the unprivileged verify job and the protected
+  publish job read the paginated exact-branch/SHA Publish search, require its
+  reported total to equal the returned single run, and require that run to be
+  current. The Actions run API does not expose dispatch inputs, so an unknown
+  same-commit dispatch is conservatively a collision. GitHub does not offer an atomic
+  list-runs-and-publish operation: an administrator could create a dispatch
+  after the final list call. Repository-wide non-cancelling concurrency keeps
+  that later run behind the current run, and its own unique-run check rejects it
+  before publication. This guarantees at most one recovery publication attempt,
+  while the authorized operator protocol—not an impossible server-side
+  primitive—requires that only one dispatch be created.
 
   If the npm publish request may have reached the registry but its response or
   the remaining workflow result was lost, do not infer success or a safe retry

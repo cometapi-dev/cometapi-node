@@ -19,6 +19,7 @@ import {
   validatePublishWorkflowContract,
   validatePublishWorkflowDispatchTrigger,
   validatePublishWorkflowDispatchRecoveryTrigger,
+  validateUniquePublishRecoveryRun,
   validatePublishRecoveryEvidence,
   validateRegistryProvenance,
   validateRegistryProvenanceInvocation,
@@ -383,6 +384,152 @@ describe("Publish workflow dispatch recovery trigger", () => {
   });
 });
 
+describe("Unique Publish recovery run", () => {
+  const controlCommit = "b".repeat(40);
+  const currentRunId = 30500000000;
+
+  function recoveryRun(overrides = {}) {
+    return {
+      actor: { login: "tensornull" },
+      event: "workflow_dispatch",
+      head_branch: "main",
+      head_repository: { full_name: REPOSITORY },
+      head_sha: controlCommit,
+      id: currentRunId,
+      name: "Publish",
+      path: ".github/workflows/publish.yml",
+      repository: { full_name: REPOSITORY },
+      run_attempt: 1,
+      triggering_actor: { login: "tensornull" },
+      ...overrides,
+    };
+  }
+
+  function recoveryResponses(runs, totalCount = runs.length) {
+    return [{ total_count: totalCount, workflow_runs: runs }];
+  }
+
+  it("accepts exactly one first-attempt recovery dispatch", () => {
+    expect(
+      validateUniquePublishRecoveryRun({
+        controlCommit,
+        currentRunId,
+        responses: recoveryResponses([recoveryRun()]),
+      }),
+    ).toEqual({ runAttempt: 1, runId: currentRunId });
+  });
+
+  it("rejects a second fresh dispatch for the same control commit", () => {
+    expect(() =>
+      validateUniquePublishRecoveryRun({
+        controlCommit,
+        currentRunId,
+        responses: recoveryResponses([
+          recoveryRun(),
+          recoveryRun({ id: currentRunId + 1 }),
+        ]),
+      }),
+    ).toThrow(/control-run count/i);
+  });
+
+  it("rejects a rerun history plus a fresh replacement dispatch", () => {
+    expect(() =>
+      validateUniquePublishRecoveryRun({
+        controlCommit,
+        currentRunId: currentRunId + 1,
+        responses: recoveryResponses([
+          recoveryRun({ run_attempt: 2 }),
+          recoveryRun({ id: currentRunId + 1 }),
+        ]),
+      }),
+    ).toThrow(/control-run count/i);
+  });
+
+  it("rejects duplicate run IDs from a paginated response", () => {
+    expect(() =>
+      validateUniquePublishRecoveryRun({
+        controlCommit,
+        currentRunId,
+        responses: recoveryResponses([recoveryRun(), recoveryRun()]),
+      }),
+    ).toThrow(/duplicate run ID/i);
+  });
+
+  it("rejects a rerun even when it is the only matching run", () => {
+    expect(() =>
+      validateUniquePublishRecoveryRun({
+        controlCommit,
+        currentRunId,
+        responses: recoveryResponses([recoveryRun({ run_attempt: 2 })]),
+      }),
+    ).toThrow(/run attempt/i);
+  });
+
+  it.each([
+    ["non-array response set", { responses: null }],
+    [
+      "malformed run ID",
+      { responses: recoveryResponses([recoveryRun({ id: 0 })]) },
+    ],
+    [
+      "missing matching run",
+      {
+        responses: recoveryResponses([
+          recoveryRun({ head_sha: "a".repeat(40) }),
+        ]),
+      },
+    ],
+    [
+      "truncated search result",
+      { responses: recoveryResponses([recoveryRun()], 1001) },
+    ],
+    [
+      "inconsistent page totals",
+      {
+        responses: [
+          { total_count: 1, workflow_runs: [recoveryRun()] },
+          { total_count: 2, workflow_runs: [] },
+        ],
+      },
+    ],
+  ])("rejects %s", (_name, overrides) => {
+    expect(() =>
+      validateUniquePublishRecoveryRun({
+        controlCommit,
+        currentRunId,
+        responses: overrides.responses,
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
+  it.each([
+    ["current ID", { currentRunId: currentRunId + 1 }],
+    ["actor", { run: { actor: { login: "other-maintainer" } } }],
+    [
+      "triggering actor",
+      { run: { triggering_actor: { login: "other-maintainer" } } },
+    ],
+    ["event", { run: { event: "push" } }],
+    ["workflow", { run: { name: "Other" } }],
+    ["path", { run: { path: ".github/workflows/other.yml" } }],
+    ["repository", { run: { repository: { full_name: "other/repo" } } }],
+    [
+      "head repository",
+      { run: { head_repository: { full_name: "other/repo" } } },
+    ],
+    ["ref", { run: { head_branch: "dev" } }],
+    ["SHA", { run: { head_sha: "a".repeat(40) } }],
+  ])("rejects recovery run drift in %s", (_name, overrides) => {
+    expect(() =>
+      validateUniquePublishRecoveryRun({
+        controlCommit,
+        currentRunId: overrides.currentRunId ?? currentRunId,
+        responses: recoveryResponses([recoveryRun(overrides.run)]),
+      }),
+    ).toThrow(/release workflow/i);
+  });
+});
+
 describe("Publish tag dispatch trigger", () => {
   function tagTrigger(overrides = {}) {
     return {
@@ -518,6 +665,38 @@ describe("Publish workflow dispatch contract", () => {
       },
     ],
     [
+      "missing unique recovery dispatch gate",
+      (workflow) => {
+        workflow.jobs.verify.steps = workflow.jobs.verify.steps.filter(
+          ({ name }) =>
+            name !==
+            "Require the only recovery dispatch for this control commit",
+        );
+      },
+    ],
+    [
+      "unpaginated unique recovery dispatch query",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) =>
+            name ===
+            "Require the only recovery dispatch for this control commit",
+        );
+        step.run = step.run.replace("gh api --paginate --slurp", "gh api");
+      },
+    ],
+    [
+      "unbound unique recovery run ID",
+      (workflow) => {
+        const step = workflow.jobs.verify.steps.find(
+          ({ name }) =>
+            name ===
+            "Require the only recovery dispatch for this control commit",
+        );
+        step.env.CURRENT_RUN_ID = "untrusted";
+      },
+    ],
+    [
       "unfrozen Release Please run snapshot",
       (workflow) => {
         const step = workflow.jobs.publish.steps.find(
@@ -535,6 +714,47 @@ describe("Publish workflow dispatch contract", () => {
             name === "Reconfirm protected state immediately before publication",
         );
         step.env.RECOVERY_POLICY_ID = "untrusted";
+      },
+    ],
+    [
+      "missing pre-publication unique recovery check",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        step.run = step.run.replaceAll(
+          "validateUniquePublishRecoveryRun",
+          "removedUniquePublishRecoveryRun",
+        );
+      },
+    ],
+    [
+      "wrong pre-publication recovery run endpoint",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        step.run = step.run.replace(
+          "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
+          "actions/workflows/publish.yml/runs?per_page=1",
+        );
+      },
+    ],
+    [
+      "late protected-state reconfirmation",
+      (workflow) => {
+        const steps = workflow.jobs.publish.steps;
+        const reconfirmIndex = steps.findIndex(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        const [reconfirm] = steps.splice(reconfirmIndex, 1);
+        const publishIndex = steps.findIndex(
+          ({ name }) => name === "Publish the exact artifact with provenance",
+        );
+        steps.splice(publishIndex + 1, 0, reconfirm);
       },
     ],
     [

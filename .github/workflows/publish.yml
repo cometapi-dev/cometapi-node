@@ -441,6 +441,31 @@ jobs:
             });
           }
           EOF
+      - name: Require the only recovery dispatch for this control commit
+        if: inputs.publish_operation == 'recover-v0.1.1'
+        env:
+          CONTROL_COMMIT: ${{ inputs.control_commit }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_DISPATCH_RUNS: ${{ runner.temp }}/publish-recovery-dispatch-runs.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100" \
+            > "$RECOVERY_DISPATCH_RUNS"
+          node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { validateUniquePublishRecoveryRun } from "./scripts/release-workflow-validation.mjs";
+
+          validateUniquePublishRecoveryRun({
+            controlCommit: process.env.CONTROL_COMMIT,
+            currentRunId: Number(process.env.CURRENT_RUN_ID),
+            responses: JSON.parse(
+              readFileSync(process.env.RECOVERY_DISPATCH_RUNS, "utf8"),
+            ),
+          });
+          EOF
       - name: Freeze the Release Please run set
         id: release-please-snapshot
         env:
@@ -875,6 +900,7 @@ jobs:
         env:
           CONTROL_COMMIT: ${{ needs.verify.outputs.control-commit }}
           CONTROL_VALIDATOR: ${{ runner.temp }}/release-workflow-validation.mjs
+          CURRENT_RUN_ID: ${{ github.run_id }}
           ENVIRONMENT_FILE: ${{ runner.temp }}/npm-environment.json
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
@@ -883,6 +909,7 @@ jobs:
           POLICIES_FILE: ${{ runner.temp }}/npm-deployment-policies.json
           RECOVERY_ANNOTATIONS: ${{ runner.temp }}/publish-recovery-annotations-before-publish.json
           RECOVERY_ARTIFACTS: ${{ runner.temp }}/publish-recovery-artifacts-before-publish.json
+          RECOVERY_DISPATCH_RUNS: ${{ runner.temp }}/publish-recovery-dispatch-runs-before-publish.json
           RECOVERY_JOBS: ${{ runner.temp }}/publish-recovery-jobs-before-publish.json
           RECOVERY_LIVE_LOG: ${{ runner.temp }}/publish-recovery-live-before-publish.log
           RECOVERY_POLICY_ID: ${{ inputs.recovery_policy_id }}
@@ -1127,6 +1154,27 @@ jobs:
             version,
           });
           EOF
+
+          if [[ "$OPERATION" == "recover-v0.1.1" ]]; then
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100" \
+              > "$RECOVERY_DISPATCH_RUNS"
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+
+          const { validateUniquePublishRecoveryRun } = await import(
+            pathToFileURL(process.env.CONTROL_VALIDATOR)
+          );
+          validateUniquePublishRecoveryRun({
+            controlCommit: process.env.CONTROL_COMMIT,
+            currentRunId: Number(process.env.CURRENT_RUN_ID),
+            responses: JSON.parse(
+              readFileSync(process.env.RECOVERY_DISPATCH_RUNS, "utf8"),
+            ),
+          });
+          EOF
+          fi
       - name: Publish the exact artifact with provenance
         env:
           DIST_TAG: ${{ needs.verify.outputs.dist-tag }}
