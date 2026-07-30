@@ -11,7 +11,8 @@ import {
   validateMergedReleasePullRequest,
   validateOpenReleasePullRequestCollisions,
   validatePostActionPullRequestSnapshot,
-  validatePublishRecoveryTrigger,
+  validatePublishDeploymentRecoveryTrigger,
+  validatePublishRecoveryEvidence,
   validateReleasePleaseCommitMessages,
   validateReleasePleaseCompletion,
   validateReleasePleaseMutationConfiguration,
@@ -160,8 +161,9 @@ describe("Release Please generated files", () => {
   });
 });
 
-describe("Publish recovery trigger", () => {
+describe("Publish deployment recovery trigger", () => {
   const recoveryCommit = "c98b514227858cd183c781270a7f78f65b577e82";
+  const controlParent = "22c313d4f80c53ba01672dd35cc27b621d5ec9ce";
   const recoveryFiles = [
     ".github/workflows/publish.yml",
     "RELEASING.md",
@@ -174,35 +176,60 @@ describe("Publish recovery trigger", () => {
     return {
       actor: "tensornull",
       changedFiles: recoveryFiles,
-      eventAfter: BRANCH_SHA,
-      eventBefore: recoveryCommit,
-      eventName: "push",
-      eventRef: "refs/heads/main",
+      controlCommit: BRANCH_SHA,
+      controlFirstParent: controlParent,
+      deploymentCreator: "tensornull",
+      deploymentEnvironment: "npm",
+      deploymentId: 456789,
+      deploymentRef: "v0.1.1",
+      deploymentReleaseCommit: recoveryCommit,
+      deploymentReleaseTag: "v0.1.1",
+      deploymentSha: recoveryCommit,
+      deploymentSourceRunAttempt: 1,
+      deploymentSourceRunId: 30471665743,
+      deploymentTask: "npm-publish-recovery",
+      eventName: "deployment",
+      eventRef: "refs/tags/v0.1.1",
+      eventSha: recoveryCommit,
       mainCommit: BRANCH_SHA,
-      mainFirstParent: recoveryCommit,
       sourceReleaseCommit: recoveryCommit,
       sourceRunAttempt: 1,
       sourceRunId: 30469181724,
+      triggeringActor: "tensornull",
       workflowRunAttempt: 1,
       ...overrides,
     };
   }
 
   it("accepts only the reviewed one-cycle recovery merge", () => {
-    expect(validatePublishRecoveryTrigger(recoveryTrigger())).toEqual({
-      releaseCommit: recoveryCommit,
-      releaseRunAttempt: 1,
-      releaseRunId: 30469181724,
-    });
+    expect(validatePublishDeploymentRecoveryTrigger(recoveryTrigger())).toEqual(
+      {
+        releaseCommit: recoveryCommit,
+        releaseRunAttempt: 1,
+        releaseRunId: 30469181724,
+        sourcePublishRunAttempt: 1,
+        sourcePublishRunId: 30471665743,
+      },
+    );
   });
 
   it.each([
     ["actor", { actor: "github-actions[bot]" }],
-    ["event", { eventName: "workflow_dispatch" }],
-    ["ref", { eventRef: "refs/heads/dev" }],
-    ["before SHA", { eventBefore: RELEASE_SHA }],
-    ["after SHA", { eventAfter: RELEASE_SHA }],
-    ["first parent", { mainFirstParent: RELEASE_SHA }],
+    ["triggering actor", { triggeringActor: "other-maintainer" }],
+    ["event", { eventName: "push" }],
+    ["ref", { eventRef: "refs/heads/main" }],
+    ["event SHA", { eventSha: RELEASE_SHA }],
+    ["control commit", { controlCommit: RELEASE_SHA }],
+    ["first parent", { controlFirstParent: RELEASE_SHA }],
+    ["deployment creator", { deploymentCreator: "github-actions[bot]" }],
+    ["deployment environment", { deploymentEnvironment: "production" }],
+    ["deployment ref", { deploymentRef: "main" }],
+    ["deployment SHA", { deploymentSha: RELEASE_SHA }],
+    ["deployment task", { deploymentTask: "deploy" }],
+    ["payload release commit", { deploymentReleaseCommit: RELEASE_SHA }],
+    ["payload release tag", { deploymentReleaseTag: "v0.1.0" }],
+    ["payload source run", { deploymentSourceRunId: 30471665744 }],
+    ["payload source attempt", { deploymentSourceRunAttempt: 2 }],
     ["source commit", { sourceReleaseCommit: RELEASE_SHA }],
     ["source run ID", { sourceRunId: 30469181725 }],
     ["source attempt", { sourceRunAttempt: 2 }],
@@ -210,16 +237,134 @@ describe("Publish recovery trigger", () => {
     ["extra file", { changedFiles: [...recoveryFiles, "package.json"] }],
   ])("rejects recovery trigger drift in %s", (_name, overrides) => {
     expect(() =>
-      validatePublishRecoveryTrigger(recoveryTrigger(overrides)),
+      validatePublishDeploymentRecoveryTrigger(recoveryTrigger(overrides)),
     ).toThrow(/release workflow/i);
   });
 
   it("accepts a rerun of the same immutable recovery event", () => {
     expect(
-      validatePublishRecoveryTrigger(
+      validatePublishDeploymentRecoveryTrigger(
         recoveryTrigger({ workflowRunAttempt: 2 }),
       ),
     ).toMatchObject({ releaseRunId: 30469181724 });
+  });
+});
+
+describe("Publish recovery source evidence", () => {
+  const sourceCommit = "22c313d4f80c53ba01672dd35cc27b621d5ec9ce";
+
+  function successfulStep(name) {
+    return { conclusion: "success", name, status: "completed" };
+  }
+
+  function sourceEvidence() {
+    const commonJob = {
+      head_sha: sourceCommit,
+      run_attempt: 1,
+      run_id: 30471665743,
+      status: "completed",
+    };
+    return {
+      annotations: [
+        {
+          annotation_level: "failure",
+          message:
+            'Branch "main" is not allowed to deploy to npm due to environment protection rules.',
+        },
+      ],
+      artifacts: [
+        {
+          digest:
+            "sha256:567b00f1ec32168d5c5be7d0b553542441920d3bb401959bcc2d6e157f35d08b",
+          expired: false,
+          id: 8731956162,
+          name: "npm-package-0.1.1-30471665743-1",
+          workflow_run: { head_sha: sourceCommit, id: 30471665743 },
+        },
+      ],
+      jobs: [
+        {
+          ...commonJob,
+          conclusion: "success",
+          id: 90643169818,
+          name: "Verify the immutable release artifact",
+          steps: [
+            successfulStep("Run release checks"),
+            successfulStep("Pack the exact release artifact"),
+            successfulStep("Test consumers against the exact release artifact"),
+            successfulStep("Upload the verified release artifact"),
+          ],
+        },
+        {
+          ...commonJob,
+          conclusion: "success",
+          id: 90643725110,
+          name: "Verify the release tag against CometAPI",
+          steps: [successfulStep("Run the bounded live smoke")],
+        },
+        {
+          ...commonJob,
+          conclusion: "failure",
+          id: 90643868523,
+          name: "Publish with npm Trusted Publishing",
+          runner_id: 0,
+          steps: [],
+        },
+      ],
+      run: {
+        actor: { login: "tensornull" },
+        conclusion: "failure",
+        event: "push",
+        head_branch: "main",
+        head_sha: sourceCommit,
+        id: 30471665743,
+        name: "Publish",
+        path: ".github/workflows/publish.yml",
+        repository: { full_name: REPOSITORY },
+        run_attempt: 1,
+        status: "completed",
+        triggering_actor: { login: "tensornull" },
+      },
+    };
+  }
+
+  it("accepts the exact failed publish run after verified artifact and live jobs", () => {
+    expect(validatePublishRecoveryEvidence(sourceEvidence())).toEqual({
+      artifactId: 8731956162,
+      artifactName: "npm-package-0.1.1-30471665743-1",
+      liveJobId: 90643725110,
+    });
+  });
+
+  it.each([
+    ["run conclusion", (evidence) => (evidence.run.conclusion = "success")],
+    ["run SHA", (evidence) => (evidence.run.head_sha = RELEASE_SHA)],
+    [
+      "triggering actor",
+      (evidence) => (evidence.run.triggering_actor.login = "other"),
+    ],
+    ["verify job", (evidence) => (evidence.jobs[0].conclusion = "failure")],
+    ["live job", (evidence) => (evidence.jobs[1].conclusion = "failure")],
+    [
+      "publish steps",
+      (evidence) => evidence.jobs[2].steps.push(successfulStep("Set up job")),
+    ],
+    ["annotation", (evidence) => (evidence.annotations = [])],
+    ["artifact ID", (evidence) => (evidence.artifacts[0].id += 1)],
+    [
+      "artifact digest",
+      (evidence) => (evidence.artifacts[0].digest = `sha256:${"0".repeat(64)}`),
+    ],
+    [
+      "artifact expiration",
+      (evidence) => (evidence.artifacts[0].expired = true),
+    ],
+  ])("rejects drift in %s", (_name, mutate) => {
+    const evidence = sourceEvidence();
+    mutate(evidence);
+    expect(() => validatePublishRecoveryEvidence(evidence)).toThrow(
+      /release workflow/i,
+    );
   });
 });
 
