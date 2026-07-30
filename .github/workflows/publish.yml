@@ -145,8 +145,8 @@ jobs:
             exit 1
           fi
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$WORKFLOW_SHA" refs/remotes/origin/main; then
-            echo "The release commit is no longer an ancestor of origin/main." >&2
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]; then
+            echo "The release commit is no longer the exact origin/main tip." >&2
             exit 1
           fi
 
@@ -244,7 +244,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$RELEASE_COMMIT" ]]; then
             echo "origin/main moved away from the release commit before handoff." >&2
             exit 1
           fi
@@ -389,8 +389,8 @@ jobs:
               git diff --name-only "$CONTROL_FIRST_PARENT" "$CONTROL_COMMIT" > "$CHANGED_FILES"
               ;;
             release)
-              if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-                echo "The tag release commit is not an ancestor of origin/main." >&2
+              if [[ "$MAIN_COMMIT" != "$RELEASE_COMMIT" ]]; then
+                echo "The tag release commit is no longer the exact origin/main tip." >&2
                 exit 1
               fi
               CONTROL_FIRST_PARENT=""
@@ -576,8 +576,8 @@ jobs:
               fi
               ;;
             release)
-              if ! git merge-base --is-ancestor "$WORKFLOW_SHA" refs/remotes/origin/main; then
-                echo "The release commit is not an ancestor of origin/main." >&2
+              if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]; then
+                echo "The release commit is no longer the exact origin/main tip." >&2
                 exit 1
               fi
               ;;
@@ -925,8 +925,8 @@ jobs:
                 echo "The tag publication identity changed while awaiting approval." >&2
                 exit 1
               fi
-              if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-                echo "The release commit is no longer an ancestor of origin/main." >&2
+              if [[ "$main_commit" != "$RELEASE_COMMIT" ]]; then
+                echo "The release commit is no longer the exact origin/main tip." >&2
                 exit 1
               fi
               ;;

@@ -455,6 +455,12 @@ describe("GitHub Actions workflow contract", () => {
     expect(handoff).toContain('-f ref="$RELEASE_TAG"');
     expect(handoff).toContain('-f "inputs[publish_operation]=release"');
     expect(handoff).toContain('-f "inputs[control_commit]=$RELEASE_COMMIT"');
+    expect(handoff).toContain(
+      '$(git rev-parse refs/remotes/origin/main)" != "$RELEASE_COMMIT',
+    );
+    expect(handoff).not.toContain(
+      'git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main',
+    );
 
     const verify = job(publish, "verify");
     expect(verify).toContain("github.event_name == 'workflow_dispatch'");
@@ -494,6 +500,10 @@ describe("GitHub Actions workflow contract", () => {
     );
     expect(verify).toContain("if: inputs.publish_operation == 'release'");
     expect(verify).toContain("Select the exact release artifact");
+    expect(verify).toContain('if [[ "$MAIN_COMMIT" != "$RELEASE_COMMIT" ]]');
+    expect(verify).toContain(
+      'if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]',
+    );
     expect(verify).toContain("github.triggering_actor");
     expect(releaseWorkflowValidation).toContain("30471665743");
     expect(releaseWorkflowValidation).toContain("8731956162");
@@ -592,6 +602,9 @@ describe("GitHub Actions workflow contract", () => {
     );
     expect(publishJob).toContain(
       "RECOVERY_POLICY_ID: ${{ inputs.recovery_policy_id }}",
+    );
+    expect(publishJob).toContain(
+      'if [[ "$main_commit" != "$RELEASE_COMMIT" ]]',
     );
     expect(publishJob).toContain("GH_TOKEN: ${{ github.token }}");
     expect(publishJob).toContain("status=${state}");

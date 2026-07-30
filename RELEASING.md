@@ -280,8 +280,9 @@ The repository maintains four independently auditable workflows:
   job. That job has no Environment and no OIDC permission. It validates the
   exact source job and treats a preparation run whose result-upload step was
   skipped as release-inert. For a release run, it requires the unique
-  attempt-qualified result, immutable bot-authored Release, tag commit, `main`
-  ancestry, and the dispatch contract stored in the tag, then uses its sole
+  attempt-qualified result, immutable bot-authored Release, tag commit, exact
+  current `main` identity, and the dispatch contract stored in the tag, then
+  uses its sole
   `actions: write` permission to dispatch the same workflow with `ref=v<version>`.
   The `verify`, `live-smoke`, and `publish` jobs accept only
   that tag-bound `workflow_dispatch`; they are unreachable from the original
@@ -289,7 +290,8 @@ The repository maintains four independently auditable workflows:
   run is release-inert and cannot enter the handoff.
 
   The tag run independently revalidates the source run and result artifact,
-  exact tag and immutable Release, package metadata, and `main` ancestry. The
+  exact tag and immutable Release, package metadata, and exact current `main`
+  identity. The
   normal operation packs and tests one attempt-qualified artifact, runs a fresh
   bounded live smoke, and sends that same file to npm OIDC; the one-time
   recovery operation downloads and retests the already live-verified tarball
@@ -573,6 +575,8 @@ The repository maintains four independently auditable workflows:
   immediately before registry mutation and fails if a run was created, rerun, or
   remains active while the recovery was waiting. This makes the operator freeze
   observable rather than relying only on timing.
+  The one-time recovery accepts only the first workflow attempt; a rerun or a
+  second dispatch is forbidden even when all other inputs match.
 
   If the npm publish request may have reached the registry but its response or
   the remaining workflow result was lost, do not infer success or a safe retry

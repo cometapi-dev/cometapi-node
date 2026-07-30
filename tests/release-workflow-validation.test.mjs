@@ -371,6 +371,7 @@ describe("Publish workflow dispatch recovery trigger", () => {
     ["source commit", { sourceReleaseCommit: RELEASE_SHA }],
     ["source run ID", { sourceRunId: 30469181725 }],
     ["source attempt", { sourceRunAttempt: 2 }],
+    ["workflow rerun", { workflowRunAttempt: 2 }],
     ["missing file", { changedFiles: recoveryFiles.slice(1) }],
     ["extra file", { changedFiles: [...recoveryFiles, "package.json"] }],
   ])("rejects recovery trigger drift in %s", (_name, overrides) => {
@@ -379,14 +380,6 @@ describe("Publish workflow dispatch recovery trigger", () => {
         recoveryTrigger(overrides),
       ),
     ).toThrow(/release workflow/i);
-  });
-
-  it("accepts a rerun of the same immutable recovery event", () => {
-    expect(
-      validatePublishWorkflowDispatchRecoveryTrigger(
-        recoveryTrigger({ workflowRunAttempt: 2 }),
-      ),
-    ).toMatchObject({ releaseRunId: 30469181724 });
   });
 });
 

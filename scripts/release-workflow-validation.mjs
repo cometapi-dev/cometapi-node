@@ -1158,7 +1158,7 @@ export function validatePublishWorkflowDispatchRecoveryTrigger({
     PUBLISH_RECOVERY.dispatchTask,
     "publish recovery operation",
   );
-  requirePositiveInteger(workflowRunAttempt, "publish recovery run attempt");
+  requireEqual(workflowRunAttempt, 1, "publish recovery run attempt");
   requirePositiveInteger(recoveryPolicyId, "publish recovery policy ID");
   if (!Array.isArray(changedFiles)) {
     fail("Release workflow publish recovery changed files must be an array.");
