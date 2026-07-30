@@ -108,9 +108,10 @@ tag and GitHub release agreement.
 The publish workflow is the sole source of npm dist-tag selection: prereleases
 use `next`, stable versions use `latest`. The package manifest must not carry a
 static dist-tag because that would make stable and prerelease policy diverge.
-Trusted Publishing remains the default authentication path. The only token
-path is an explicitly enabled protected-environment fallback that rejects every
-version except `0.1.0-alpha.1` and every dist-tag except `next`.
+Trusted Publishing is the only executable authentication path. The protected-
+environment token bootstrap used for `0.1.0-alpha.1` is historical evidence;
+current workflows contain no token publication path and reject registry-token
+credentials.
 
 For normal stable patches, Release Please owns the reviewed version/changelog
 PR and the immutable tag and GitHub Release. The configuration uses an explicit
@@ -119,20 +120,23 @@ maintenance window cannot enter 0.2 implicitly and a root package does not fall
 into the single-package tag-discovery ambiguity encountered during 0.1.0. The
 workflow also rejects commit-level `Release-As:` notes before mutation because
 Release Please applies those overrides before its patch versioning strategy.
-Because a
-GitHub Release created with the default `GITHUB_TOKEN` does not start a separate
-`release.published` workflow, publication is chained from the successful
-Release Please workflow. The handoff accepts only the canonical repository's
-successful attempt-qualified `push` run for `main` at the still-current exact
-`main` SHA. The release workflow records normalized action outcome, recovery
-state, pre-action Release presence, the exact Release-producing attempt, SHA,
-tag, version, URL, repository, workflow identity, run ID, and attempt in a
-schema-v2 exact-run artifact. Publication
-downloads and validates only that attempt's artifact before checking the tag and
-immutable Release. A first-attempt manual run is explicitly release-inert and
-must succeed only after independently validating one canonical action-created
-patch PR; its event cannot enter publication. Any successful `push` run without
-the exact result artifact, tag, and immutable Release fails before live or
+Because a GitHub Release created with the default `GITHUB_TOKEN` does not start
+a separate `release.published` workflow, publication is chained from the
+successful Release Please workflow. The handoff accepts only the canonical
+repository's successful attempt-qualified `push` run for `main` at the
+still-current exact `main` SHA. The release workflow records normalized action
+outcome, same-run Release reconciliation state, pre-action Release presence,
+the exact Release-producing attempt, SHA, tag, version, URL, repository,
+workflow identity, run ID, and attempt in a schema-v2 exact-run artifact. An
+unprivileged `workflow_run` handoff validates only that attempt's artifact,
+exact tag, immutable Release, and current `main`, then dispatches `publish.yml`
+with `ref=v<version>`. Only that tag-bound `workflow_dispatch` can reach fresh
+artifact verification, bounded live smoke, the npm Environment, or OIDC. A
+first-attempt manual run is explicitly release-inert and must succeed only after
+independently validating one canonical action-created patch PR; its event cannot
+enter publication. A successful `push` preparation run whose result-upload step
+was skipped is also release-inert. Any purported release handoff with missing or
+mismatched result, tag, or immutable Release evidence fails before live or
 registry access. The release outcome and package artifact are verified
 independently.
 
@@ -143,17 +147,19 @@ fail-closed on exact tag, artifact, dist-tag, integrity, and provenance state.
 Manual preparation rejects attempt 2 or later; restart uses a new dispatch with
 Release creation disabled. A `push` rerun is bounded to the same run ID, SHA,
 candidate, and final-head review. It may retry while the tag and Release remain
-absent. If an earlier attempt already created the Release, recovery accepts only
-the exact bot-authored immutable Release at that SHA whose publication time
-falls inside exactly one earlier Release Please step from the same run.
+absent. If an earlier attempt already created the Release, same-run
+reconciliation accepts only the exact bot-authored immutable Release at that
+SHA whose publication time falls inside exactly one earlier Release Please step
+from that run.
 Release-mode action failure is tolerated only long enough to
 prove that postcondition, reconcile the release PR to `autorelease: tagged`, and
 write the attempt-qualified artifact. The authorized Actions setting lets the
 default token create the PR; the resulting approval-required CI still needs a
 human with write access to authorize execution, and bot review cannot satisfy
-the release gate. A merged
-release PR is accepted for tagging only after a distinct repository
-administrator approved its final head. The workflow checks the triggering SHA,
+the release gate. A head change invalidates both a prior `COMMENTED` owner audit
+and a formal approval. A merged release PR is accepted for tagging only after a
+distinct human repository administrator formally approved its exact final
+head. The workflow checks the triggering SHA,
 release-branch snapshot, all open and closed PR identities, current review, and
 tag/Release state immediately before Release Please mutation, then rechecks
 `main`, the release branch, the complete PR snapshot, exact final-head approval,
@@ -163,6 +169,17 @@ scans the complete pending merged set so a legacy, fork, alternate, older, or
 additional PR cannot be tagged. Manual dispatch is therefore release-inert: it
 may prepare one canonical action-created PR only when no merged release PR is
 awaiting a tag.
+
+Stable `0.1.1` used a one-time main-context publication recovery after its
+immutable tag predated the permanent tag-bound workflow. It reused only the
+previously verified exact artifact and bounded live evidence, so npm provenance
+names the reviewed recovery control commit on `refs/heads/main` rather than the
+tag. [PR #41](https://github.com/cometapi-dev/cometapi-node/pull/41) removed
+every fixed recovery identifier, prior-evidence reuse branch, and temporary
+`main` deployment-policy path. The permanent npm Environment policy set is
+exactly `tag:v*`; branch-context publication is not part of the architecture.
+The exception is historical evidence and must never be reconstructed. See
+[Stable 0.1.1 release evidence](./RELEASING.md#stable-011-release-evidence).
 
 ## Testing layers
 

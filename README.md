@@ -4,15 +4,12 @@ The official CometAPI entry point for the OpenAI-compatible API. The SDK keeps
 the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
-> **Stable 0.1 release:** `0.1.0` is approved for npm publication. Publication
-> is complete, and the package is available from npm's default `latest` dist-tag.
-> The supported API is limited to the contract-tested 0.1 surface documented
-> here and in [COMPATIBILITY.md](./COMPATIBILITY.md).
->
-> **Approved maintenance candidate:** `0.1.1` is approved for npm publication
-> through the reviewed Release Please path. This approval is not a release
-> claim: `0.1.1` remains unpublished until the immutable release, npm OIDC
-> publication, and public-registry verification complete.
+> **Stable 0.1 release:** `0.1.1` is published on npm's default `latest`
+> dist-tag. Its immutable GitHub Release, bounded live smoke, npm OIDC
+> publication, provenance, signature, and separate public-registry installation
+> verification are complete. The supported API remains limited to the
+> contract-tested 0.1 surface documented here and in
+> [COMPATIBILITY.md](./COMPATIBILITY.md).
 
 ## Supported 0.1 surface
 
@@ -232,23 +229,24 @@ parent.
 
 ## Project status
 
-The repository has completed Public Preview, Registry Alpha, and stable 0.1.0.
-Blocking CI, protected repository rules, security reporting, protected
-environments, and the authorized release-tag live smoke have passed. Stable
-`0.1.0` was published from its immutable release artifact through GitHub
-Actions OIDC with provenance, and a separate post-publication check passed the
-ESM, CommonJS, and compatible-OpenAI host fixtures against the registry tarball.
-Registry Alpha `0.1.0-alpha.3` remains available from `next`. The immutable
-`0.1.0-alpha.2` GitHub release remains as an unpublished failure record because
-its guard stopped before invoking npm. Mocked responses, packed artifacts,
-GitHub Actions, trusted live tests, and npm publication remain separate evidence
-layers and must not be represented as another. Because published npm artifacts
-are immutable, the `0.1.0` tarball retains its candidate-era README; this
-post-release status update first ships in a later package version.
+The repository has completed Public Preview, Registry Alpha, stable `0.1.0`,
+the `0.1.1` maintenance patch, and Repository foundation. Blocking CI,
+protected repository rules, security reporting, protected environments, and
+the authorized bounded live smoke have passed. Stable `0.1.1` is available from
+`latest`; Registry Alpha `0.1.0-alpha.3` remains available from `next`. A
+separate public-registry check passed ESM, CommonJS, declarations, supported
+mocked calls, the compatible-OpenAI host fixture with one effective OpenAI
+installation, official error identity, integrity, signature, and provenance.
 
-The `0.1.1` options-contract and Release Please repair is in progress. Until its
-full release sequence completes, npm `latest` remains `0.1.0` and this candidate
-must not be described as published. No 0.2 provider adapter work is included.
+The immutable `0.1.0-alpha.2` GitHub release remains as an unpublished failure
+record because its guard stopped before invoking npm. Mocked responses, packed
+artifacts, GitHub Actions, trusted live tests, and npm publication remain
+separate evidence layers and must not be represented as another. Published npm
+artifacts are immutable, so the `0.1.1` tarball retains its candidate-era
+README; this post-release status first ships in a later package version. The
+one-time `0.1.1` publication recovery is documented as historical evidence in
+[RELEASING.md](./RELEASING.md); the current permanent release workflow is
+immutable-tag-bound. No 0.2 provider adapter work is included.
 
 See:
 

@@ -51,14 +51,14 @@ repository.
   merely to complete lifecycle cleanup. Fail closed and report the exact state
   whenever a required cleanliness, fetch, or fast-forward condition is not met.
 
-## Current Milestone: Stable 0.1.0 Complete
+## Current Milestone: Stable 0.1.1 and Repository Foundation Complete
 
-Private Remote Validation, Public Preview, Registry Alpha, and stable `0.1.0`
-are complete. The canonical repository is public, `0.1.0` is available from
-npm's `latest` channel, and `0.1.0-alpha.3` remains available from `next`; both
-published lines have OIDC provenance and verified public-install evidence. No
-later milestone is active. Do not begin the 0.2 provider adapters without an
-explicit maintainer request.
+Private Remote Validation, Public Preview, Registry Alpha, stable `0.1.0`, and
+the `0.1.1` maintenance patch are complete. The canonical repository is public,
+`0.1.1` is available from npm's `latest` channel, and `0.1.0-alpha.3` remains
+available from `next`; the published lines have verified provenance and
+public-install evidence. No later milestone is active. Do not begin the 0.2
+provider adapters without an explicit maintainer request.
 
 The accepted identity is:
 
@@ -78,25 +78,21 @@ The unscoped `cometapi` package is the primary Node SDK. `@cometapi` is the
 standard scope for future official scoped packages; do not introduce new
 official packages under `@cometapi-dev`.
 
-Stable promotion used Release Please only for its reviewed version and
-changelog pull request. Because the pinned Release Please v5 path is vulnerable
-to an upstream single-package tagging defect, it skipped GitHub release
-creation. A maintainer created and reviewed the immutable `v0.1.0` release
-manually against the exact merged release commit, and the publish workflow
-completed exact-artifact verification, the bounded live smoke, npm OIDC
-publication, and registry verification.
+Stable `0.1.1` corrected the public options boundary without expanding the 0.1
+resource surface. Release Please created the reviewed patch PR, immutable tag,
+and GitHub Release. Publication required a disclosed one-time main-context
+recovery because the immutable tag predated the repaired tag handoff. The
+recovery published only the exact previously verified artifact through npm
+OIDC, then the repository restored its variables and tag-only Environment
+policy. The current workflow contains no publication-recovery input, fixed
+recovery run or artifact ID, prior-package-artifact or live-evidence reuse, or
+branch-context publication path.
 
-Release Please remains disabled between release operations after its post-0.1.0
-run generated an unreviewed `0.2.0` temporary-branch commit and then failed to
-create a pull request. That branch was verified as failure-only evidence before
-the authorized 0.1.1 operation replaced it with the action-owned patch branch.
-Do not use either branch as a 0.2 starting point. The 0.1.1 maintenance task
-repairs the workflow around the current read-only-default Actions baseline with
-action-created pull requests enabled; any later enablement still requires an
-explicit maintainer request and the fail-closed checks in `RELEASING.md`.
-For this repair, merge the anchor-removal finalization PR first, then use a new
-first-attempt manual dispatch to refresh the same action-owned 0.1.1 PR before
-its final CI and human-owner review.
+Release Please remains disabled between explicitly authorized release
+operations. Permanent stable patches follow only the tag-bound path in
+`RELEASING.md`. The `0.1.1` recovery provenance is historical evidence, not
+proof that the current permanent tag path has completed a registry publication;
+the next explicitly authorized stable patch is its first end-to-end execution.
 
 ## Product Contract
 
@@ -255,6 +251,32 @@ repository root.
   generated build artifacts.
 - The legal copyright holder and official security and support contacts must be
   maintainer-confirmed and must never be invented.
+
+### Stable patch workflow
+
+- Follow the stable-patch route in `RELEASING.md`: Release Please prepares the
+  reviewed patch PR and immutable Release, an unprivileged handoff dispatches
+  `publish.yml` from the exact immutable tag, and only that tag-bound run may
+  verify, run the bounded live smoke, enter the npm Environment, or request OIDC.
+- Before requesting review, compare the PR author login with the intended
+  reviewer login. A PR author cannot approve the same PR even when that author
+  is a repository administrator.
+- Under a zero-required-approval ruleset, a same-author exact-head `COMMENTED`
+  review is an owner audit only and must never be described as `APPROVED`. Any
+  required approval must be a formal exact-head `APPROVED` review from a
+  different human. An action-authored Release Please PR always requires that
+  distinct-human administrator approval.
+- GitHub's **Approve and run workflows** control authorizes a workflow run for
+  CI; it is separate from the PR review gate and satisfies no review requirement.
+- Prepare or refresh a release PR with a new first-attempt manual Release Please
+  dispatch. Do not rerun a preparation dispatch. Release Please same-run Release
+  reconciliation is allowed only under the exact conditions in `RELEASING.md`.
+- Never bypass a failed stable release with a manual or auxiliary tag, a
+  branch-context publish, a temporary `main` npm Environment policy, reused
+  artifact or live evidence, an arbitrary rerun, or a different patch version.
+- After registry verification, immediately restore
+  `RELEASE_PLEASE_ENABLED=false`, keep `LIVE_SMOKE_ENABLED=true`, and require the
+  npm Environment deployment-policy set to contain only `tag:v*`.
 
 Before Public Preview, run `npm run check:public-preview`. The gate must fail
 after reporting all violations until canonical identity, contacts, repository

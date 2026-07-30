@@ -3,11 +3,9 @@
 Compatibility document version: 0.1  
 Package line: `0.1.x`
 
-Stable release: `0.1.0`; the immutable release workflow and separate
-post-publication registry verification completed on 2026-07-28.
-
-Maintenance candidate: `0.1.1`; the options-contract and Release Please repair
-is not a release claim until its remote release and registry evidence completes.
+Stable release: `0.1.1`; the immutable Release, bounded live smoke, npm OIDC
+publication, and separate public-registry verification completed on 2026-07-30.
+Registry Alpha `0.1.0-alpha.3` remains available from npm's `next` channel.
 
 This matrix defines the contract-tested 0.1 compatibility surface. Inheritance
 from the official OpenAI client does not by itself establish CometAPI support.
@@ -136,3 +134,15 @@ signatures and provenance, and public artifact checks passed in
 A separate post-publication registry-tarball check also passed the ESM,
 CommonJS, and compatible-OpenAI host fixtures with one effective
 `openai@6.47.0` installation and preserved official error identities.
+
+For stable `0.1.1`, the final release-PR head passed the blocking, minimum,
+locked, latest-compatible, Node.js 26 advisory, package, workflow, and
+standalone lanes in
+[CI run 30468358086](https://github.com/cometapi-dev/cometapi-node/actions/runs/30468358086).
+Release Please created the immutable
+[`v0.1.1` Release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.1),
+and the bounded live smoke plus OIDC publication completed in the evidence
+chain recorded in [RELEASING.md](./RELEASING.md#stable-011-release-evidence).
+Separate public-registry verification passed ESM, CommonJS, declarations,
+supported mocked calls, one effective OpenAI installation, official error
+identity, integrity, signature, and provenance.

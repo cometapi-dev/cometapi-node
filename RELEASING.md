@@ -4,16 +4,16 @@
 
 Release status is evidence-based:
 
-| State                           | Required evidence                                                                                                                                                            |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local code-complete             | Required source, tests, documentation, metadata, fixtures, and workflows exist, and every applicable offline check passes.                                                   |
-| Private Remote Validation ready | Local gates pass, the sanitized history and maintainer-confirmed identity are complete, and real credential-free private default-branch CI passes.                           |
-| Public Preview ready            | After visibility changes, public-only repository rules, security reporting, environments, default-branch CI, the content gate, and authorized protected live smoke all pass. |
-| Registry Alpha candidate        | The exact `0.1.0-alpha.3` artifact passes package and clean-install gates after preserving the unpublished immutable alpha.2 failure record.                                 |
-| Registry Alpha released         | The public npm artifact installs from the `next` channel, passes post-publication verification, and has verified provenance plus any documented one-time bootstrap evidence. |
-| Stable released                 | Every stable 0.1.0 local, remote, live, review, provenance, and registry gate has recorded evidence.                                                                         |
-| Stable patch candidate          | An action-created Release Please PR has the exact version, changelog, manifest, temporary-anchor removal, complete CI matrix, and human-owner review.                        |
-| Stable patch released           | The immutable Release Please tag and GitHub Release, bounded live smoke, npm OIDC publication, and independent public-registry verification all pass.                        |
+| State                           | Required evidence                                                                                                                                                                |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local code-complete             | Required source, tests, documentation, metadata, fixtures, and workflows exist, and every applicable offline check passes.                                                       |
+| Private Remote Validation ready | Local gates pass, the sanitized history and maintainer-confirmed identity are complete, and real credential-free private default-branch CI passes.                               |
+| Public Preview ready            | After visibility changes, public-only repository rules, security reporting, environments, default-branch CI, the content gate, and authorized protected live smoke all pass.     |
+| Registry Alpha candidate        | The exact `0.1.0-alpha.3` artifact passes package and clean-install gates after preserving the unpublished immutable alpha.2 failure record.                                     |
+| Registry Alpha released         | The public npm artifact installs from the `next` channel, passes post-publication verification, and has verified provenance plus any documented one-time bootstrap evidence.     |
+| Stable released                 | Every applicable stable local, remote, live, review, provenance, and registry gate has recorded evidence.                                                                        |
+| Stable patch candidate          | An action-created Release Please PR has the exact version, changelog, manifest, complete CI matrix, and formal exact-head `APPROVED` review from a distinct human administrator. |
+| Stable patch released           | The immutable Release Please tag and GitHub Release, bounded live smoke, npm OIDC publication, and independent public-registry verification all pass.                            |
 
 A build, mock, valid workflow file, successful upload, or HTTP 200 proves only
 its own layer. Never use it to claim a later state.
@@ -84,7 +84,8 @@ evidence is complete only when `npm owner ls cometapi` lists the
 maintainer-confirmed `cometapi_dev` account; until then this remains a Registry
 Alpha prerequisite.
 
-Public Preview, Registry Alpha, and stable `0.1.0` are complete. Future topic
+Public Preview, Registry Alpha, stable `0.1.0`, stable `0.1.1`, and Repository
+foundation are complete. Future topic
 pushes, pull requests, merges, immutable GitHub Releases, bounded live smoke,
 npm publication, and environment approvals require authorization from the
 current maintainer request. This document defines allowable mechanics but
@@ -109,6 +110,12 @@ body names the reviewed commit; verify its `user.login`, `state=COMMENTED`, and
 PRs remain different: the release workflow requires a formal, exact-head
 `APPROVED` review from a human repository administrator whose login differs
 from the bot author.
+
+Any head change invalidates an earlier exact-head `COMMENTED` audit or formal
+approval. Release and publication trust-boundary PRs require a new exact-head
+human record before merge. GitHub's **Approve and run workflows** control is a
+separate authorization for CI created by an action-authored PR; it is not a PR
+review and satisfies no approval requirement.
 
 ## Candidate verification gate
 
@@ -225,12 +232,15 @@ then returns non-zero if any violation exists. It must require
 `git+https://github.com/cometapi-dev/cometapi-node.git` as `repository.url`, the
 same value required by publish validation.
 
-Maintainers perform this transition in the reviewed release PR before creating
-or publishing the immutable release. Validate the exact committed state with:
+Maintainers perform this transition in the reviewed implementation or
+finalization PR before Release Please preparation; the generated release PR
+remains limited to its four release files. Validate the exact committed state
+with:
 
 ```bash
+release_version="$(node -p "require('./package.json').version")"
 node scripts/validate-release.mjs \
-  --tag v0.1.0 \
+  --tag "v${release_version}" \
   --release-prerelease false \
   --require-final \
   --require-releasable-docs
@@ -283,8 +293,8 @@ The repository maintains four independently auditable workflows:
   introduce a PAT or GitHub App credential.
   Component identity remains internal to release discovery:
   `include-component-in-tag=false` requires the exact public `v<version>` tag.
-  The workflow has contents, pull-request, and issue permissions only for those
-  repository operations; it has no npm OIDC permission.
+  Its write permissions are limited to `contents`, `pull-requests`, and
+  `issues`; it also has `actions: read` and no npm OIDC permission.
 - `publish.yml`: separates release discovery from registry authority. A
   successful trusted Release Please `workflow_run` can enter only the `handoff`
   job. That job has no Environment and no OIDC permission. It validates the
@@ -505,99 +515,61 @@ PR body. Release validators still require the exact dated stable-patch section,
 the four-file candidate shape, and exact PR-body note equality; secret,
 standalone-content, and public-preview checks continue to scan the file.
 
-The 0.1.1 repair used one explicit `last-release-sha` boundary at the immutable
-0.1.0 release commit, `1752cbb57f11dc6dca8dd1b13f0f8d5e8b5fdfca`, only for
-the initial preparation dispatch. That dispatch proved the normal action-owned
-0.1.1 PR without rediscovering pre-0.1.0 features. A normal topic PR then removes
-the temporary override and records final candidate approval on `main`; a fresh
-preparation dispatch refreshes the action-owned release PR from that state. The
-finalization commit must use a releasable `fix:` subject so Release Please
-updates the generated notes and cannot treat the old branch as unchanged.
-Future releases discover the Release Please-created `v0.1.1` boundary normally.
+Before a stable patch operation, verify the standard `autorelease: pending` and
+`autorelease: tagged` labels, `default_workflow_permissions=read`, Actions
+pull-request creation authorization, no canonical-branch collision, and the
+current external Environment and Trusted Publisher state. The workflow never
+changes those settings; drift is a stop condition. Enable
+`RELEASE_PLEASE_ENABLED`, start a new attempt-1 manual dispatch on `main`, and
+never rerun a preparation dispatch. An unchanged candidate is revalidated by a
+new dispatch. Manual preparation uses `skip-github-release=true` and is release-
+and publication-inert.
 
-Before enabling the repaired workflow, create the standard
-`autorelease: pending` and `autorelease: tagged` labels if they are still
-absent. The configuration names both labels explicitly, and the action-created
-release PR must receive `autorelease: pending` automatically. Stop if the action
-cannot create or label that PR; do not replace the normal flow with a manually
-authored PR. Release Please performs the normal tagged transition with its
-scoped `issues: write` permission.
+The action-created PR must contain only the four release files and exact
+generated notes. A human with write access separately authorizes its CI through
+**Approve and run workflows** when GitHub requires that gate. After all final-
+head checks pass, a human repository administrator whose login differs from the
+bot author must submit a formal exact-head `APPROVED` review. That
+administrator's latest review must remain exact-head `APPROVED` through merge
+and post-action validation; a later `COMMENTED` or `CHANGES_REQUESTED` review,
+or any head change, invalidates the approval.
 
-Confirm through the repository Actions API that
-`default_workflow_permissions=read` and
-`can_approve_pull_request_reviews=true`. The latter is the explicitly authorized
-0.1.1 baseline solely so the default token can create the Release Please PR.
-The release workflow must never change either setting, and any later drift is a
-stop condition.
+The release-PR merge creates the only `push` run that may call Release Please in
+release mode. From that merge through post-action validation, do not edit the
+release PR, change its labels or review, or mutate its branch. Keep `main` frozen
+at the release commit through successful registry verification and the final
+variable and Environment-policy readback; every handoff, tag, and pre-publish
+gate requires that exact identity. Do not start or rerun any other Release
+Please workflow from the tag handoff through registry verification and final
+readback because publication freezes the complete Release Please run set. A
+rerun may retry the same release candidate only while no tag or Release exists.
+If an earlier attempt of that same run already created the Release, same-run
+reconciliation is allowed only after proving the exact run ID, SHA, tag, bot
+author, immutable state, target, URL, notes, and publication time inside one
+earlier Release Please step. It may only reconcile labels and write the
+attempt-qualified result artifact.
 
-After enabling `RELEASE_PLEASE_ENABLED`, start a new manual dispatch on `main`;
-do not rerun the skipped workflow from the repair merge. Only attempt 1 of a
-manual dispatch may call Release Please; an unchanged PR is restarted with a
-new dispatch, not a rerun. The workflow rejects any dispatch whose triggering
-ref is not `refs/heads/main`, and all preparation and release runs share one
-main-scoped concurrency group. The manually dispatched preparation run cannot
-trigger npm publication or create a Release: the action receives explicit
-`skip-github-release=true`, it is accepted only when no merged
-`autorelease: pending` PR exists, and `publish.yml` accepts only an upstream
-`push` event. It must succeed after independently validating the one canonical
-action-created 0.1.1 PR, including the unchanged-PR case where the action emits
-no `prs` output. Before mutation, the workflow also rejects any open PR whose
-head name could be mistaken for the canonical release branch, including a
-same-named fork branch.
-The `GITHUB_TOKEN`-created PR's `pull_request` CI starts in GitHub's
-approval-required state. A human with write access must explicitly authorize
-those workflow runs before their results can satisfy required checks; this is
-separate from the final-head administrator review.
-After the finalization topic PR removes the one-cycle `last-release-sha` and
-completes the release-ready documentation on `main`, start a new first-attempt
-manual dispatch. Require it to refresh the same action-owned release PR with
-only the four generated release files and release notes identical to the
-generated CHANGELOG section. Require the refreshed release commit to have the
-post-finalization `main` commit as its direct parent; an unchanged older head is
-not a refreshed candidate. Run the full matrix on that final head and obtain
-approval from a different human repository administrator. The release-PR merge
-creates the `push` run that may tag and publish. A later push cannot tag an older
-outstanding release PR; its merge SHA must equal the triggering SHA before
-Release Please runs. A rerun may retry that same candidate while no tag or
-Release exists. If Release Please created the immutable Release but failed
-before producing outputs, only the same run may recover it, and only after
-proving its exact SHA, tag, bot author, immutable state, target, URL, notes, and
-publication inside exactly one earlier Release Please step time window. Recovery
-then idempotently removes `autorelease: pending`,
-adds `autorelease: tagged`, and writes a schema-v2 artifact for that attempt.
-Immediately before the irreversible Release Please call, every attempt also
-reconfirms `main`, the release-branch snapshot, all PR collisions, the candidate
-and final-head review, final release metadata and public documentation, and the
-exact tag/Release state, including removal of the one-cycle `last-release-sha`.
-Because workflow concurrency does not lock `main` or PR metadata against other
-actors, the maintainer must hold a short mutation freeze from the release-PR
-merge until the Release Please run reaches its post-action validation. Do not
-merge another `main` PR, edit the release PR, change its labels or review, or
-mutate the release branch during that window. The workflow repeats those checks
-after the action and stops publication on any drift, but it cannot delete or
-replace an immutable Release created during an external race.
+The successful Release Please `workflow_run` enters an unprivileged handoff,
+which validates the exact result and immutable Release before dispatching
+`publish.yml` with `ref=v<version>`. Only the tag-bound dispatch may rebuild and
+verify the artifact, run the fresh bounded live smoke, enter the npm
+Environment, request OIDC, or verify the registry. The permanent npm Environment
+policy set is exactly `tag:v*`. After registry verification, immediately restore
+`RELEASE_PLEASE_ENABLED=false` and keep `LIVE_SMOKE_ENABLED=true`.
 
-The stale branch at `3f0949e5c0ccd0923d10595437f7a315f013af7c` was revalidated
-as the failed run's generated 0.2.0 evidence, with no associated open PR or
-independent work, then deleted. Release Please recreated the canonical
-`release-please--branches--main--components--cometapi` branch for the
-action-owned 0.1.1 PR. Do not use that branch as a 0.2 starting point or delete
-or rewrite any other branch.
+Never substitute a manually authored release PR, manual or auxiliary tag,
+branch-context publication, temporary `main` Environment policy, reused artifact
+or live evidence, arbitrary rerun, or different patch version. An ambiguous npm
+result requires exact registry integrity, signature, and provenance inspection;
+it never authorizes an automatic retry.
 
-For 0.1.1, `always-bump-patch` keeps every releasable Conventional Commit on the
-0.1.x maintenance line; changing that strategy requires a separately authorized
-later milestone. A normal `fix:` commit after 0.1.0 must produce exactly one
-patch PR. Stop if the branch contains 0.2.0, if any
-version/manifest/changelog value is not 0.1.1, or if the generated PR is not
-attributable to the explicit `cometapi` component. Merge is forbidden until
-Node.js 22 and 24 blocking checks, the Node.js 26 advisory lane,
-minimum/locked/latest OpenAI 6.x compatibility,
-package and declaration checks, and human-owner review complete on the final
-head. After registry verification, restore `RELEASE_PLEASE_ENABLED=false` and
-keep the already enabled scheduled-smoke policy at `LIVE_SMOKE_ENABLED=true`.
-Use a separate post-release documentation PR to record the ROADMAP and
-RELEASING evidence; only that verified closeout may mark Repository foundation
-Complete.
+The `0.1.1` repair used the immutable `0.1.0` commit as a one-cycle
+`last-release-sha` only for its initial preparation, then removed the anchor.
+The failed run's exact generated `0.2.0` branch was verified as failure-only
+evidence with no open PR or independent work before replacement by the
+canonical action-owned `0.1.1` branch. Neither branch is a 0.2 starting point.
+The one-time main-context npm recovery is historical evidence only; its complete
+record appears below and its executable path was removed by PR #41.
 
 The `0.1.0` promotion limited Release Please to the stable PR because the
 pinned v5.0.0 action bundles Release Please 17.6.0 and its single-package path
@@ -608,8 +580,8 @@ maintainer created the draft `v0.1.0` GitHub Release manually against the exact
 merge commit, reviewed it with `prerelease=false`, and published it with
 immutable releases enabled.
 Release Please did not add an `autorelease: pending` label to the manually
-opened stable PR, and the repository has no `autorelease` labels, so no post-tag
-label transition applied to this release.
+opened stable PR, and the repository had no `autorelease` labels at the time, so
+no post-tag label transition applied to this release.
 
 Release Please did not author the final public status text. A maintainer pushed
 the focused README, SECURITY, SUPPORT, COMPATIBILITY, and ROADMAP candidate
@@ -633,8 +605,8 @@ PRs, and normal Release Please tag and GitHub Release creation. Repository
 Actions pull-request authorization is now enabled for that scoped job; the
 workflow still uses only its default token and job-local permissions.
 
-The recovery rules follow the pinned implementation rather than assuming the
-action is atomic. Release Please 17.6.0
+The same-run Release reconciliation rules follow the pinned implementation
+rather than assuming the action is atomic. Release Please 17.6.0
 [creates the Release before PR comments and label changes](https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/src/manifest.ts#L1258-L1319),
 while the pinned action emits release outputs only after that call returns. An
 unchanged release PR may also return
@@ -643,6 +615,94 @@ Finally, commit-level `Release-As:` is rejected before the action because the
 [base strategy applies it before configured versioning](https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/src/strategies/base.ts#L543-L570).
 GitHub documents that a `GITHUB_TOKEN`-created PR's opened or synchronize event
 [creates an approval-required workflow run](https://github.com/github/docs/blob/e1e4aa937308f21c411c248b4966873536bb0cba/data/reusables/actions/actions-do-not-trigger-workflows.md#L1-L6).
+
+## Stable 0.1.1 release evidence
+
+Stable `0.1.1` completed on 2026-07-30 with these independently auditable
+layers:
+
+- The action-authored release pull request
+  [#33](https://github.com/cometapi-dev/cometapi-node/pull/33) had final head
+  `132d158c5bc4b83d582dd0a3c7677b05b46d471b`. Its complete final-head matrix
+  passed in [CI run 30443300601 attempt 2](https://github.com/cometapi-dev/cometapi-node/actions/runs/30443300601/attempts/2)
+  and the latest-compatible/manual matrix passed in
+  [run 30468358086](https://github.com/cometapi-dev/cometapi-node/actions/runs/30468358086).
+  Human repository administrator `tensornull`, distinct from bot author
+  `github-actions[bot]`, submitted formal
+  [review 4810328062](https://github.com/cometapi-dev/cometapi-node/pull/33#pullrequestreview-4810328062)
+  with `state=APPROVED` against that exact head before merge.
+- The reviewed merge produced
+  [`c98b514227858cd183c781270a7f78f65b577e82`](https://github.com/cometapi-dev/cometapi-node/commit/c98b514227858cd183c781270a7f78f65b577e82).
+  [Release Please run 30469181724 attempt 1](https://github.com/cometapi-dev/cometapi-node/actions/runs/30469181724/attempts/1)
+  created, rather than recovered, the exact lightweight `v0.1.1` tag and
+  immutable non-prerelease GitHub Release ID `361883325`. The
+  [`v0.1.1` Release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.1)
+  is bot-authored, targets that merge commit, and was published at
+  `2026-07-29T16:07:15Z`.
+- The initial
+  [Publish run 30469240186](https://github.com/cometapi-dev/cometapi-node/actions/runs/30469240186)
+  failed before packing, live smoke, OIDC, or npm mutation. Its downloaded
+  `release-please-result/result.json` was inside the workspace scanned by
+  `npm run format:check`, and Prettier correctly returned non-zero for that
+  runtime JSON file.
+- [Run 30471665743 attempt 1](https://github.com/cometapi-dev/cometapi-node/actions/runs/30471665743/attempts/1)
+  then completed all offline and exact-artifact checks. Its
+  [live job 90643725110](https://github.com/cometapi-dev/cometapi-node/actions/runs/30471665743/job/90643725110)
+  checked out the exact release commit and passed three sequential `gpt-5.4`
+  requests with a 16-token output cap, 60-second per-request timeout,
+  concurrency one, and stop-on-first-failure behavior. The npm job received no
+  runner and no OIDC token: GitHub's check annotation states that branch `main`
+  was not allowed by the tag-only npm Environment policy.
+- That failed run retained artifact ID `8731956162`, named
+  `npm-package-0.1.1-30471665743-1`, with ZIP digest
+  `sha256:567b00f1ec32168d5c5be7d0b553542441920d3bb401959bcc2d6e157f35d08b`.
+  It contains only `cometapi-0.1.1.tgz`; the tarball has SHA-256
+  `3c926a2b15be99fbba92e1e100c2ee254ff866da27496a5c31824c542cccbf91`.
+  Artifact metadata names recovery-control head `22c313d4f80c53ba01672dd35cc27b621d5ec9ce`,
+  while Actions logs prove that packaging and live validation checked out
+  release commit `c98b514227858cd183c781270a7f78f65b577e82`.
+- The authorized one-time control
+  [PR #40](https://github.com/cometapi-dev/cometapi-node/pull/40) merged as
+  `37b811c54773295487aa4200f349ec3edd30d729`.
+  [Publish run 30533520823 attempt 1](https://github.com/cometapi-dev/cometapi-node/actions/runs/30533520823/attempts/1)
+  revalidated and published the exact retained artifact while reusing the
+  already successful bounded-live evidence rather than spending another live
+  request budget. Its
+  [npm job 90841672147](https://github.com/cometapi-dev/cometapi-node/actions/runs/30533520823/job/90841672147)
+  used GitHub Actions OIDC and completed the public-registry gates.
+- npm now resolves `latest=0.1.1` and `next=0.1.0-alpha.3`. The registry tarball
+  is byte-identical to the source artifact and has SHA-1
+  `00edad522c9ffaf937facbe5a35ef211869551c1` and integrity
+  `sha512-uYo573XD+ITsa8F4GbYLAlXMrj9SA1Qc4KBgvoRbnwwTvfX+Ye8QVo7xgSNOl9AoYpoglQCW8lEo9cvjwan+7Q==`.
+  `npm audit signatures` passed. npm exposes both its publish attestation
+  ([Sigstore index 2289305373](https://search.sigstore.dev/?logIndex=2289305373))
+  and SLSA provenance
+  ([index 2289305033](https://search.sigstore.dev/?logIndex=2289305033)).
+  The provenance binds `cometapi@0.1.1` to `refs/heads/main`, control commit
+  `37b811c54773295487aa4200f349ec3edd30d729`, and Publish run
+  `30533520823/1`; it does not claim tag-bound publication.
+- A separate clean public-registry installation on Node.js `24.18.1` passed ESM,
+  CommonJS, `.mts` and `.cts` declarations, all three supported mocked
+  operations including streaming and errors, one effective OpenAI installation,
+  official `APIError instanceof` identity, integrity, signature, and both
+  attestations.
+- [Cleanup PR #41](https://github.com/cometapi-dev/cometapi-node/pull/41)
+  removed every one-time recovery input, fixed evidence identifier,
+  prior-artifact/live reuse branch, and temporary `main` policy path. Its final
+  head `c5566246abce065a39f1f66ed2b6e2d4bc89e62f` passed
+  [PR CI 30538011343](https://github.com/cometapi-dev/cometapi-node/actions/runs/30538011343),
+  merged as `c319503684b371ad4a4f1ce78a156978de86072e`, and passed
+  [default-branch CI 30538123153](https://github.com/cometapi-dev/cometapi-node/actions/runs/30538123153).
+  Post-release state was read back as `RELEASE_PLEASE_ENABLED=false`,
+  `LIVE_SMOKE_ENABLED=true`, and exactly one npm deployment policy,
+  `tag:v*` (policy ID `55718965`).
+
+The permanent immutable-tag handoff has passed static contract checks,
+adversarial mutations, pull-request CI, and default-branch CI. Because the
+immutable `v0.1.1` tag predates that final path, `0.1.1` publication used the
+disclosed main-context exception above. The next explicitly authorized stable
+patch remains the first end-to-end registry publication of the permanent
+tag-bound route.
 
 ## Stable 0.1.0 release evidence
 
@@ -668,8 +728,8 @@ layers:
   release-tag live smoke with a 16-output-token cap, 60-second per-request
   timeout, concurrency one, and stop on first failure, then published through
   the protected `npm` environment and GitHub Actions OIDC.
-- npm's `latest` dist-tag resolves to `0.1.0`, while `next` remains on
-  `0.1.0-alpha.3`. The registry artifact has SHA-1
+- At the `0.1.0` closeout, npm's `latest` dist-tag resolved to `0.1.0`, while
+  `next` remained on `0.1.0-alpha.3`. The registry artifact has SHA-1
   `e509196ac5618d5b073207c74c7cdc5204efbe37` and SHA-512 integrity
   `sha512-B7vyPXZkoZRM2JjFMQZthumUHgHWZLcPlQt8SG5oopPL2JGU0LR1iBOjtox4Mos+gZmA1Bs2q6vLPX2loHyfuw==`.
 - npm reports SLSA provenance v1 and a registry signature. The provenance binds
