@@ -122,7 +122,7 @@ describe("GitHub Actions workflow contract", () => {
     );
   });
 
-  it("publishes only through OIDC and has no manual recovery path", () => {
+  it("publishes only through OIDC and has no token recovery path", () => {
     const publishWorkflow = workflow("publish.yml");
     const publish = job(publishWorkflow, "publish");
     expect(publish).toContain(
@@ -168,7 +168,7 @@ describe("GitHub Actions workflow contract", () => {
       expect(workflow(name)).toMatch(/^permissions:\n {2}contents: read$/m);
     }
     expect(workflow("publish.yml")).toMatch(
-      /^permissions:\n {2}actions: read\n {2}contents: read$/m,
+      /^permissions:\n {2}actions: read\n {2}checks: read\n {2}contents: read$/m,
     );
 
     const ci = workflow("ci.yml");
@@ -301,33 +301,33 @@ describe("GitHub Actions workflow contract", () => {
   });
 
   it("parses every inline Node workflow validator", () => {
-    const blocks = matches(
-      workflow("release-please.yml"),
-      /node --input-type=module <<'EOF'\n([\s\S]*?)\n\s+EOF/g,
-    );
-    expect(blocks.length).toBeGreaterThan(0);
-    for (const block of blocks) {
-      const checked = spawnSync(
-        process.execPath,
-        ["--input-type=module", "--check", "-"],
-        { encoding: "utf8", input: block[1] },
+    for (const name of ["release-please.yml", "publish.yml"]) {
+      const blocks = matches(
+        workflow(name),
+        /node --input-type=module <<'EOF'\n([\s\S]*?)\n\s+EOF/g,
       );
-      expect(checked.stderr).toBe("");
-      expect(checked.status).toBe(0);
+      expect(blocks.length).toBeGreaterThan(0);
+      for (const block of blocks) {
+        const checked = spawnSync(
+          process.execPath,
+          ["--input-type=module", "--check", "-"],
+          { encoding: "utf8", input: block[1] },
+        );
+        expect(checked.stderr).toBe("");
+        expect(checked.status).toBe(0);
+      }
     }
   });
 
-  it("starts publication from Release Please or the exact one-cycle recovery", () => {
+  it("starts publication from Release Please or the exact tag deployment recovery", () => {
     const publish = workflow("publish.yml");
     expect(publish).toMatch(
       /workflow_run:\n {4}workflows:\n {6}- Release Please\n {4}types:\n {6}- completed/,
     );
     expect(publish).not.toMatch(/^ {2}release:/m);
     expect(publish).not.toMatch(/^ {2}workflow_dispatch:/m);
-    expect(publishWorkflow.on.push).toEqual({
-      branches: ["main"],
-      paths: [".github/workflows/publish.yml"],
-    });
+    expect(publishWorkflow.on.deployment).toBeNull();
+    expect(publishWorkflow.on.push).toBeUndefined();
 
     const verify = job(publish, "verify");
     expect(verify).toContain(
@@ -338,7 +338,18 @@ describe("GitHub Actions workflow contract", () => {
     expect(verify).toContain("SOURCE_RELEASE_RUN_ID:");
     expect(verify).toContain("30469181724");
     expect(verify).toContain("SOURCE_RELEASE_RUN_ATTEMPT:");
-    expect(verify).toContain("validatePublishRecoveryTrigger");
+    expect(verify).toContain("github.event.deployment.ref == 'v0.1.1'");
+    expect(verify).toContain(
+      "github.event.deployment.sha == 'c98b514227858cd183c781270a7f78f65b577e82'",
+    );
+    expect(verify).toContain("validatePublishDeploymentRecoveryTrigger");
+    expect(verify).toContain("validatePublishRecoveryEvidence");
+    expect(verify).toContain("github.triggering_actor");
+    expect(releaseWorkflowValidation).toContain("30471665743");
+    expect(releaseWorkflowValidation).toContain("8731956162");
+    expect(verify).toContain(
+      "Live smoke passed 3 sequential requests with a 16-token output cap.",
+    );
     expect(verify).toContain("ref: ${{ env.SOURCE_RELEASE_COMMIT }}");
     expect(verify).toContain("EXPECTED_WORKFLOW: Release Please");
     expect(verify).toContain(
@@ -387,6 +398,9 @@ describe("GitHub Actions workflow contract", () => {
     expect(job(publish, "publish")).toContain(
       "name: ${{ needs.verify.outputs.artifact-name }}",
     );
+    const liveSmoke = job(publish, "live-smoke");
+    expect(liveSmoke).toContain("Reuse the successful bounded live smoke");
+    expect(liveSmoke).toContain("if: github.event_name != 'deployment'");
   });
 
   it("rejects an unrelated divergent Release Please branch", () => {

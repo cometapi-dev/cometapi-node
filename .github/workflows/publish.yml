@@ -1,11 +1,7 @@
 name: Publish
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/publish.yml
+  deployment:
   workflow_run:
     workflows:
       - Release Please
@@ -14,6 +10,7 @@ on:
 
 permissions:
   actions: read
+  checks: read
   contents: read
 
 concurrency:
@@ -29,18 +26,23 @@ jobs:
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_branch == 'main') ||
-       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+       (github.event_name == 'deployment' &&
+        github.event.deployment.task == 'npm-publish-recovery' &&
+        github.event.deployment.environment == 'npm' &&
+        github.event.deployment.ref == 'v0.1.1' &&
+        github.event.deployment.sha == 'c98b514227858cd183c781270a7f78f65b577e82'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SOURCE_RELEASE_COMMIT: ${{ github.event_name == 'push' && 'c98b514227858cd183c781270a7f78f65b577e82' || github.event.workflow_run.head_sha }}
-      SOURCE_RELEASE_RUN_ATTEMPT: ${{ github.event_name == 'push' && '1' || github.event.workflow_run.run_attempt }}
-      SOURCE_RELEASE_RUN_ID: ${{ github.event_name == 'push' && '30469181724' || github.event.workflow_run.id }}
+      SOURCE_RELEASE_COMMIT: ${{ github.event_name == 'deployment' && 'c98b514227858cd183c781270a7f78f65b577e82' || github.event.workflow_run.head_sha }}
+      SOURCE_RELEASE_RUN_ATTEMPT: ${{ github.event_name == 'deployment' && '1' || github.event.workflow_run.run_attempt }}
+      SOURCE_RELEASE_RUN_ID: ${{ github.event_name == 'deployment' && '30469181724' || github.event.workflow_run.id }}
     outputs:
       artifact-name: ${{ steps.artifact-name.outputs.name }}
       dist-tag: ${{ steps.version.outputs.dist-tag }}
       release-commit: ${{ steps.trust.outputs.release-commit }}
       release-tag: ${{ steps.trust.outputs.release-tag }}
+      reuse-live-smoke: ${{ steps.recovery-evidence.outputs.reuse-live-smoke }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out the workflow control commit
@@ -48,52 +50,134 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.sha }}
-      - name: Validate the one-cycle exact release recovery
-        if: github.event_name == 'push'
+          ref: ${{ github.event_name == 'deployment' && github.workflow_sha || github.sha }}
+      - name: Validate the exact tag deployment recovery
+        if: github.event_name == 'deployment'
         env:
           ACTOR: ${{ github.actor }}
           CHANGED_FILES: ${{ runner.temp }}/publish-recovery-files
-          EVENT_AFTER: ${{ github.event.after }}
-          EVENT_BEFORE: ${{ github.event.before }}
+          CONTROL_COMMIT: ${{ github.workflow_sha }}
+          DEPLOYMENT_CREATOR: ${{ github.event.deployment.creator.login }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.deployment.environment }}
+          DEPLOYMENT_ID: ${{ github.event.deployment.id }}
+          DEPLOYMENT_REF: ${{ github.event.deployment.ref }}
+          DEPLOYMENT_RELEASE_COMMIT: ${{ github.event.deployment.payload.release_commit }}
+          DEPLOYMENT_RELEASE_TAG: ${{ github.event.deployment.payload.release_tag }}
+          DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
+          DEPLOYMENT_SOURCE_RUN_ATTEMPT: ${{ github.event.deployment.payload.source_run_attempt }}
+          DEPLOYMENT_SOURCE_RUN_ID: ${{ github.event.deployment.payload.source_run_id }}
+          DEPLOYMENT_TASK: ${{ github.event.deployment.task }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
-          MAIN_COMMIT: ${{ github.sha }}
+          EVENT_SHA: ${{ github.sha }}
+          MAIN_COMMIT: ${{ github.workflow_sha }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$(git rev-parse HEAD)" != "$MAIN_COMMIT" ]]; then
+          if [[ "$(git rev-parse HEAD)" != "$CONTROL_COMMIT" ]]; then
             echo "The recovery control checkout does not match the triggering SHA." >&2
             exit 1
           fi
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$MAIN_COMMIT" ]]; then
+          MAIN_COMMIT="$(git rev-parse refs/remotes/origin/main)"
+          if [[ "$MAIN_COMMIT" != "$CONTROL_COMMIT" ]]; then
             echo "main moved after the publish recovery was triggered." >&2
             exit 1
           fi
-          git diff --name-only "$EVENT_BEFORE" "$MAIN_COMMIT" > "$CHANGED_FILES"
-          MAIN_FIRST_PARENT="$(git rev-parse "${MAIN_COMMIT}^1")" \
+          CONTROL_FIRST_PARENT="$(git rev-parse "${CONTROL_COMMIT}^1")"
+          git diff --name-only "$CONTROL_FIRST_PARENT" "$CONTROL_COMMIT" > "$CHANGED_FILES"
+          MAIN_COMMIT="$MAIN_COMMIT" CONTROL_FIRST_PARENT="$CONTROL_FIRST_PARENT" \
             node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
-          import { validatePublishRecoveryTrigger } from "./scripts/release-workflow-validation.mjs";
+          import { validatePublishDeploymentRecoveryTrigger } from "./scripts/release-workflow-validation.mjs";
 
-          validatePublishRecoveryTrigger({
+          validatePublishDeploymentRecoveryTrigger({
             actor: process.env.ACTOR,
             changedFiles: readFileSync(process.env.CHANGED_FILES, "utf8")
               .split("\n")
               .filter((file) => file !== ""),
-            eventAfter: process.env.EVENT_AFTER,
-            eventBefore: process.env.EVENT_BEFORE,
+            controlCommit: process.env.CONTROL_COMMIT,
+            controlFirstParent: process.env.CONTROL_FIRST_PARENT,
+            deploymentCreator: process.env.DEPLOYMENT_CREATOR,
+            deploymentEnvironment: process.env.DEPLOYMENT_ENVIRONMENT,
+            deploymentId: Number(process.env.DEPLOYMENT_ID),
+            deploymentRef: process.env.DEPLOYMENT_REF,
+            deploymentReleaseCommit: process.env.DEPLOYMENT_RELEASE_COMMIT,
+            deploymentReleaseTag: process.env.DEPLOYMENT_RELEASE_TAG,
+            deploymentSha: process.env.DEPLOYMENT_SHA,
+            deploymentSourceRunAttempt: Number(
+              process.env.DEPLOYMENT_SOURCE_RUN_ATTEMPT,
+            ),
+            deploymentSourceRunId: Number(process.env.DEPLOYMENT_SOURCE_RUN_ID),
+            deploymentTask: process.env.DEPLOYMENT_TASK,
             eventName: process.env.EVENT_NAME,
             eventRef: process.env.EVENT_REF,
+            eventSha: process.env.EVENT_SHA,
             mainCommit: process.env.MAIN_COMMIT,
-            mainFirstParent: process.env.MAIN_FIRST_PARENT,
             sourceReleaseCommit: process.env.SOURCE_RELEASE_COMMIT,
             sourceRunAttempt: Number(process.env.SOURCE_RELEASE_RUN_ATTEMPT),
             sourceRunId: Number(process.env.SOURCE_RELEASE_RUN_ID),
+            triggeringActor: process.env.TRIGGERING_ACTOR,
             workflowRunAttempt: Number(process.env.WORKFLOW_RUN_ATTEMPT),
           });
+          EOF
+      - name: Validate the prior artifact and bounded live evidence
+        id: recovery-evidence
+        if: github.event_name == 'deployment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_ANNOTATIONS: ${{ runner.temp }}/publish-recovery-annotations.json
+          RECOVERY_ARTIFACTS: ${{ runner.temp }}/publish-recovery-artifacts.json
+          RECOVERY_JOBS: ${{ runner.temp }}/publish-recovery-jobs.json
+          RECOVERY_LIVE_LOG: ${{ runner.temp }}/publish-recovery-live.log
+          RECOVERY_RUN: ${{ runner.temp }}/publish-recovery-run.json
+          SOURCE_PUBLISH_ATTEMPT: ${{ github.event.deployment.payload.source_run_attempt }}
+          SOURCE_PUBLISH_RUN_ID: ${{ github.event.deployment.payload.source_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}" \
+            > "$RECOVERY_RUN"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/attempts/${SOURCE_PUBLISH_ATTEMPT}/jobs?per_page=100" \
+            > "$RECOVERY_JOBS"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/artifacts" \
+            > "$RECOVERY_ARTIFACTS"
+          gh api "repos/${GITHUB_REPOSITORY}/check-runs/90643868523/annotations" \
+            > "$RECOVERY_ANNOTATIONS"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/90643725110/logs" \
+            > "$RECOVERY_LIVE_LOG"
+          if [[ "$(grep -Fc 'Live smoke passed 3 sequential requests with a 16-token output cap.' "$RECOVERY_LIVE_LOG")" != "1" ]]; then
+            echo "The source run no longer proves the exact bounded live smoke." >&2
+            exit 1
+          fi
+
+          node --input-type=module <<'EOF'
+          import { appendFileSync, readFileSync } from "node:fs";
+          import { validatePublishRecoveryEvidence } from "./scripts/release-workflow-validation.mjs";
+
+          const result = validatePublishRecoveryEvidence({
+            annotations: JSON.parse(
+              readFileSync(process.env.RECOVERY_ANNOTATIONS, "utf8"),
+            ),
+            artifacts: JSON.parse(
+              readFileSync(process.env.RECOVERY_ARTIFACTS, "utf8"),
+            ).artifacts,
+            jobs: JSON.parse(readFileSync(process.env.RECOVERY_JOBS, "utf8")).jobs,
+            run: JSON.parse(readFileSync(process.env.RECOVERY_RUN, "utf8")),
+          });
+          appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            [
+              `artifact-id=${result.artifactId}`,
+              `artifact-name=${result.artifactName}`,
+              `live-job-id=${result.liveJobId}`,
+              "reuse-live-smoke=true",
+              "",
+            ].join("\n"),
+          );
           EOF
       - name: Check out the exact release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -127,7 +211,7 @@ jobs:
           EXPECTED_REPOSITORY_URL: git+https://github.com/cometapi-dev/cometapi-node.git
           EXPECTED_WORKFLOW: Release Please
           EXPECTED_WORKFLOW_PATH: .github/workflows/release-please.yml
-          CONTROL_SHA: ${{ github.sha }}
+          CONTROL_SHA: ${{ github.event_name == 'deployment' && github.workflow_sha || github.sha }}
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_RESULT: ${{ runner.temp }}/release-please-result/result.json
           SOURCE_RUN_FILE: ${{ runner.temp }}/release-please-source-run.json
@@ -146,7 +230,7 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           case "$EVENT_NAME" in
             workflow_run) expected_main="$WORKFLOW_SHA" ;;
-            push) expected_main="$CONTROL_SHA" ;;
+            deployment) expected_main="$CONTROL_SHA" ;;
             *) echo "Publish received an unsupported event." >&2; exit 1 ;;
           esac
           if [[ "$(git rev-parse refs/remotes/origin/main)" != "$expected_main" ]]; then
@@ -362,21 +446,37 @@ jobs:
     # without required reviewers and add COMETAPI_KEY before publishing a release.
     environment: live-smoke
     steps:
+      - name: Reuse the successful bounded live smoke
+        if: github.event_name == 'deployment'
+        env:
+          REUSE_LIVE_SMOKE: ${{ needs.verify.outputs.reuse-live-smoke }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$REUSE_LIVE_SMOKE" != "true" ]]; then
+            echo "The exact recovery run did not validate bounded live evidence." >&2
+            exit 1
+          fi
       - name: Check out the verified release tag
+        if: github.event_name != 'deployment'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ needs.verify.outputs.release-commit }}
       - name: Set up Node.js 24
+        if: github.event_name != 'deployment'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.x
           cache: npm
       - name: Install locked dependencies
+        if: github.event_name != 'deployment'
         run: npm ci
       - name: Build the release tag
+        if: github.event_name != 'deployment'
         run: npm run build
       - name: Run the bounded live smoke
+        if: github.event_name != 'deployment'
         env:
           COMETAPI_KEY: ${{ secrets.COMETAPI_KEY }}
           COMETAPI_LIVE_SMOKE: "1"

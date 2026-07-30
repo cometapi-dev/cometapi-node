@@ -295,15 +295,26 @@ The repository maintains four independently auditable workflows:
   [30469240186](https://github.com/cometapi-dev/cometapi-node/actions/runs/30469240186)
   validated the immutable tag, Release, and Release Please result, then failed
   before packing, live smoke, OIDC, or npm because the downloaded runtime result
-  JSON was inside the workspace scanned by Prettier. One reviewed recovery merge
-  temporarily adds an automatic `publish.yml`-only `main` push path. It accepts
-  only human actor `tensornull`, exact Release Please run `30469181724` attempt
-  1, release commit `c98b514227858cd183c781270a7f78f65b577e82`, a direct
-  first-parent recovery merge, and the five recorded repair files. The workflow
-  then checks out and rebuilds the immutable release commit, downloads runtime
-  evidence under `runner.temp`, and uses the unchanged live, OIDC, artifact, and
-  registry gates. The recovery trigger and constants must be removed in the
-  post-release evidence PR; the `runner.temp` isolation remains permanent.
+  JSON was inside the workspace scanned by Prettier. Recovery run
+  [30471665743](https://github.com/cometapi-dev/cometapi-node/actions/runs/30471665743)
+  then validated the exact Release Please result, immutable Release, package,
+  and artifact and passed the only authorized three-request live smoke. Its npm
+  job was rejected before runner allocation because a `main` push produces a
+  `main` deployment while the protected npm environment accepts only `v*` tags.
+  No OIDC token or npm mutation occurred in either failed run.
+
+  The replacement one-cycle recovery uses a human-created GitHub deployment for
+  the existing immutable `v0.1.1` tag. It accepts only actor and triggering actor
+  `tensornull`, exact release commit
+  `c98b514227858cd183c781270a7f78f65b577e82`, Release Please run
+  `30469181724` attempt 1, failed Publish run `30471665743` attempt 1, the exact
+  first-parent control merge, and the recorded repair files. It revalidates the
+  successful source verify job, artifact ID and digest, branch-policy failure,
+  and the log evidence for exactly three sequential live requests. The new tag
+  run repeats offline package and exact-artifact gates but does not spend another
+  live request budget. The protected npm environment and OIDC gate remain
+  unchanged. The deployment trigger and exact recovery constants must be removed
+  in the post-release evidence PR; the `runner.temp` isolation remains permanent.
 
 Third-party actions are pinned to full commit SHAs. Workflow permissions remain
 read-only except where a documented job requires more; `id-token: write` belongs

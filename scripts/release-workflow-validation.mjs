@@ -13,6 +13,10 @@ const RELEASE_WORKFLOW_JOB =
 const RELEASE_WORKFLOW_STEP = "Run Release Please";
 const PUBLISH_RECOVERY = Object.freeze({
   actor: "tensornull",
+  artifactDigest:
+    "sha256:567b00f1ec32168d5c5be7d0b553542441920d3bb401959bcc2d6e157f35d08b",
+  artifactId: 8731956162,
+  artifactName: "npm-package-0.1.1-30471665743-1",
   changedFiles: Object.freeze([
     ".github/workflows/publish.yml",
     "RELEASING.md",
@@ -20,9 +24,19 @@ const PUBLISH_RECOVERY = Object.freeze({
     "tests/release-workflow-validation.test.mjs",
     "tests/workflow-contract.test.mjs",
   ]),
+  controlParent: "22c313d4f80c53ba01672dd35cc27b621d5ec9ce",
+  deploymentEnvironment: "npm",
+  deploymentTask: "npm-publish-recovery",
+  failedPublishJobId: 90643868523,
+  liveJobId: 90643725110,
   releaseCommit: "c98b514227858cd183c781270a7f78f65b577e82",
   releaseRunAttempt: 1,
   releaseRunId: 30469181724,
+  releaseTag: "v0.1.1",
+  sourcePublishCommit: "22c313d4f80c53ba01672dd35cc27b621d5ec9ce",
+  sourcePublishRunAttempt: 1,
+  sourcePublishRunId: 30471665743,
+  verifyJobId: 90643169818,
 });
 
 function fail(message) {
@@ -75,42 +89,62 @@ function stablePatch(version, label) {
   return Number(match[1]);
 }
 
-export function validatePublishRecoveryTrigger({
+export function validatePublishDeploymentRecoveryTrigger({
   actor,
   changedFiles,
-  eventAfter,
-  eventBefore,
+  controlCommit,
+  controlFirstParent,
+  deploymentCreator,
+  deploymentEnvironment,
+  deploymentId,
+  deploymentRef,
+  deploymentReleaseCommit,
+  deploymentReleaseTag,
+  deploymentSha,
+  deploymentSourceRunAttempt,
+  deploymentSourceRunId,
+  deploymentTask,
   eventName,
   eventRef,
+  eventSha,
   mainCommit,
-  mainFirstParent,
   sourceReleaseCommit,
   sourceRunAttempt,
   sourceRunId,
+  triggeringActor,
   workflowRunAttempt,
 }) {
   requireEqual(actor, PUBLISH_RECOVERY.actor, "publish recovery actor");
-  requireEqual(eventName, "push", "publish recovery event");
-  requireEqual(eventRef, "refs/heads/main", "publish recovery ref");
-  requireCommit(eventAfter, "publish recovery event after SHA");
-  requireCommit(eventBefore, "publish recovery event before SHA");
+  requireEqual(
+    triggeringActor,
+    PUBLISH_RECOVERY.actor,
+    "publish recovery triggering actor",
+  );
+  requireEqual(eventName, "deployment", "publish recovery event");
+  requireEqual(
+    eventRef,
+    `refs/tags/${PUBLISH_RECOVERY.releaseTag}`,
+    "publish recovery ref",
+  );
+  requireCommit(eventSha, "publish recovery event SHA");
+  requireEqual(
+    eventSha,
+    PUBLISH_RECOVERY.releaseCommit,
+    "publish recovery event SHA",
+  );
+  requireCommit(controlCommit, "publish recovery control commit");
+  requireCommit(controlFirstParent, "publish recovery control first parent");
   requireCommit(mainCommit, "publish recovery main commit");
-  requireCommit(mainFirstParent, "publish recovery main first parent");
   requireCommit(sourceReleaseCommit, "publish recovery source release commit");
   requireEqual(
-    eventAfter,
+    controlCommit,
     mainCommit,
-    "publish recovery event and main commit agreement",
+    "publish recovery control and main commit agreement",
   );
   requireEqual(
-    eventBefore,
-    PUBLISH_RECOVERY.releaseCommit,
-    "publish recovery event before SHA",
-  );
-  requireEqual(
-    mainFirstParent,
-    PUBLISH_RECOVERY.releaseCommit,
-    "publish recovery main first parent",
+    controlFirstParent,
+    PUBLISH_RECOVERY.controlParent,
+    "publish recovery control first parent",
   );
   requireEqual(
     sourceReleaseCommit,
@@ -132,6 +166,65 @@ export function validatePublishRecoveryTrigger({
     PUBLISH_RECOVERY.releaseRunAttempt,
     "publish recovery source run attempt",
   );
+  requirePositiveInteger(deploymentId, "publish recovery deployment ID");
+  requireEqual(
+    deploymentCreator,
+    PUBLISH_RECOVERY.actor,
+    "publish recovery deployment creator",
+  );
+  requireEqual(
+    deploymentEnvironment,
+    PUBLISH_RECOVERY.deploymentEnvironment,
+    "publish recovery deployment environment",
+  );
+  requireEqual(
+    deploymentRef,
+    PUBLISH_RECOVERY.releaseTag,
+    "publish recovery deployment ref",
+  );
+  requireCommit(deploymentSha, "publish recovery deployment SHA");
+  requireEqual(
+    deploymentSha,
+    PUBLISH_RECOVERY.releaseCommit,
+    "publish recovery deployment SHA",
+  );
+  requireEqual(
+    deploymentTask,
+    PUBLISH_RECOVERY.deploymentTask,
+    "publish recovery deployment task",
+  );
+  requireCommit(
+    deploymentReleaseCommit,
+    "publish recovery deployment payload release commit",
+  );
+  requireEqual(
+    deploymentReleaseCommit,
+    PUBLISH_RECOVERY.releaseCommit,
+    "publish recovery deployment payload release commit",
+  );
+  requireEqual(
+    deploymentReleaseTag,
+    PUBLISH_RECOVERY.releaseTag,
+    "publish recovery deployment payload release tag",
+  );
+  requirePositiveInteger(
+    deploymentSourceRunId,
+    "publish recovery deployment payload source run ID",
+  );
+  requireEqual(
+    deploymentSourceRunId,
+    PUBLISH_RECOVERY.sourcePublishRunId,
+    "publish recovery deployment payload source run ID",
+  );
+  requirePositiveInteger(
+    deploymentSourceRunAttempt,
+    "publish recovery deployment payload source run attempt",
+  );
+  requireEqual(
+    deploymentSourceRunAttempt,
+    PUBLISH_RECOVERY.sourcePublishRunAttempt,
+    "publish recovery deployment payload source run attempt",
+  );
   requirePositiveInteger(workflowRunAttempt, "publish recovery run attempt");
   if (!Array.isArray(changedFiles)) {
     fail("Release workflow publish recovery changed files must be an array.");
@@ -145,6 +238,178 @@ export function validatePublishRecoveryTrigger({
     releaseCommit: PUBLISH_RECOVERY.releaseCommit,
     releaseRunAttempt: PUBLISH_RECOVERY.releaseRunAttempt,
     releaseRunId: PUBLISH_RECOVERY.releaseRunId,
+    sourcePublishRunAttempt: PUBLISH_RECOVERY.sourcePublishRunAttempt,
+    sourcePublishRunId: PUBLISH_RECOVERY.sourcePublishRunId,
+  };
+}
+
+function requireJob(job, { conclusion, id, name }) {
+  requireEqual(job?.id, id, `${name} job ID`);
+  requireEqual(
+    job?.run_id,
+    PUBLISH_RECOVERY.sourcePublishRunId,
+    `${name} run ID`,
+  );
+  requireEqual(
+    job?.run_attempt,
+    PUBLISH_RECOVERY.sourcePublishRunAttempt,
+    `${name} run attempt`,
+  );
+  requireEqual(job?.name, name, `${name} job name`);
+  requireEqual(job?.status, "completed", `${name} job status`);
+  requireEqual(job?.conclusion, conclusion, `${name} job conclusion`);
+  requireEqual(
+    job?.head_sha,
+    PUBLISH_RECOVERY.sourcePublishCommit,
+    `${name} job head SHA`,
+  );
+}
+
+function requireSuccessfulStep(job, stepName) {
+  const steps = Array.isArray(job?.steps) ? job.steps : [];
+  const matching = steps.filter((step) => step?.name === stepName);
+  requireEqual(matching.length, 1, `${stepName} step count`);
+  requireEqual(matching[0].status, "completed", `${stepName} step status`);
+  requireEqual(
+    matching[0].conclusion,
+    "success",
+    `${stepName} step conclusion`,
+  );
+}
+
+export function validatePublishRecoveryEvidence({
+  annotations,
+  artifacts,
+  jobs,
+  run,
+}) {
+  requireEqual(
+    run?.id,
+    PUBLISH_RECOVERY.sourcePublishRunId,
+    "recovery source run ID",
+  );
+  requireEqual(
+    run?.run_attempt,
+    PUBLISH_RECOVERY.sourcePublishRunAttempt,
+    "recovery source run attempt",
+  );
+  requireEqual(run?.name, "Publish", "recovery source workflow name");
+  requireEqual(
+    run?.path,
+    ".github/workflows/publish.yml",
+    "recovery source workflow path",
+  );
+  requireEqual(run?.event, "push", "recovery source event");
+  requireEqual(run?.head_branch, "main", "recovery source head branch");
+  requireEqual(
+    run?.head_sha,
+    PUBLISH_RECOVERY.sourcePublishCommit,
+    "recovery source head SHA",
+  );
+  requireEqual(
+    run?.repository?.full_name,
+    "cometapi-dev/cometapi-node",
+    "recovery source repository",
+  );
+  requireEqual(
+    run?.actor?.login,
+    PUBLISH_RECOVERY.actor,
+    "recovery source actor",
+  );
+  requireEqual(
+    run?.triggering_actor?.login,
+    PUBLISH_RECOVERY.actor,
+    "recovery source triggering actor",
+  );
+  requireEqual(run?.status, "completed", "recovery source status");
+  requireEqual(run?.conclusion, "failure", "recovery source conclusion");
+
+  if (!Array.isArray(jobs)) {
+    fail("Release workflow recovery source jobs must be an array.");
+  }
+  requireEqual(jobs.length, 3, "recovery source job count");
+  const verify = jobs.find((job) => job?.id === PUBLISH_RECOVERY.verifyJobId);
+  const live = jobs.find((job) => job?.id === PUBLISH_RECOVERY.liveJobId);
+  const publish = jobs.find(
+    (job) => job?.id === PUBLISH_RECOVERY.failedPublishJobId,
+  );
+  requireJob(verify, {
+    conclusion: "success",
+    id: PUBLISH_RECOVERY.verifyJobId,
+    name: "Verify the immutable release artifact",
+  });
+  requireSuccessfulStep(verify, "Run release checks");
+  requireSuccessfulStep(verify, "Pack the exact release artifact");
+  requireSuccessfulStep(
+    verify,
+    "Test consumers against the exact release artifact",
+  );
+  requireSuccessfulStep(verify, "Upload the verified release artifact");
+  requireJob(live, {
+    conclusion: "success",
+    id: PUBLISH_RECOVERY.liveJobId,
+    name: "Verify the release tag against CometAPI",
+  });
+  requireSuccessfulStep(live, "Run the bounded live smoke");
+  requireJob(publish, {
+    conclusion: "failure",
+    id: PUBLISH_RECOVERY.failedPublishJobId,
+    name: "Publish with npm Trusted Publishing",
+  });
+  requireEqual(publish?.runner_id, 0, "failed publish runner ID");
+  requireEqual(publish?.steps?.length, 0, "failed publish step count");
+
+  if (!Array.isArray(annotations)) {
+    fail("Release workflow failed publish annotations must be an array.");
+  }
+  const branchRejections = annotations.filter(
+    (annotation) =>
+      annotation?.annotation_level === "failure" &&
+      annotation?.message ===
+        'Branch "main" is not allowed to deploy to npm due to environment protection rules.',
+  );
+  requireEqual(
+    branchRejections.length,
+    1,
+    "failed publish branch-policy annotation count",
+  );
+
+  if (!Array.isArray(artifacts)) {
+    fail("Release workflow recovery source artifacts must be an array.");
+  }
+  requireEqual(artifacts.length, 1, "recovery source artifact count");
+  const artifact = artifacts[0];
+  requireEqual(
+    artifact?.id,
+    PUBLISH_RECOVERY.artifactId,
+    "recovery artifact ID",
+  );
+  requireEqual(
+    artifact?.name,
+    PUBLISH_RECOVERY.artifactName,
+    "recovery artifact name",
+  );
+  requireEqual(
+    artifact?.digest,
+    PUBLISH_RECOVERY.artifactDigest,
+    "recovery artifact digest",
+  );
+  requireEqual(artifact?.expired, false, "recovery artifact expired state");
+  requireEqual(
+    artifact?.workflow_run?.id,
+    PUBLISH_RECOVERY.sourcePublishRunId,
+    "recovery artifact run ID",
+  );
+  requireEqual(
+    artifact?.workflow_run?.head_sha,
+    PUBLISH_RECOVERY.sourcePublishCommit,
+    "recovery artifact head SHA",
+  );
+
+  return {
+    artifactId: PUBLISH_RECOVERY.artifactId,
+    artifactName: PUBLISH_RECOVERY.artifactName,
+    liveJobId: PUBLISH_RECOVERY.liveJobId,
   };
 }
 
