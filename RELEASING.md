@@ -649,6 +649,22 @@ The repository maintains four independently auditable workflows:
   }
   EOF
 
+  dist_tags_ready="false"
+  for attempt in {1..12}; do
+    latest_version="$(npm view cometapi@latest version 2>/dev/null || true)"
+    next_version="$(npm view cometapi@next version 2>/dev/null || true)"
+    if [[ "$latest_version" == "0.1.1" &&
+          "$next_version" == "0.1.0-alpha.3" ]]; then
+      dist_tags_ready="true"
+      break
+    fi
+    [[ "$attempt" == "12" ]] || sleep 10
+  done
+  if [[ "$dist_tags_ready" != "true" ]]; then
+    echo "The required latest and next dist-tags did not converge." >&2
+    exit 1
+  fi
+
   attestations_url="$(REGISTRY_DIST="$registry_dist" node -e \
     'process.stdout.write(JSON.parse(process.env.REGISTRY_DIST).attestations.url)')"
   attestations_file="$(mktemp)"
