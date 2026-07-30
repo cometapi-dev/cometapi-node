@@ -303,17 +303,42 @@ The repository maintains four independently auditable workflows:
   `main` deployment while the protected npm environment accepts only `v*` tags.
   No OIDC token or npm mutation occurred in either failed run.
 
-  The replacement one-cycle recovery uses a human-created GitHub deployment for
-  the existing immutable `v0.1.1` tag. It accepts only actor and triggering actor
-  `tensornull`, exact release commit
-  `c98b514227858cd183c781270a7f78f65b577e82`, Release Please run
-  `30469181724` attempt 1, failed Publish run `30471665743` attempt 1, the exact
+  A first attempted recovery deployment [5667717157](https://github.com/cometapi-dev/cometapi-node/deployments/5667717157)
+  was intentionally marked failed: the immutable `v0.1.1` tag predates the
+  temporary deployment trigger, so GitHub found no workflow at that tag and no
+  runner or npm mutation occurred. The replacement one-cycle recovery uses the
+  documented `workflow_dispatch` API with `ref=v0.1.1`; GitHub dispatches the
+  workflow from the reviewed default-branch definition while setting
+  `GITHUB_REF=refs/tags/v0.1.1`, which satisfies the existing npm tag policy.
+  The exact request is:
+
+  ```bash
+  gh api --method POST \
+    repos/cometapi-dev/cometapi-node/actions/workflows/publish.yml/dispatches \
+    --input - <<'JSON'
+  {
+    "ref": "v0.1.1",
+    "inputs": {
+      "recovery_task": "npm-publish-recovery",
+      "release_commit": "c98b514227858cd183c781270a7f78f65b577e82",
+      "release_tag": "v0.1.1",
+      "release_run_id": "30469181724",
+      "release_run_attempt": "1",
+      "source_publish_run_id": "30471665743",
+      "source_publish_run_attempt": "1"
+    }
+  }
+  JSON
+  ```
+
+  The workflow accepts only actor and triggering actor `tensornull`, the exact
+  release commit and tag, both source run IDs and attempts, the reviewed
   first-parent control merge, and the recorded repair files. It revalidates the
   successful source verify job, artifact ID and digest, branch-policy failure,
-  and the log evidence for exactly three sequential live requests. The new tag
-  run repeats offline package and exact-artifact gates but does not spend another
+  and log evidence for exactly three sequential live requests. The tag run
+  repeats offline package and exact-artifact gates but does not spend another
   live request budget. The protected npm environment and OIDC gate remain
-  unchanged. The deployment trigger and exact recovery constants must be removed
+  unchanged. The dispatch trigger and exact recovery constants must be removed
   in the post-release evidence PR; the `runner.temp` isolation remains permanent.
 
 Third-party actions are pinned to full commit SHAs. Workflow permissions remain
