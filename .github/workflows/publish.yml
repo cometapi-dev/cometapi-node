@@ -8,12 +8,16 @@ on:
       - completed
   workflow_dispatch:
     inputs:
-      recovery_task:
-        description: Exact one-cycle recovery task.
+      publish_operation:
+        description: Exact publication operation.
+        required: true
+        type: string
+      control_commit:
+        description: Commit containing the dispatched workflow.
         required: true
         type: string
       release_commit:
-        description: Immutable v0.1.1 release commit.
+        description: Immutable release commit.
         required: true
         type: string
       release_tag:
@@ -29,12 +33,16 @@ on:
         required: true
         type: string
       source_publish_run_id:
-        description: Failed Publish run whose evidence is being recovered.
-        required: true
+        description: Failed Publish run used only by an authorized recovery.
+        required: false
         type: string
       source_publish_run_attempt:
-        description: Failed Publish run attempt.
-        required: true
+        description: Failed Publish attempt used only by an authorized recovery.
+        required: false
+        type: string
+      recovery_policy_id:
+        description: Captured temporary main deployment-policy ID for recovery.
+        required: false
         type: string
 
 permissions:
@@ -47,17 +55,271 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  handoff:
+    name: Dispatch publication from the immutable release tag
+    if: >-
+      vars.RELEASE_PLEASE_ENABLED == 'true' &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Check out the successful Release Please commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Classify the exact Release Please handoff
+        id: result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARTIFACTS: ${{ runner.temp }}/release-please-artifacts.json
+          RELEASE_JOBS: ${{ runner.temp }}/release-please-jobs.json
+          RELEASE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}/artifacts?per_page=100" \
+            > "$RELEASE_ARTIFACTS"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}/attempts/${RELEASE_RUN_ATTEMPT}/jobs?per_page=100" \
+            > "$RELEASE_JOBS"
+          node --input-type=module <<'EOF'
+          import { appendFileSync, readFileSync } from "node:fs";
+          import { classifyReleasePleaseHandoff } from "./scripts/release-workflow-validation.mjs";
+
+          const result = classifyReleasePleaseHandoff({
+            artifacts: JSON.parse(
+              readFileSync(process.env.RELEASE_ARTIFACTS, "utf8"),
+            ).artifacts,
+            jobs: JSON.parse(readFileSync(process.env.RELEASE_JOBS, "utf8")).jobs,
+            runAttempt: Number(process.env.RELEASE_RUN_ATTEMPT),
+            runId: Number(process.env.RELEASE_RUN_ID),
+          });
+          appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `has-result=${String(result.hasResult)}\n`,
+          );
+          EOF
+      - name: Install validation dependencies without lifecycle scripts
+        if: steps.result.outputs.has-result == 'true'
+        run: npm ci --ignore-scripts
+      - name: Download the exact Release Please result
+        if: steps.result.outputs.has-result == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-please-result-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: ${{ runner.temp }}/release-please-result
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Validate the exact release and tag dispatch contract
+        id: release
+        if: steps.result.outputs.has-result == 'true'
+        env:
+          EXPECTED_REPOSITORY: cometapi-dev/cometapi-node
+          EXPECTED_WORKFLOW: Release Please
+          EXPECTED_WORKFLOW_PATH: .github/workflows/release-please.yml
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RESULT: ${{ runner.temp }}/release-please-result/result.json
+          TAGGED_PUBLISH_WORKFLOW: ${{ runner.temp }}/tagged-publish.yml
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$WORKFLOW_SHA" ]]; then
+            echo "The handoff checkout does not match the successful Release Please SHA." >&2
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]; then
+            echo "The release commit is no longer the exact origin/main tip." >&2
+            exit 1
+          fi
+
+          node --input-type=module <<'EOF'
+          import { appendFileSync, readFileSync } from "node:fs";
+          import {
+            validateReleasePleaseActionResult,
+            validateReleaseWorkflowRun,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+          const run = validateReleaseWorkflowRun(event, {
+            checkedOutSha: process.env.WORKFLOW_SHA,
+            repository: process.env.EXPECTED_REPOSITORY,
+            workflowName: process.env.EXPECTED_WORKFLOW,
+            workflowPath: process.env.EXPECTED_WORKFLOW_PATH,
+          });
+          const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+          const release = validateReleasePleaseActionResult(
+            JSON.parse(readFileSync(process.env.RELEASE_RESULT, "utf8")),
+            {
+              releaseCommit: run.releaseCommit,
+              repository: process.env.EXPECTED_REPOSITORY,
+              runAttempt: run.runAttempt,
+              runId: run.runId,
+              version: manifest.version,
+              workflowName: process.env.EXPECTED_WORKFLOW,
+              workflowPath: process.env.EXPECTED_WORKFLOW_PATH,
+            },
+          );
+          appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            [
+              `release-commit=${release.releaseCommit}`,
+              `release-run-attempt=${run.runAttempt}`,
+              `release-run-id=${run.runId}`,
+              `release-tag=${release.tag}`,
+              `release-url=${release.htmlUrl}`,
+              "",
+            ].join("\n"),
+          );
+          EOF
+
+          release_tag="$(sed -n 's/^release-tag=//p' "$GITHUB_OUTPUT")"
+          release_url="$(sed -n 's/^release-url=//p' "$GITHUB_OUTPUT")"
+          if [[ -z "$release_tag" || -z "$release_url" ]]; then
+            echo "The exact release handoff outputs are missing." >&2
+            exit 1
+          fi
+          release_json="$RUNNER_TEMP/handoff-release.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" > "$release_json"
+          git fetch --no-tags origin "+refs/tags/${release_tag}:refs/tags/${release_tag}"
+          tag_commit="$(git rev-parse --verify "refs/tags/${release_tag}^{commit}")"
+          git show "refs/tags/${release_tag}:.github/workflows/publish.yml" \
+            > "$TAGGED_PUBLISH_WORKFLOW"
+
+          RELEASE_JSON="$release_json" RELEASE_TAG="$release_tag" \
+            RELEASE_URL="$release_url" TAG_COMMIT="$tag_commit" \
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { parse } from "yaml";
+          import {
+            extractReleaseNotesFromChangelog,
+            validateGitHubRelease,
+            validatePublishWorkflowContract,
+          } from "./scripts/release-workflow-validation.mjs";
+
+          const version = JSON.parse(readFileSync("package.json", "utf8")).version;
+          validateGitHubRelease(
+            JSON.parse(readFileSync(process.env.RELEASE_JSON, "utf8")),
+            {
+              expectedBody: extractReleaseNotesFromChangelog(
+                readFileSync("CHANGELOG.md", "utf8"),
+                version,
+              ),
+              htmlUrl: process.env.RELEASE_URL,
+              releaseCommit: process.env.WORKFLOW_SHA,
+              tag: process.env.RELEASE_TAG,
+              tagCommit: process.env.TAG_COMMIT,
+            },
+          );
+          validatePublishWorkflowContract(
+            parse(readFileSync(process.env.TAGGED_PUBLISH_WORKFLOW, "utf8")),
+          );
+          EOF
+      - name: Dispatch the exact immutable tag
+        if: steps.result.outputs.has-result == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ steps.release.outputs.release-commit }}
+          RELEASE_RUN_ATTEMPT: ${{ steps.release.outputs.release-run-attempt }}
+          RELEASE_RUN_ID: ${{ steps.release.outputs.release-run-id }}
+          RELEASE_TAG: ${{ steps.release.outputs.release-tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$RELEASE_COMMIT" ]]; then
+            echo "origin/main moved away from the release commit before handoff." >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" != "$RELEASE_COMMIT" ]]; then
+            echo "The immutable release tag changed before handoff." >&2
+            exit 1
+          fi
+          before_runs="$RUNNER_TEMP/tag-dispatch-runs-before.json"
+          after_runs="$RUNNER_TEMP/tag-dispatch-runs-after.json"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?event=workflow_dispatch&per_page=100" \
+            | jq '[.[].workflow_runs[].id]' > "$before_runs"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/dispatches" \
+            -f ref="$RELEASE_TAG" \
+            -f "inputs[publish_operation]=release" \
+            -f "inputs[control_commit]=$RELEASE_COMMIT" \
+            -f "inputs[release_commit]=$RELEASE_COMMIT" \
+            -f "inputs[release_tag]=$RELEASE_TAG" \
+            -f "inputs[release_run_id]=$RELEASE_RUN_ID" \
+            -f "inputs[release_run_attempt]=$RELEASE_RUN_ATTEMPT"
+
+          publish_run_id=""
+          for _ in {1..12}; do
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?event=workflow_dispatch&per_page=100" \
+              | jq '[.[].workflow_runs[]]' > "$after_runs"
+            candidate_count="$(jq \
+              --arg commit "$RELEASE_COMMIT" --arg tag "$RELEASE_TAG" \
+              --slurpfile before "$before_runs" \
+              '[.[] | select(.id as $id | ($before[0] | index($id) | not)) |
+                select(.actor.login == "github-actions[bot]" and
+                  .triggering_actor.login == "github-actions[bot]" and
+                  .event == "workflow_dispatch" and .head_branch == $tag and
+                  .head_sha == $commit)] | length' "$after_runs")"
+            if [[ "$candidate_count" -gt 1 ]]; then
+              echo "Multiple Publish runs matched the immutable tag handoff." >&2
+              exit 1
+            fi
+            if [[ "$candidate_count" == "1" ]]; then
+              publish_run_id="$(jq -r \
+                --arg commit "$RELEASE_COMMIT" --arg tag "$RELEASE_TAG" \
+                --slurpfile before "$before_runs" \
+                '[.[] | select(.id as $id | ($before[0] | index($id) | not)) |
+                  select(.actor.login == "github-actions[bot]" and
+                    .triggering_actor.login == "github-actions[bot]" and
+                    .event == "workflow_dispatch" and .head_branch == $tag and
+                    .head_sha == $commit)][0].id' "$after_runs")"
+              break
+            fi
+            sleep 5
+          done
+          if [[ ! "$publish_run_id" =~ ^[1-9][0-9]*$ ]]; then
+            echo "The immutable tag dispatch did not create one exact Publish run." >&2
+            exit 1
+          fi
+
+          echo "Dispatched exact Publish run ${publish_run_id} from ${RELEASE_TAG}."
+
   verify:
     name: Verify the immutable release artifact
     if: >-
       vars.RELEASE_PLEASE_ENABLED == 'true' &&
-      ((github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main') ||
-       (github.event_name == 'workflow_dispatch' &&
-        github.ref == 'refs/tags/v0.1.1' &&
-        inputs.recovery_task == 'npm-publish-recovery' &&
+      github.event_name == 'workflow_dispatch' &&
+      ((inputs.publish_operation == 'release' &&
+        startsWith(github.ref, 'refs/tags/v0.1.') &&
+        github.ref == format('refs/tags/{0}', inputs.release_tag) &&
+        github.sha == inputs.release_commit &&
+        github.workflow_sha == inputs.control_commit &&
+        inputs.control_commit == inputs.release_commit) ||
+       (inputs.publish_operation == 'recover-v0.1.1' &&
+        inputs.recovery_policy_id != '' &&
+        github.ref == 'refs/heads/main' &&
+        github.sha == inputs.control_commit &&
+        github.workflow_sha == inputs.control_commit &&
         inputs.release_commit == 'c98b514227858cd183c781270a7f78f65b577e82' &&
         inputs.release_tag == 'v0.1.1' &&
         inputs.release_run_id == '30469181724' &&
@@ -67,14 +329,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SOURCE_RELEASE_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_commit || github.event.workflow_run.head_sha }}
-      SOURCE_RELEASE_RUN_ATTEMPT: ${{ github.event_name == 'workflow_dispatch' && inputs.release_run_attempt || github.event.workflow_run.run_attempt }}
-      SOURCE_RELEASE_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.release_run_id || github.event.workflow_run.id }}
+      SOURCE_RELEASE_COMMIT: ${{ inputs.release_commit }}
+      SOURCE_RELEASE_RUN_ATTEMPT: ${{ inputs.release_run_attempt }}
+      SOURCE_RELEASE_RUN_ID: ${{ inputs.release_run_id }}
     outputs:
       artifact-name: ${{ steps.artifact-name.outputs.name }}
+      control-commit: ${{ inputs.control_commit }}
       dist-tag: ${{ steps.version.outputs.dist-tag }}
       release-commit: ${{ steps.trust.outputs.release-commit }}
       release-tag: ${{ steps.trust.outputs.release-tag }}
+      publish-operation: ${{ inputs.publish_operation }}
+      release-please-snapshot: ${{ steps.release-please-snapshot.outputs.digest }}
       reuse-live-smoke: ${{ steps.recovery-evidence.outputs.reuse-live-smoke }}
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -83,26 +348,28 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.workflow_sha || github.sha }}
-      - name: Validate the exact tag workflow dispatch recovery
-        if: github.event_name == 'workflow_dispatch'
+          ref: ${{ github.workflow_sha }}
+      - name: Validate the exact workflow dispatch
         env:
           ACTOR: ${{ github.actor }}
           CHANGED_FILES: ${{ runner.temp }}/publish-recovery-files
           CONTROL_COMMIT: ${{ github.workflow_sha }}
+          CONTROL_COMMIT_INPUT: ${{ inputs.control_commit }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
           MAIN_COMMIT: ${{ github.workflow_sha }}
+          OPERATION: ${{ inputs.publish_operation }}
           RELEASE_COMMIT: ${{ inputs.release_commit }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_RUN_ATTEMPT: ${{ inputs.release_run_attempt }}
           RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          RECOVERY_POLICY_ID: ${{ inputs.recovery_policy_id }}
           SOURCE_PUBLISH_RUN_ATTEMPT: ${{ inputs.source_publish_run_attempt }}
           SOURCE_PUBLISH_RUN_ID: ${{ inputs.source_publish_run_id }}
-          TASK: ${{ inputs.recovery_task }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -112,45 +379,118 @@ jobs:
           fi
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           MAIN_COMMIT="$(git rev-parse refs/remotes/origin/main)"
-          if [[ "$MAIN_COMMIT" != "$CONTROL_COMMIT" ]]; then
-            echo "main moved after the publish recovery was triggered." >&2
-            exit 1
-          fi
-          CONTROL_FIRST_PARENT="$(git rev-parse "${CONTROL_COMMIT}^1")"
-          git diff --name-only "$CONTROL_FIRST_PARENT" "$CONTROL_COMMIT" > "$CHANGED_FILES"
+          case "$OPERATION" in
+            recover-v0.1.1)
+              if [[ "$MAIN_COMMIT" != "$CONTROL_COMMIT" ]]; then
+                echo "main moved after the publish recovery was triggered." >&2
+                exit 1
+              fi
+              CONTROL_FIRST_PARENT="$(git rev-parse "${CONTROL_COMMIT}^1")"
+              git diff --name-only "$CONTROL_FIRST_PARENT" "$CONTROL_COMMIT" > "$CHANGED_FILES"
+              ;;
+            release)
+              if [[ "$MAIN_COMMIT" != "$RELEASE_COMMIT" ]]; then
+                echo "The tag release commit is no longer the exact origin/main tip." >&2
+                exit 1
+              fi
+              CONTROL_FIRST_PARENT=""
+              : > "$CHANGED_FILES"
+              ;;
+            *) echo "Publish received an unsupported operation." >&2; exit 1 ;;
+          esac
           MAIN_COMMIT="$MAIN_COMMIT" CONTROL_FIRST_PARENT="$CONTROL_FIRST_PARENT" \
             node --input-type=module <<'EOF'
           import { readFileSync } from "node:fs";
-          import { validatePublishWorkflowDispatchRecoveryTrigger } from "./scripts/release-workflow-validation.mjs";
+          import {
+            validatePublishWorkflowDispatchRecoveryTrigger,
+            validatePublishWorkflowDispatchTrigger,
+          } from "./scripts/release-workflow-validation.mjs";
 
-          validatePublishWorkflowDispatchRecoveryTrigger({
+          const dispatchIdentity = {
             actor: process.env.ACTOR,
-            changedFiles: readFileSync(process.env.CHANGED_FILES, "utf8")
-              .split("\n")
-              .filter((file) => file !== ""),
             controlCommit: process.env.CONTROL_COMMIT,
-            controlFirstParent: process.env.CONTROL_FIRST_PARENT,
             eventName: process.env.EVENT_NAME,
             eventRef: process.env.EVENT_REF,
             eventSha: process.env.EVENT_SHA,
-            mainCommit: process.env.MAIN_COMMIT,
+            operation: process.env.OPERATION,
             releaseCommit: process.env.RELEASE_COMMIT,
             releaseTag: process.env.RELEASE_TAG,
-            sourcePublishRunAttempt: Number(
-              process.env.SOURCE_PUBLISH_RUN_ATTEMPT,
-            ),
-            sourcePublishRunId: Number(process.env.SOURCE_PUBLISH_RUN_ID),
+            recoveryPolicyId: Number(process.env.RECOVERY_POLICY_ID),
             sourceReleaseCommit: process.env.SOURCE_RELEASE_COMMIT,
             sourceRunAttempt: Number(process.env.SOURCE_RELEASE_RUN_ATTEMPT),
             sourceRunId: Number(process.env.SOURCE_RELEASE_RUN_ID),
-            task: process.env.TASK,
             triggeringActor: process.env.TRIGGERING_ACTOR,
             workflowRunAttempt: Number(process.env.WORKFLOW_RUN_ATTEMPT),
+            workflowSha: process.env.WORKFLOW_SHA,
+          };
+          if (process.env.OPERATION === "release") {
+            validatePublishWorkflowDispatchTrigger(dispatchIdentity);
+          } else {
+            validatePublishWorkflowDispatchRecoveryTrigger({
+              ...dispatchIdentity,
+              changedFiles: readFileSync(process.env.CHANGED_FILES, "utf8")
+                .split("\n")
+                .filter((file) => file !== ""),
+              controlCommitInput: process.env.CONTROL_COMMIT_INPUT,
+              controlFirstParent: process.env.CONTROL_FIRST_PARENT,
+              mainCommit: process.env.MAIN_COMMIT,
+              sourcePublishRunAttempt: Number(
+                process.env.SOURCE_PUBLISH_RUN_ATTEMPT,
+              ),
+              sourcePublishRunId: Number(process.env.SOURCE_PUBLISH_RUN_ID),
+            });
+          }
+          EOF
+      - name: Require the only recovery dispatch for this control commit
+        if: inputs.publish_operation == 'recover-v0.1.1'
+        env:
+          CONTROL_COMMIT: ${{ inputs.control_commit }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_DISPATCH_RUNS: ${{ runner.temp }}/publish-recovery-dispatch-runs.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100" \
+            > "$RECOVERY_DISPATCH_RUNS"
+          node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { validateUniquePublishRecoveryRun } from "./scripts/release-workflow-validation.mjs";
+
+          validateUniquePublishRecoveryRun({
+            controlCommit: process.env.CONTROL_COMMIT,
+            currentRunId: Number(process.env.CURRENT_RUN_ID),
+            responses: JSON.parse(
+              readFileSync(process.env.RECOVERY_DISPATCH_RUNS, "utf8"),
+            ),
           });
+          EOF
+      - name: Freeze the Release Please run set
+        id: release-please-snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PLEASE_RUNS: ${{ runner.temp }}/release-please-runs.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/release-please.yml/runs?per_page=100" \
+            | jq '[.[].workflow_runs[]]' > "$RELEASE_PLEASE_RUNS"
+          node --input-type=module <<'EOF'
+          import { createHash } from "node:crypto";
+          import { appendFileSync, readFileSync } from "node:fs";
+          import { snapshotReleasePleaseRuns } from "./scripts/release-workflow-validation.mjs";
+
+          const snapshot = snapshotReleasePleaseRuns(
+            JSON.parse(readFileSync(process.env.RELEASE_PLEASE_RUNS, "utf8")),
+          );
+          const digest = createHash("sha256").update(snapshot).digest("hex");
+          appendFileSync(process.env.GITHUB_OUTPUT, `digest=${digest}\n`);
           EOF
       - name: Validate the prior artifact and bounded live evidence
         id: recovery-evidence
-        if: github.event_name == 'workflow_dispatch'
+        if: inputs.publish_operation == 'recover-v0.1.1'
         env:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_ANNOTATIONS: ${{ runner.temp }}/publish-recovery-annotations.json
@@ -236,8 +576,8 @@ jobs:
           EXPECTED_REPOSITORY_URL: git+https://github.com/cometapi-dev/cometapi-node.git
           EXPECTED_WORKFLOW: Release Please
           EXPECTED_WORKFLOW_PATH: .github/workflows/release-please.yml
-          CONTROL_SHA: ${{ github.event_name == 'workflow_dispatch' && github.workflow_sha || github.sha }}
-          EVENT_NAME: ${{ github.event_name }}
+          CONTROL_SHA: ${{ inputs.control_commit }}
+          OPERATION: ${{ inputs.publish_operation }}
           RELEASE_RESULT: ${{ runner.temp }}/release-please-result/result.json
           SOURCE_RUN_FILE: ${{ runner.temp }}/release-please-source-run.json
           SOURCE_RUN_ATTEMPT: ${{ env.SOURCE_RELEASE_RUN_ATTEMPT }}
@@ -253,15 +593,21 @@ jobs:
           fi
 
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          case "$EVENT_NAME" in
-            workflow_run) expected_main="$WORKFLOW_SHA" ;;
-            workflow_dispatch) expected_main="$CONTROL_SHA" ;;
-            *) echo "Publish received an unsupported event." >&2; exit 1 ;;
+          case "$OPERATION" in
+            recover-v0.1.1)
+              if [[ "$(git rev-parse refs/remotes/origin/main)" != "$CONTROL_SHA" ]]; then
+                echo "origin/main moved after the trusted recovery event." >&2
+                exit 1
+              fi
+              ;;
+            release)
+              if [[ "$(git rev-parse refs/remotes/origin/main)" != "$WORKFLOW_SHA" ]]; then
+                echo "The release commit is no longer the exact origin/main tip." >&2
+                exit 1
+              fi
+              ;;
+            *) echo "Publish received an unsupported operation." >&2; exit 1 ;;
           esac
-          if [[ "$(git rev-parse refs/remotes/origin/main)" != "$expected_main" ]]; then
-            echo "origin/main moved after the trusted publish event." >&2
-            exit 1
-          fi
 
           node --input-type=module <<'EOF'
           import { appendFileSync, readFileSync } from "node:fs";
@@ -301,22 +647,6 @@ jobs:
             throw new Error(
               "Release workflow source run ID or attempt changed before publication.",
             );
-          }
-          if (process.env.EVENT_NAME === "workflow_run") {
-            const eventRun = validateReleaseWorkflowRun(
-              JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")),
-              {
-                checkedOutSha: process.env.WORKFLOW_SHA,
-                repository: process.env.EXPECTED_REPOSITORY,
-                workflowName: process.env.EXPECTED_WORKFLOW,
-                workflowPath: process.env.EXPECTED_WORKFLOW_PATH,
-              },
-            );
-            if (JSON.stringify(eventRun) !== JSON.stringify(run)) {
-              throw new Error(
-                "Release workflow source run differs from the workflow_run event.",
-              );
-            }
           }
           const manifest = JSON.parse(readFileSync("package.json", "utf8"));
           if (
@@ -424,13 +754,29 @@ jobs:
           npm run test:live-contract
           npm run test:compat -- --lane locked
           npm run check:self-contained
+      - name: Download the prior live-verified release artifact
+        if: inputs.publish_operation == 'recover-v0.1.1'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.recovery-evidence.outputs.artifact-id }}
+          path: release-artifacts
+          merge-multiple: true
+          digest-mismatch: error
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_publish_run_id }}
       - name: Pack the exact release artifact
-        id: pack
+        if: inputs.publish_operation == 'release'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-artifacts
           npm pack --pack-destination release-artifacts
+      - name: Select the exact release artifact
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
           mapfile -t tarballs < <(find release-artifacts -maxdepth 1 -type f -name '*.tgz' -print)
           if [[ "${#tarballs[@]}" -ne 1 ]]; then
             echo "Expected exactly one packed artifact, found ${#tarballs[@]}." >&2
@@ -472,7 +818,7 @@ jobs:
     environment: live-smoke
     steps:
       - name: Reuse the successful bounded live smoke
-        if: github.event_name == 'workflow_dispatch'
+        if: needs.verify.outputs.publish-operation == 'recover-v0.1.1'
         env:
           REUSE_LIVE_SMOKE: ${{ needs.verify.outputs.reuse-live-smoke }}
         shell: bash
@@ -483,25 +829,25 @@ jobs:
             exit 1
           fi
       - name: Check out the verified release tag
-        if: github.event_name != 'workflow_dispatch'
+        if: needs.verify.outputs.publish-operation == 'release'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ needs.verify.outputs.release-commit }}
       - name: Set up Node.js 24
-        if: github.event_name != 'workflow_dispatch'
+        if: needs.verify.outputs.publish-operation == 'release'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.x
           cache: npm
       - name: Install locked dependencies
-        if: github.event_name != 'workflow_dispatch'
+        if: needs.verify.outputs.publish-operation == 'release'
         run: npm ci
       - name: Build the release tag
-        if: github.event_name != 'workflow_dispatch'
+        if: needs.verify.outputs.publish-operation == 'release'
         run: npm run build
       - name: Run the bounded live smoke
-        if: github.event_name != 'workflow_dispatch'
+        if: needs.verify.outputs.publish-operation == 'release'
         env:
           COMETAPI_KEY: ${{ secrets.COMETAPI_KEY }}
           COMETAPI_LIVE_SMOKE: "1"
@@ -525,12 +871,16 @@ jobs:
       name: npm
       url: https://www.npmjs.com/package/cometapi/v/${{ needs.verify.outputs.version }}
     permissions:
+      actions: read
+      checks: read
       contents: read
+      deployments: read
       id-token: write
     steps:
       - name: Check out the verified release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ needs.verify.outputs.release-commit }}
       - name: Set up Node.js 24
@@ -546,6 +896,285 @@ jobs:
         with:
           name: ${{ needs.verify.outputs.artifact-name }}
           path: release-artifacts
+      - name: Reconfirm protected state immediately before publication
+        env:
+          CONTROL_COMMIT: ${{ needs.verify.outputs.control-commit }}
+          CONTROL_VALIDATOR: ${{ runner.temp }}/release-workflow-validation.mjs
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          ENVIRONMENT_FILE: ${{ runner.temp }}/npm-environment.json
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          OPERATION: ${{ needs.verify.outputs.publish-operation }}
+          POLICIES_FILE: ${{ runner.temp }}/npm-deployment-policies.json
+          RECOVERY_ANNOTATIONS: ${{ runner.temp }}/publish-recovery-annotations-before-publish.json
+          RECOVERY_ARTIFACTS: ${{ runner.temp }}/publish-recovery-artifacts-before-publish.json
+          RECOVERY_DISPATCH_RUNS: ${{ runner.temp }}/publish-recovery-dispatch-runs-before-publish.json
+          RECOVERY_JOBS: ${{ runner.temp }}/publish-recovery-jobs-before-publish.json
+          RECOVERY_LIVE_LOG: ${{ runner.temp }}/publish-recovery-live-before-publish.log
+          RECOVERY_POLICY_ID: ${{ inputs.recovery_policy_id }}
+          RECOVERY_RUN: ${{ runner.temp }}/publish-recovery-run-before-publish.json
+          RELEASE_COMMIT: ${{ needs.verify.outputs.release-commit }}
+          RELEASE_FILE: ${{ runner.temp }}/github-release-before-publish.json
+          RELEASE_RUN_ATTEMPT: ${{ inputs.release_run_attempt }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          RELEASE_RUN_FILE: ${{ runner.temp }}/release-run-before-publish.json
+          RELEASE_TAG: ${{ needs.verify.outputs.release-tag }}
+          RELEASE_PLEASE_ENABLED: ${{ vars.RELEASE_PLEASE_ENABLED }}
+          RELEASE_PLEASE_RUNS: ${{ runner.temp }}/release-please-runs-before-publish.json
+          RELEASE_PLEASE_SNAPSHOT: ${{ needs.verify.outputs.release-please-snapshot }}
+          SOURCE_PUBLISH_RUN_ATTEMPT: ${{ inputs.source_publish_run_attempt }}
+          SOURCE_PUBLISH_RUN_ID: ${{ inputs.source_publish_run_id }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_COMMIT" ]]; then
+            echo "The publication checkout no longer matches the verified release commit." >&2
+            exit 1
+          fi
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          main_commit="$(git rev-parse refs/remotes/origin/main)"
+          tag_commit="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
+          if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "The release tag no longer resolves to the verified commit." >&2
+            exit 1
+          fi
+          case "$OPERATION" in
+            release)
+              if [[ "$EVENT_REF" != "refs/tags/${RELEASE_TAG}" ||
+                    "$EVENT_SHA" != "$RELEASE_COMMIT" ||
+                    "$WORKFLOW_SHA" != "$RELEASE_COMMIT" ||
+                    "$CONTROL_COMMIT" != "$RELEASE_COMMIT" ]]; then
+                echo "The tag publication identity changed while awaiting approval." >&2
+                exit 1
+              fi
+              if [[ "$main_commit" != "$RELEASE_COMMIT" ]]; then
+                echo "The release commit is no longer the exact origin/main tip." >&2
+                exit 1
+              fi
+              ;;
+            recover-v0.1.1)
+              if [[ "$EVENT_REF" != "refs/heads/main" ||
+                    "$EVENT_SHA" != "$CONTROL_COMMIT" ||
+                    "$WORKFLOW_SHA" != "$CONTROL_COMMIT" ||
+                    "$main_commit" != "$CONTROL_COMMIT" ||
+                    "$RELEASE_COMMIT" != "c98b514227858cd183c781270a7f78f65b577e82" ||
+                    "$RELEASE_TAG" != "v0.1.1" ]]; then
+                echo "The exact main recovery identity changed while awaiting approval." >&2
+                exit 1
+              fi
+              ;;
+            *) echo "Publish received an unsupported operation." >&2; exit 1 ;;
+          esac
+
+          git show "${CONTROL_COMMIT}:scripts/release-workflow-validation.mjs" \
+            > "$CONTROL_VALIDATOR"
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+            > "$RELEASE_FILE"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}" \
+            > "$RELEASE_RUN_FILE"
+          gh api "repos/${GITHUB_REPOSITORY}/environments/npm" \
+            > "$ENVIRONMENT_FILE"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/environments/npm/deployment-branch-policies?per_page=100" \
+            | jq '{branch_policies: [.[].branch_policies[]]}' > "$POLICIES_FILE"
+          if [[ "$RELEASE_PLEASE_ENABLED" != "true" ]]; then
+            echo "RELEASE_PLEASE_ENABLED changed while publication awaited approval." >&2
+            exit 1
+          fi
+
+          if [[ "$OPERATION" == "recover-v0.1.1" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}" \
+              > "$RECOVERY_RUN"
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/attempts/${SOURCE_PUBLISH_RUN_ATTEMPT}/jobs?per_page=100" \
+              > "$RECOVERY_JOBS"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_PUBLISH_RUN_ID}/artifacts" \
+              > "$RECOVERY_ARTIFACTS"
+            gh api "repos/${GITHUB_REPOSITORY}/check-runs/90643868523/annotations" \
+              > "$RECOVERY_ANNOTATIONS"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/90643725110/logs" \
+              > "$RECOVERY_LIVE_LOG"
+            if [[ "$(grep -Fc 'Live smoke passed 3 sequential requests with a 16-token output cap.' "$RECOVERY_LIVE_LOG")" != "1" ]]; then
+              echo "The bounded live evidence changed while publication awaited approval." >&2
+              exit 1
+            fi
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+
+          const { validatePublishRecoveryEvidence } = await import(
+            pathToFileURL(process.env.CONTROL_VALIDATOR)
+          );
+          validatePublishRecoveryEvidence({
+            annotations: JSON.parse(
+              readFileSync(process.env.RECOVERY_ANNOTATIONS, "utf8"),
+            ),
+            artifacts: JSON.parse(
+              readFileSync(process.env.RECOVERY_ARTIFACTS, "utf8"),
+            ).artifacts,
+            jobs: JSON.parse(
+              readFileSync(process.env.RECOVERY_JOBS, "utf8"),
+            ).jobs,
+            run: JSON.parse(readFileSync(process.env.RECOVERY_RUN, "utf8")),
+          });
+          EOF
+          fi
+
+          for state in in_progress queued waiting requested pending; do
+            runs_file="$RUNNER_TEMP/publish-${state}-runs.json"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?status=${state}&per_page=100" \
+              > "$runs_file"
+            if ! jq -e --argjson current "$GITHUB_RUN_ID" \
+              '[.workflow_runs[] | select(.id != $current)] | length == 0' \
+              "$runs_file" >/dev/null; then
+              echo "A competing Publish run appeared before registry mutation." >&2
+              exit 1
+            fi
+          done
+
+          view_error="$RUNNER_TEMP/npm-view-before-publish.err"
+          set +e
+          exact_version="$(npm view "cometapi@${VERSION}" version 2>"$view_error")"
+          view_status=$?
+          set -e
+          if [[ "$view_status" -ne 0 ]]; then
+            if grep -q "E404" "$view_error"; then
+              exact_version=""
+            else
+              echo "Unable to read the exact registry version before publication." >&2
+              exit 1
+            fi
+          fi
+          latest_version="$(npm view cometapi@latest version)"
+          next_version="$(npm view cometapi@next version)"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/release-please.yml/runs?per_page=100" \
+            | jq '[.[].workflow_runs[]]' > "$RELEASE_PLEASE_RUNS"
+
+          EXACT_VERSION="$exact_version" LATEST_VERSION="$latest_version" \
+            NEXT_VERSION="$next_version" TAG_COMMIT="$tag_commit" \
+            node --input-type=module <<'EOF'
+          import { createHash } from "node:crypto";
+          import { readFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+
+          const {
+            extractReleaseNotesFromChangelog,
+            validateGitHubRelease,
+            validateNpmEnvironmentState,
+            validateRegistryStateBeforePublish,
+            validateReleaseWorkflowRun,
+            snapshotReleasePleaseRuns,
+          } = await import(pathToFileURL(process.env.CONTROL_VALIDATOR));
+
+          const snapshot = snapshotReleasePleaseRuns(
+            JSON.parse(readFileSync(process.env.RELEASE_PLEASE_RUNS, "utf8")),
+          );
+          const digest = createHash("sha256").update(snapshot).digest("hex");
+          if (digest !== process.env.RELEASE_PLEASE_SNAPSHOT) {
+            throw new Error(
+              "Release workflow Release Please run set changed while publication awaited approval.",
+            );
+          }
+
+          const sourceRun = JSON.parse(
+            readFileSync(process.env.RELEASE_RUN_FILE, "utf8"),
+          );
+          const run = validateReleaseWorkflowRun(
+            {
+              action: "completed",
+              repository: { full_name: sourceRun.repository?.full_name },
+              workflow_run: {
+                conclusion: sourceRun.conclusion,
+                event: sourceRun.event,
+                head_branch: sourceRun.head_branch,
+                head_repository: sourceRun.head_repository,
+                head_sha: sourceRun.head_sha,
+                id: sourceRun.id,
+                name: sourceRun.name,
+                path: sourceRun.path,
+                run_attempt: sourceRun.run_attempt,
+              },
+            },
+            {
+              checkedOutSha: process.env.RELEASE_COMMIT,
+              repository: "cometapi-dev/cometapi-node",
+              workflowName: "Release Please",
+              workflowPath: ".github/workflows/release-please.yml",
+            },
+          );
+          if (
+            run.runId !== Number(process.env.RELEASE_RUN_ID) ||
+            run.runAttempt !== Number(process.env.RELEASE_RUN_ATTEMPT)
+          ) {
+            throw new Error(
+              "Release workflow source run changed while publication awaited approval.",
+            );
+          }
+          const version = JSON.parse(readFileSync("package.json", "utf8")).version;
+          validateGitHubRelease(
+            JSON.parse(readFileSync(process.env.RELEASE_FILE, "utf8")),
+            {
+              expectedBody: extractReleaseNotesFromChangelog(
+                readFileSync("CHANGELOG.md", "utf8"),
+                version,
+              ),
+              htmlUrl: `https://github.com/cometapi-dev/cometapi-node/releases/tag/${process.env.RELEASE_TAG}`,
+              releaseCommit: process.env.RELEASE_COMMIT,
+              tag: process.env.RELEASE_TAG,
+              tagCommit: process.env.TAG_COMMIT,
+            },
+          );
+          validateNpmEnvironmentState({
+            environment: JSON.parse(
+              readFileSync(process.env.ENVIRONMENT_FILE, "utf8"),
+            ),
+            expectedPolicyIds:
+              process.env.OPERATION === "recover-v0.1.1"
+                ? {
+                    "branch:main": Number(process.env.RECOVERY_POLICY_ID),
+                    "tag:v*": 55718965,
+                  }
+                : { "tag:v*": 55718965 },
+            operation: process.env.OPERATION,
+            policies: JSON.parse(
+              readFileSync(process.env.POLICIES_FILE, "utf8"),
+            ).branch_policies,
+          });
+          validateRegistryStateBeforePublish({
+            exactVersion: process.env.EXACT_VERSION || null,
+            latestVersion: process.env.LATEST_VERSION,
+            nextVersion: process.env.NEXT_VERSION,
+            version,
+          });
+          EOF
+
+          if [[ "$OPERATION" == "recover-v0.1.1" ]]; then
+            gh api --paginate --slurp \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100" \
+              > "$RECOVERY_DISPATCH_RUNS"
+            node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+
+          const { validateUniquePublishRecoveryRun } = await import(
+            pathToFileURL(process.env.CONTROL_VALIDATOR)
+          );
+          validateUniquePublishRecoveryRun({
+            controlCommit: process.env.CONTROL_COMMIT,
+            currentRunId: Number(process.env.CURRENT_RUN_ID),
+            responses: JSON.parse(
+              readFileSync(process.env.RECOVERY_DISPATCH_RUNS, "utf8"),
+            ),
+          });
+          EOF
+          fi
       - name: Publish the exact artifact with provenance
         env:
           DIST_TAG: ${{ needs.verify.outputs.dist-tag }}
@@ -553,7 +1182,11 @@ jobs:
         run: bash scripts/publish-artifact.sh
       - name: Verify the public registry artifact
         env:
+          CONTROL_COMMIT: ${{ needs.verify.outputs.control-commit }}
+          CONTROL_VALIDATOR: ${{ runner.temp }}/release-workflow-validation.mjs
           DIST_TAG: ${{ needs.verify.outputs.dist-tag }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_REF: ${{ github.ref }}
           VERSION: ${{ needs.verify.outputs.version }}
         shell: bash
         run: |
@@ -594,12 +1227,89 @@ jobs:
             echo "Registry state did not converge for cometapi@${VERSION}, ${DIST_TAG}, integrity, and provenance." >&2
             exit 1
           fi
+          if [[ "$(npm view cometapi@next version)" != "0.1.0-alpha.3" ]]; then
+            echo "The next dist-tag changed during publication." >&2
+            exit 1
+          fi
+
+          attestations_url="$(REGISTRY_DIST="$registry_dist" node -e 'process.stdout.write(JSON.parse(process.env.REGISTRY_DIST).attestations.url)')"
+          attestations_file="$RUNNER_TEMP/npm-attestations.json"
+          curl --fail --silent --show-error "$attestations_url" > "$attestations_file"
+          local_sha512="$(node -e 'const {createHash}=require("node:crypto");const {readFileSync}=require("node:fs");process.stdout.write(createHash("sha512").update(readFileSync(process.argv[1])).digest("hex"))' "${tarballs[0]}")"
+          provenance_identity="$(ATTESTATIONS_FILE="$attestations_file" \
+            LOCAL_SHA512="$local_sha512" node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+
+          const { validateRegistryProvenance } = await import(
+            pathToFileURL(process.env.CONTROL_VALIDATOR)
+          );
+          const provenance = validateRegistryProvenance({
+            attestations: JSON.parse(
+              readFileSync(process.env.ATTESTATIONS_FILE, "utf8"),
+            ),
+            commit: process.env.CONTROL_COMMIT,
+            sha512: process.env.LOCAL_SHA512,
+            version: process.env.VERSION,
+            workflowRef: process.env.WORKFLOW_REF,
+          });
+          process.stdout.write(
+            `${provenance.provenanceRunId} ${provenance.provenanceRunAttempt}`,
+          );
+          EOF
+          )"
+          read -r provenance_run_id provenance_run_attempt <<< "$provenance_identity"
+          provenance_run_file="$RUNNER_TEMP/provenance-run.json"
+          provenance_jobs_file="$RUNNER_TEMP/provenance-jobs.json"
+          provenance_run_valid="false"
+          for attempt in {1..6}; do
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${provenance_run_id}/attempts/${provenance_run_attempt}" \
+              > "$provenance_run_file"
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${provenance_run_id}/attempts/${provenance_run_attempt}/jobs?per_page=100" \
+              > "$provenance_jobs_file"
+            if PROVENANCE_JOBS_FILE="$provenance_jobs_file" \
+              PROVENANCE_RUN_ATTEMPT="$provenance_run_attempt" \
+              PROVENANCE_RUN_FILE="$provenance_run_file" \
+              PROVENANCE_RUN_ID="$provenance_run_id" node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+          import { pathToFileURL } from "node:url";
+
+          const { validateRegistryProvenanceInvocation } = await import(
+            pathToFileURL(process.env.CONTROL_VALIDATOR)
+          );
+          validateRegistryProvenanceInvocation({
+            commit: process.env.CONTROL_COMMIT,
+            jobs: JSON.parse(
+              readFileSync(process.env.PROVENANCE_JOBS_FILE, "utf8"),
+            ).jobs,
+            run: JSON.parse(
+              readFileSync(process.env.PROVENANCE_RUN_FILE, "utf8"),
+            ),
+            runAttempt: Number(process.env.PROVENANCE_RUN_ATTEMPT),
+            runId: Number(process.env.PROVENANCE_RUN_ID),
+            workflowRef: process.env.WORKFLOW_REF,
+          });
+          EOF
+            then
+              provenance_run_valid="true"
+              break
+            fi
+            if [[ "$attempt" -lt 6 ]]; then
+              sleep 5
+            fi
+          done
+          if [[ "$provenance_run_valid" != "true" ]]; then
+            echo "The signed provenance invocation did not match a successful npm publish step." >&2
+            exit 1
+          fi
 
           verify_dir="$(mktemp -d)"
           cd "$verify_dir"
           npm init --yes >/dev/null
           npm install --ignore-scripts --no-audit --no-fund \
-            "openai@6.47.0" "cometapi@${VERSION}"
+            "openai@6.47.0" "cometapi@${VERSION}" "typescript@5.9.3"
           signatures_verified="false"
           for attempt in {1..3}; do
             if npm audit signatures; then
@@ -627,15 +1337,93 @@ jobs:
           const client = new CometAPI({
             apiKey: "mock-registry-key",
             maxRetries: 0,
-            fetch: async () =>
-              new Response(JSON.stringify({ object: "list", data: [] }), {
+            fetch: async (input) => {
+              const url = new URL(
+                input instanceof Request ? input.url : String(input),
+              );
+              let body;
+              if (url.pathname.endsWith("/chat/completions")) {
+                body = {
+                  id: "chatcmpl_registry",
+                  object: "chat.completion",
+                  created: 1,
+                  model: "gpt-5.4",
+                  choices: [
+                    {
+                      index: 0,
+                      message: { role: "assistant", content: "ok" },
+                      finish_reason: "stop",
+                    },
+                  ],
+                };
+              } else if (url.pathname.endsWith("/responses")) {
+                body = {
+                  id: "resp_registry",
+                  object: "response",
+                  created_at: 1,
+                  status: "completed",
+                  model: "gpt-5.4",
+                  output: [],
+                  parallel_tool_calls: true,
+                  tool_choice: "auto",
+                  tools: [],
+                };
+              } else if (url.pathname.endsWith("/models")) {
+                body = { object: "list", data: [] };
+              } else {
+                throw new Error(`Unexpected registry fixture URL: ${url}`);
+              }
+              return new Response(JSON.stringify(body), {
                 status: 200,
                 headers: { "content-type": "application/json" },
-              }),
+              });
+            },
           });
+          const completion = await client.chat.completions.create({
+            model: "gpt-5.4",
+            messages: [{ role: "user", content: "test" }],
+          });
+          assert.equal(completion.id, "chatcmpl_registry");
+          const response = await client.responses.create({
+            model: "gpt-5.4",
+            input: "test",
+          });
+          assert.equal(response.id, "resp_registry");
           const models = await client.models.list();
           assert.deepEqual(models.data, []);
           EOF
+
+          node --input-type=module <<'EOF'
+          import { writeFileSync } from "node:fs";
+
+          const source = `import { CometAPI, type CometAPIOptions } from "cometapi";
+          const options: CometAPIOptions = { apiKey: "typed-registry-key", maxRetries: 0 };
+          const client = new CometAPI(options);
+          void client.chat.completions.create({ model: "gpt-5.4", messages: [] });
+          void client.responses.create({ model: "gpt-5.4", input: "test" });
+          void client.models.list();
+          `;
+          writeFileSync("consumer.mts", source);
+          writeFileSync("consumer.cts", source);
+          writeFileSync(
+            "tsconfig.json",
+            `${JSON.stringify(
+              {
+                compilerOptions: {
+                  module: "NodeNext",
+                  moduleResolution: "NodeNext",
+                  noEmit: true,
+                  strict: true,
+                  target: "ES2022",
+                },
+                include: ["consumer.mts", "consumer.cts"],
+              },
+              null,
+              2,
+            )}\n`,
+          );
+          EOF
+          ./node_modules/.bin/tsc --noEmit
 
           node <<'EOF'
           const assert = require("node:assert/strict");

@@ -11,6 +11,7 @@ const RELEASE_PR_FOOTER =
 const RELEASE_WORKFLOW_JOB =
   "Prepare a reviewed release pull request or GitHub release";
 const RELEASE_WORKFLOW_STEP = "Run Release Please";
+const PUBLISH_OPERATION = "release";
 const PUBLISH_RECOVERY = Object.freeze({
   actor: "tensornull",
   artifactDigest:
@@ -19,19 +20,21 @@ const PUBLISH_RECOVERY = Object.freeze({
   artifactName: "npm-package-0.1.1-30471665743-1",
   changedFiles: Object.freeze([
     ".github/workflows/publish.yml",
+    ".github/workflows/release-please.yml",
     "RELEASING.md",
     "scripts/release-workflow-validation.mjs",
     "tests/release-workflow-validation.test.mjs",
     "tests/workflow-contract.test.mjs",
   ]),
-  dispatchControlParent: "8a80d8272a490ed6a7b47eede45aaeccae03c819",
-  dispatchTask: "npm-publish-recovery",
+  dispatchControlParent: "5f493045a2205fe19904ca5be36f5bbf23378aec",
+  dispatchTask: "recover-v0.1.1",
   failedPublishJobId: 90643868523,
   liveJobId: 90643725110,
   releaseCommit: "c98b514227858cd183c781270a7f78f65b577e82",
   releaseRunAttempt: 1,
   releaseRunId: 30469181724,
   releaseTag: "v0.1.1",
+  permanentTagPolicyId: 55718965,
   sourcePublishCommit: "22c313d4f80c53ba01672dd35cc27b621d5ec9ce",
   sourcePublishRunAttempt: 1,
   sourcePublishRunId: 30471665743,
@@ -88,25 +91,1041 @@ function stablePatch(version, label) {
   return Number(match[1]);
 }
 
+export function validatePublishWorkflowContract(workflow) {
+  if (
+    workflow === null ||
+    typeof workflow !== "object" ||
+    Array.isArray(workflow)
+  ) {
+    fail("Release workflow Publish definition must be an object.");
+  }
+  requireEqual(workflow.name, "Publish", "Publish workflow name");
+  const inputs = workflow.on?.workflow_dispatch?.inputs;
+  if (inputs === null || typeof inputs !== "object" || Array.isArray(inputs)) {
+    fail(
+      "Release workflow Publish workflow_dispatch inputs must be an object.",
+    );
+  }
+  for (const name of [
+    "publish_operation",
+    "control_commit",
+    "release_commit",
+    "release_tag",
+    "release_run_id",
+    "release_run_attempt",
+  ]) {
+    requireEqual(inputs[name]?.required, true, `Publish ${name} requirement`);
+    requireEqual(inputs[name]?.type, "string", `Publish ${name} type`);
+  }
+  for (const name of [
+    "source_publish_run_id",
+    "source_publish_run_attempt",
+    "recovery_policy_id",
+  ]) {
+    requireEqual(inputs[name]?.required, false, `Publish ${name} requirement`);
+    requireEqual(inputs[name]?.type, "string", `Publish ${name} type`);
+  }
+  requireEqual(
+    JSON.stringify(workflow.on?.workflow_run),
+    JSON.stringify({ workflows: ["Release Please"], types: ["completed"] }),
+    "Publish workflow_run trigger",
+  );
+  requireEqual(
+    JSON.stringify(workflow.permissions),
+    JSON.stringify({ actions: "read", checks: "read", contents: "read" }),
+    "Publish default permissions",
+  );
+  requireEqual(
+    JSON.stringify(workflow.concurrency),
+    JSON.stringify({ group: "npm-publish", "cancel-in-progress": false }),
+    "Publish workflow concurrency",
+  );
+  const jobs = workflow.jobs;
+  if (jobs === null || typeof jobs !== "object" || Array.isArray(jobs)) {
+    fail("Release workflow Publish jobs must be an object.");
+  }
+  requireEqual(
+    JSON.stringify(Object.keys(jobs).sort()),
+    JSON.stringify(["handoff", "live-smoke", "publish", "verify"]),
+    "Publish job set",
+  );
+  requireEqual(
+    JSON.stringify(jobs.handoff?.permissions),
+    JSON.stringify({ actions: "write", contents: "read" }),
+    "Publish handoff permissions",
+  );
+  requireEqual(
+    jobs.handoff?.environment,
+    undefined,
+    "Publish handoff environment",
+  );
+  const handoffIf = jobs.handoff?.if;
+  for (const fragment of [
+    "vars.RELEASE_PLEASE_ENABLED == 'true'",
+    "github.event_name == 'workflow_run'",
+    "github.event.workflow_run.conclusion == 'success'",
+    "github.event.workflow_run.event == 'push'",
+    "github.event.workflow_run.head_branch == 'main'",
+  ]) {
+    if (typeof handoffIf !== "string" || !handoffIf.includes(fragment)) {
+      fail(`Release workflow Publish handoff must require ${fragment}.`);
+    }
+  }
+  const dispatchStep = jobs.handoff?.steps?.find(
+    (step) => step?.name === "Dispatch the exact immutable tag",
+  );
+  for (const fragment of [
+    "actions/runs/${publish_run_id}/jobs",
+    "The tag-bound Publish verify job did not become observable.",
+  ]) {
+    if (
+      typeof dispatchStep?.run === "string" &&
+      dispatchStep.run.includes(fragment)
+    ) {
+      fail(
+        `Release workflow Publish handoff must stop after exact run discovery and cannot contain ${fragment}.`,
+      );
+    }
+  }
+  const handoffResultStep = jobs.handoff?.steps?.find(
+    (step) => step?.name === "Classify the exact Release Please handoff",
+  );
+  if (typeof handoffResultStep?.run !== "string") {
+    fail(
+      "Release workflow Publish handoff must classify the exact Release Please result before download.",
+    );
+  }
+  for (const stepName of [
+    "Install validation dependencies without lifecycle scripts",
+    "Download the exact Release Please result",
+    "Validate the exact release and tag dispatch contract",
+    "Dispatch the exact immutable tag",
+  ]) {
+    const step = jobs.handoff?.steps?.find(
+      (candidate) => candidate?.name === stepName,
+    );
+    if (
+      typeof step?.if !== "string" ||
+      !step.if.includes("steps.result.outputs.has-result == 'true'")
+    ) {
+      fail(
+        `Release workflow Publish handoff ${stepName} must require an exact result.`,
+      );
+    }
+  }
+  for (const fragment of [
+    "actions/workflows/publish.yml/dispatches",
+    "tag-dispatch-runs-before.json",
+    "Multiple Publish runs matched the immutable tag handoff.",
+    '-f ref="$RELEASE_TAG"',
+    '-f "inputs[publish_operation]=release"',
+    '-f "inputs[control_commit]=$RELEASE_COMMIT"',
+  ]) {
+    if (
+      typeof dispatchStep?.run !== "string" ||
+      !dispatchStep.run.includes(fragment)
+    ) {
+      fail(
+        `Release workflow Publish handoff dispatch must contain ${fragment}.`,
+      );
+    }
+  }
+  requireEqual(
+    jobs.verify?.environment,
+    undefined,
+    "Publish verify environment",
+  );
+  requireEqual(
+    jobs.verify?.permissions,
+    undefined,
+    "Publish verify job permissions",
+  );
+  const verifyIf = jobs.verify?.if;
+  for (const fragment of [
+    "github.event_name == 'workflow_dispatch'",
+    "inputs.publish_operation == 'release'",
+    "startsWith(github.ref, 'refs/tags/v0.1.')",
+    "github.ref == format('refs/tags/{0}', inputs.release_tag)",
+    "github.sha == inputs.release_commit",
+    "github.workflow_sha == inputs.control_commit",
+    "inputs.control_commit == inputs.release_commit",
+    "inputs.recovery_policy_id != ''",
+  ]) {
+    if (typeof verifyIf !== "string" || !verifyIf.includes(fragment)) {
+      fail(`Release workflow Publish verify must require ${fragment}.`);
+    }
+  }
+  for (const [name, job] of Object.entries(jobs)) {
+    if (
+      name !== "handoff" &&
+      JSON.stringify(job).includes("github.event.workflow_run")
+    ) {
+      fail(
+        `Release workflow Publish ${name} cannot consume workflow_run context.`,
+      );
+    }
+  }
+  requireEqual(
+    jobs["live-smoke"]?.environment,
+    "live-smoke",
+    "live environment",
+  );
+  requireEqual(
+    jobs["live-smoke"]?.permissions,
+    undefined,
+    "Publish live-smoke permissions",
+  );
+  requireEqual(
+    JSON.stringify(jobs["live-smoke"]?.needs),
+    JSON.stringify(["verify"]),
+    "Publish live-smoke dependencies",
+  );
+  const requireUniqueStep = (job, name, label) => {
+    const matches = Array.isArray(job?.steps)
+      ? job.steps.filter((step) => step?.name === name)
+      : [];
+    requireEqual(matches.length, 1, `${label} step count`);
+    return matches[0];
+  };
+  requireEqual(
+    jobs.verify?.outputs?.["release-please-snapshot"],
+    "${{ steps.release-please-snapshot.outputs.digest }}",
+    "Publish Release Please snapshot output",
+  );
+  const releasePleaseSnapshotStep = requireUniqueStep(
+    jobs.verify,
+    "Freeze the Release Please run set",
+    "Publish Release Please snapshot",
+  );
+  const uniqueRecoveryStep = requireUniqueStep(
+    jobs.verify,
+    "Require the only recovery dispatch for this control commit",
+    "Publish unique recovery dispatch",
+  );
+  requireEqual(
+    uniqueRecoveryStep?.if,
+    "inputs.publish_operation == 'recover-v0.1.1'",
+    "Publish unique recovery dispatch gate",
+  );
+  requireEqual(
+    uniqueRecoveryStep?.env?.CONTROL_COMMIT,
+    "${{ inputs.control_commit }}",
+    "Publish unique recovery control commit",
+  );
+  requireEqual(
+    uniqueRecoveryStep?.env?.CURRENT_RUN_ID,
+    "${{ github.run_id }}",
+    "Publish unique recovery current run ID",
+  );
+  for (const fragment of [
+    "gh api --paginate --slurp",
+    "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
+    "validateUniquePublishRecoveryRun",
+  ]) {
+    if (
+      typeof uniqueRecoveryStep?.run !== "string" ||
+      !uniqueRecoveryStep.run.includes(fragment)
+    ) {
+      fail(
+        `Release workflow Publish unique recovery dispatch must contain ${fragment}.`,
+      );
+    }
+  }
+  for (const fragment of [
+    "actions/workflows/release-please.yml/runs?per_page=100",
+    "snapshotReleasePleaseRuns",
+    "createHash",
+  ]) {
+    if (
+      typeof releasePleaseSnapshotStep?.run !== "string" ||
+      !releasePleaseSnapshotStep.run.includes(fragment)
+    ) {
+      fail(`Release workflow Publish run snapshot must contain ${fragment}.`);
+    }
+  }
+  const recoveryArtifactStep = requireUniqueStep(
+    jobs.verify,
+    "Download the prior live-verified release artifact",
+    "Publish recovery artifact download",
+  );
+  requireEqual(
+    recoveryArtifactStep?.if,
+    "inputs.publish_operation == 'recover-v0.1.1'",
+    "Publish recovery artifact gate",
+  );
+  for (const [name, expected] of Object.entries({
+    "artifact-ids": "${{ steps.recovery-evidence.outputs.artifact-id }}",
+    path: "release-artifacts",
+    "merge-multiple": true,
+    "digest-mismatch": "error",
+    "github-token": "${{ github.token }}",
+    repository: "${{ github.repository }}",
+    "run-id": "${{ inputs.source_publish_run_id }}",
+  })) {
+    requireEqual(
+      recoveryArtifactStep?.with?.[name],
+      expected,
+      `Publish recovery artifact ${name}`,
+    );
+  }
+  const packArtifactStep = requireUniqueStep(
+    jobs.verify,
+    "Pack the exact release artifact",
+    "Publish normal artifact pack",
+  );
+  requireEqual(
+    packArtifactStep?.if,
+    "inputs.publish_operation == 'release'",
+    "Publish normal artifact gate",
+  );
+  if (
+    typeof packArtifactStep?.run !== "string" ||
+    !packArtifactStep.run.includes(
+      "npm pack --pack-destination release-artifacts",
+    )
+  ) {
+    fail(
+      "Release workflow Publish normal release must pack one exact artifact.",
+    );
+  }
+  const selectArtifactStep = requireUniqueStep(
+    jobs.verify,
+    "Select the exact release artifact",
+    "Publish exact artifact selection",
+  );
+  requireEqual(selectArtifactStep?.id, "pack", "Publish artifact selector ID");
+  if (
+    typeof selectArtifactStep?.run !== "string" ||
+    !selectArtifactStep.run.includes('if [[ "${#tarballs[@]}" -ne 1 ]]')
+  ) {
+    fail("Release workflow Publish must select exactly one release artifact.");
+  }
+  const consumerArtifactStep = requireUniqueStep(
+    jobs.verify,
+    "Test consumers against the exact release artifact",
+    "Publish exact artifact consumer tests",
+  );
+  for (const command of [
+    "npm run test:package --",
+    "npm run test:examples --",
+    "npm run test:fixtures --",
+  ]) {
+    if (
+      typeof consumerArtifactStep?.run !== "string" ||
+      !consumerArtifactStep.run.includes(command) ||
+      !consumerArtifactStep.run.includes("steps.pack.outputs.tarball")
+    ) {
+      fail(
+        `Release workflow Publish exact artifact consumer tests must contain ${command}.`,
+      );
+    }
+  }
+  const uploadArtifactStep = requireUniqueStep(
+    jobs.verify,
+    "Upload the verified release artifact",
+    "Publish exact artifact upload",
+  );
+  requireEqual(
+    uploadArtifactStep?.with?.path,
+    "${{ steps.pack.outputs.tarball }}",
+    "Publish exact artifact upload path",
+  );
+  const reuseLiveStep = requireUniqueStep(
+    jobs["live-smoke"],
+    "Reuse the successful bounded live smoke",
+    "Publish recovery live-smoke",
+  );
+  requireEqual(
+    reuseLiveStep?.if,
+    "needs.verify.outputs.publish-operation == 'recover-v0.1.1'",
+    "Publish recovery live gate",
+  );
+  if (
+    typeof reuseLiveStep?.run !== "string" ||
+    !reuseLiveStep.run.includes('if [[ "$REUSE_LIVE_SMOKE" != "true" ]]')
+  ) {
+    fail("Release workflow Publish recovery must require exact live evidence.");
+  }
+  const boundedLiveStep = requireUniqueStep(
+    jobs["live-smoke"],
+    "Run the bounded live smoke",
+    "Publish normal live-smoke",
+  );
+  requireEqual(
+    boundedLiveStep?.if,
+    "needs.verify.outputs.publish-operation == 'release'",
+    "Publish normal live gate",
+  );
+  requireEqual(
+    boundedLiveStep?.run,
+    "npm run test:live",
+    "Publish normal live command",
+  );
+  requireEqual(
+    JSON.stringify(boundedLiveStep?.env),
+    JSON.stringify({
+      COMETAPI_KEY: "${{ secrets.COMETAPI_KEY }}",
+      COMETAPI_LIVE_SMOKE: "1",
+      COMETAPI_SMOKE_MODEL: "${{ vars.COMETAPI_SMOKE_MODEL || 'gpt-5.4' }}",
+      COMETAPI_LIVE_REQUEST_LIMIT: "3",
+      COMETAPI_LIVE_MAX_OUTPUT_TOKENS: "16",
+      COMETAPI_LIVE_REQUEST_TIMEOUT_MS: "60000",
+      COMETAPI_LIVE_CONCURRENCY: "1",
+    }),
+    "Publish normal live environment",
+  );
+  requireEqual(
+    JSON.stringify(jobs.publish?.needs),
+    JSON.stringify(["live-smoke", "verify"]),
+    "Publish deployment dependencies",
+  );
+  requireEqual(jobs.publish?.environment?.name, "npm", "Publish environment");
+  requireEqual(
+    JSON.stringify(jobs.publish?.permissions),
+    JSON.stringify({
+      actions: "read",
+      checks: "read",
+      contents: "read",
+      deployments: "read",
+      "id-token": "write",
+    }),
+    "Publish deployment permissions",
+  );
+  const permissionCounts = { actionsWrite: 0, idTokenWrite: 0 };
+  for (const job of Object.values(jobs)) {
+    if (job?.permissions?.actions === "write")
+      permissionCounts.actionsWrite += 1;
+    if (job?.permissions?.["id-token"] === "write")
+      permissionCounts.idTokenWrite += 1;
+  }
+  requireEqual(permissionCounts.actionsWrite, 1, "actions-write job count");
+  requireEqual(permissionCounts.idTokenWrite, 1, "OIDC job count");
+  const reconfirmStep = requireUniqueStep(
+    jobs.publish,
+    "Reconfirm protected state immediately before publication",
+    "Publish protected-state reconfirmation",
+  );
+  requireEqual(
+    reconfirmStep?.env?.RELEASE_PLEASE_SNAPSHOT,
+    "${{ needs.verify.outputs.release-please-snapshot }}",
+    "Publish Release Please snapshot reconfirmation",
+  );
+  requireEqual(
+    reconfirmStep?.env?.RECOVERY_POLICY_ID,
+    "${{ inputs.recovery_policy_id }}",
+    "Publish recovery policy ID reconfirmation",
+  );
+  requireEqual(
+    reconfirmStep?.env?.RELEASE_PLEASE_ENABLED,
+    "${{ vars.RELEASE_PLEASE_ENABLED }}",
+    "Publish Release Please variable context",
+  );
+  requireEqual(
+    reconfirmStep?.env?.CURRENT_RUN_ID,
+    "${{ github.run_id }}",
+    "Publish recovery current run reconfirmation",
+  );
+  for (const fragment of [
+    "actions/workflows/release-please.yml/runs?per_page=100",
+    "actions/workflows/publish.yml/runs?branch=main&event=workflow_dispatch&head_sha=${CONTROL_COMMIT}&per_page=100",
+    'gh api --paginate --slurp \\\n  "repos/${GITHUB_REPOSITORY}/environments/npm/deployment-branch-policies?per_page=100"',
+    "{branch_policies: [.[].branch_policies[]]}",
+    "snapshotReleasePleaseRuns",
+    "validateUniquePublishRecoveryRun",
+    "expectedPolicyIds",
+    "if (digest !== process.env.RELEASE_PLEASE_SNAPSHOT)",
+  ]) {
+    if (
+      typeof reconfirmStep?.run !== "string" ||
+      !reconfirmStep.run.includes(fragment)
+    ) {
+      fail(
+        `Release workflow Publish protected-state reconfirmation must contain ${fragment}.`,
+      );
+    }
+  }
+  requireEqual(
+    reconfirmStep.run.split("validateUniquePublishRecoveryRun").length - 1,
+    2,
+    "Publish recovery unique-run pre-publication reference count",
+  );
+  if (
+    reconfirmStep.run.indexOf("validateRegistryStateBeforePublish") >=
+    reconfirmStep.run.lastIndexOf("validateUniquePublishRecoveryRun")
+  ) {
+    fail(
+      "Release workflow Publish must revalidate the unique recovery run after registry state and before publication.",
+    );
+  }
+  const publishStep = requireUniqueStep(
+    jobs.publish,
+    "Publish the exact artifact with provenance",
+    "Publish npm publication",
+  );
+  const registryStep = requireUniqueStep(
+    jobs.publish,
+    "Verify the public registry artifact",
+    "Publish public-registry verification",
+  );
+  requireEqual(
+    registryStep?.env?.GH_TOKEN,
+    "${{ github.token }}",
+    "Publish registry verification token",
+  );
+  const publishSteps = jobs.publish?.steps ?? [];
+  if (
+    publishSteps.indexOf(reconfirmStep) >= publishSteps.indexOf(publishStep) ||
+    publishSteps.indexOf(publishStep) >= publishSteps.indexOf(registryStep)
+  ) {
+    fail(
+      "Release workflow Publish must reconfirm protected state, publish, and then verify the registry in order.",
+    );
+  }
+  requireEqual(
+    publishStep?.run,
+    "bash scripts/publish-artifact.sh",
+    "npm publication command",
+  );
+  return { supportsTagDispatch: true };
+}
+
+export function snapshotReleasePleaseRuns(runs) {
+  if (!Array.isArray(runs)) {
+    fail("Release workflow Release Please run snapshot must be an array.");
+  }
+  const seen = new Set();
+  const snapshot = runs.map((run) => {
+    requirePositiveInteger(run?.id, "Release Please snapshot run ID");
+    if (seen.has(run.id)) {
+      fail(
+        "Release workflow Release Please run snapshot contains a duplicate run ID.",
+      );
+    }
+    seen.add(run.id);
+    requirePositiveInteger(
+      run?.run_attempt,
+      "Release Please snapshot run attempt",
+    );
+    requireEqual(run?.name, "Release Please", "snapshot workflow name");
+    requireEqual(
+      run?.path,
+      ".github/workflows/release-please.yml",
+      "snapshot workflow path",
+    );
+    requireEqual(
+      run?.repository?.full_name,
+      "cometapi-dev/cometapi-node",
+      "snapshot repository",
+    );
+    requireCommit(run?.head_sha, "Release Please snapshot head SHA");
+    if (run?.event !== "push" && run?.event !== "workflow_dispatch") {
+      fail("Release workflow Release Please snapshot event is unsupported.");
+    }
+    requireEqual(run?.status, "completed", "snapshot run status");
+    if (typeof run?.conclusion !== "string" || run.conclusion === "") {
+      fail(
+        "Release workflow Release Please snapshot conclusion must be final.",
+      );
+    }
+    return {
+      conclusion: run.conclusion,
+      event: run.event,
+      headSha: run.head_sha,
+      id: run.id,
+      runAttempt: run.run_attempt,
+      status: run.status,
+    };
+  });
+  snapshot.sort((left, right) => left.id - right.id);
+  return JSON.stringify(snapshot);
+}
+
+export function classifyReleasePleaseHandoff({
+  artifacts,
+  jobs,
+  runAttempt,
+  runId,
+}) {
+  requirePositiveInteger(runId, "handoff source run ID");
+  requirePositiveInteger(runAttempt, "handoff source run attempt");
+  if (!Array.isArray(jobs)) {
+    fail("Release workflow handoff source jobs must be an array.");
+  }
+  const matchingJobs = jobs.filter((job) => job?.name === RELEASE_WORKFLOW_JOB);
+  requireEqual(matchingJobs.length, 1, "handoff source job count");
+  const sourceJob = matchingJobs[0];
+  requireEqual(sourceJob?.run_id, runId, "handoff source job run ID");
+  requireEqual(
+    sourceJob?.run_attempt,
+    runAttempt,
+    "handoff source job run attempt",
+  );
+  requireEqual(sourceJob?.status, "completed", "handoff source job status");
+  requireEqual(
+    sourceJob?.conclusion,
+    "success",
+    "handoff source job conclusion",
+  );
+  const uploadSteps = Array.isArray(sourceJob?.steps)
+    ? sourceJob.steps.filter(
+        (step) => step?.name === "Upload the exact Release Please result",
+      )
+    : [];
+  requireEqual(uploadSteps.length, 1, "handoff result upload-step count");
+  requireEqual(
+    uploadSteps[0]?.status,
+    "completed",
+    "handoff result upload-step status",
+  );
+  if (!Array.isArray(artifacts)) {
+    fail("Release workflow handoff source artifacts must be an array.");
+  }
+  const artifactName = `release-please-result-${runId}-${runAttempt}`;
+  const matchingArtifacts = artifacts.filter(
+    (artifact) => artifact?.name === artifactName,
+  );
+  if (uploadSteps[0]?.conclusion === "skipped") {
+    requireEqual(
+      matchingArtifacts.length,
+      0,
+      "preparation handoff result-artifact count",
+    );
+    return { artifactName, hasResult: false };
+  }
+  requireEqual(
+    uploadSteps[0]?.conclusion,
+    "success",
+    "handoff result upload-step conclusion",
+  );
+  requireEqual(
+    matchingArtifacts.length,
+    1,
+    "release handoff result-artifact count",
+  );
+  requireEqual(
+    matchingArtifacts[0]?.expired,
+    false,
+    "release handoff result-artifact expiration",
+  );
+  requireEqual(
+    matchingArtifacts[0]?.workflow_run?.id,
+    runId,
+    "release handoff result-artifact run ID",
+  );
+  return { artifactName, hasResult: true };
+}
+
+export function validatePublishWorkflowDispatchTrigger({
+  actor,
+  controlCommit,
+  eventName,
+  eventRef,
+  eventSha,
+  operation,
+  releaseCommit,
+  releaseTag,
+  sourceReleaseCommit,
+  sourceRunAttempt,
+  sourceRunId,
+  triggeringActor,
+  workflowRunAttempt,
+  workflowSha,
+}) {
+  requireEqual(actor, "github-actions[bot]", "tag dispatch actor");
+  requireEqual(
+    triggeringActor,
+    "github-actions[bot]",
+    "tag dispatch triggering actor",
+  );
+  requireEqual(eventName, "workflow_dispatch", "tag dispatch event");
+  requireEqual(operation, PUBLISH_OPERATION, "tag dispatch operation");
+  requireCommit(controlCommit, "tag dispatch control commit");
+  requireCommit(releaseCommit, "tag dispatch release commit");
+  requireCommit(sourceReleaseCommit, "tag dispatch source release commit");
+  requireCommit(eventSha, "tag dispatch event SHA");
+  requireCommit(workflowSha, "tag dispatch workflow SHA");
+  requireEqual(controlCommit, releaseCommit, "tag dispatch control commit");
+  requireEqual(eventSha, releaseCommit, "tag dispatch event SHA");
+  requireEqual(workflowSha, releaseCommit, "tag dispatch workflow SHA");
+  requireEqual(
+    sourceReleaseCommit,
+    releaseCommit,
+    "tag dispatch source release commit",
+  );
+  const patch = stablePatch(releaseTag?.slice(1), "tag dispatch version");
+  if (patch < 1) {
+    fail("Release workflow tag dispatch requires a post-0.1.0 patch release.");
+  }
+  requireEqual(eventRef, `refs/tags/${releaseTag}`, "tag dispatch ref");
+  requirePositiveInteger(sourceRunId, "tag dispatch source run ID");
+  requirePositiveInteger(sourceRunAttempt, "tag dispatch source run attempt");
+  requirePositiveInteger(workflowRunAttempt, "tag dispatch run attempt");
+  return {
+    releaseCommit,
+    releaseRunAttempt: sourceRunAttempt,
+    releaseRunId: sourceRunId,
+    releaseTag,
+  };
+}
+
+export function validateNpmEnvironmentState({
+  environment,
+  expectedPolicyIds,
+  operation,
+  policies,
+}) {
+  requireEqual(environment?.id, 18800205839, "npm environment ID");
+  requireEqual(environment?.name, "npm", "npm environment name");
+  requireEqual(environment?.can_admins_bypass, false, "npm admin bypass state");
+  requireEqual(
+    environment?.deployment_branch_policy?.protected_branches,
+    false,
+    "npm protected-branch policy state",
+  );
+  requireEqual(
+    environment?.deployment_branch_policy?.custom_branch_policies,
+    true,
+    "npm custom branch-policy state",
+  );
+  const rules = Array.isArray(environment?.protection_rules)
+    ? environment.protection_rules
+    : [];
+  requireEqual(rules.length, 2, "npm protection-rule count");
+  const reviewerRule = rules.find(
+    (rule) => rule?.type === "required_reviewers",
+  );
+  const branchRule = rules.find((rule) => rule?.type === "branch_policy");
+  requireEqual(Boolean(branchRule), true, "npm branch-policy rule presence");
+  requireEqual(
+    reviewerRule?.prevent_self_review,
+    false,
+    "npm self-review policy",
+  );
+  requireEqual(reviewerRule?.reviewers?.length, 1, "npm reviewer count");
+  requireEqual(reviewerRule?.reviewers?.[0]?.type, "User", "npm reviewer type");
+  requireEqual(
+    reviewerRule?.reviewers?.[0]?.reviewer?.login,
+    "tensornull",
+    "npm reviewer login",
+  );
+  requireEqual(
+    reviewerRule?.reviewers?.[0]?.reviewer?.id,
+    129579691,
+    "npm reviewer ID",
+  );
+  if (!Array.isArray(policies)) {
+    fail("Release workflow npm deployment policies must be an array.");
+  }
+  for (const policy of policies) {
+    requirePositiveInteger(policy?.id, "npm deployment-policy ID");
+  }
+  const actual = policies.map(({ name, type }) => `${type}:${name}`).sort();
+  const expected =
+    operation === PUBLISH_OPERATION
+      ? ["tag:v*"]
+      : operation === PUBLISH_RECOVERY.dispatchTask
+        ? ["branch:main", "tag:v*"]
+        : null;
+  if (expected === null) {
+    fail("Release workflow npm environment operation is unsupported.");
+  }
+  requireEqual(
+    JSON.stringify(actual),
+    JSON.stringify(expected),
+    "npm deployment policies",
+  );
+  if (expectedPolicyIds !== undefined) {
+    if (
+      expectedPolicyIds === null ||
+      typeof expectedPolicyIds !== "object" ||
+      Array.isArray(expectedPolicyIds)
+    ) {
+      fail("Release workflow expected npm policy IDs must be an object.");
+    }
+    requireEqual(
+      JSON.stringify(Object.keys(expectedPolicyIds).sort()),
+      JSON.stringify([...actual].sort()),
+      "expected npm policy ID keys",
+    );
+    requireEqual(
+      expectedPolicyIds["tag:v*"],
+      PUBLISH_RECOVERY.permanentTagPolicyId,
+      "permanent npm tag policy ID",
+    );
+    for (const policy of policies) {
+      const key = `${policy.type}:${policy.name}`;
+      requirePositiveInteger(
+        expectedPolicyIds[key],
+        `expected npm policy ID for ${key}`,
+      );
+      requireEqual(
+        policy.id,
+        expectedPolicyIds[key],
+        `npm policy ID for ${key}`,
+      );
+    }
+  }
+  return { policies: actual };
+}
+
+export function validateRegistryStateBeforePublish({
+  exactVersion,
+  latestVersion,
+  nextVersion,
+  version,
+}) {
+  const patch = stablePatch(version, "registry candidate version");
+  if (patch < 1) {
+    fail("Release workflow registry candidate must be newer than 0.1.0.");
+  }
+  if (exactVersion !== null) {
+    requireEqual(exactVersion, version, "registry exact version");
+  }
+  const previousVersion = `0.1.${patch - 1}`;
+  const allowedLatest =
+    exactVersion === null ? [previousVersion] : [previousVersion, version];
+  if (!allowedLatest.includes(latestVersion)) {
+    fail(
+      `Release workflow registry latest must equal ${allowedLatest.join(" or ")}; received ${String(latestVersion)}.`,
+    );
+  }
+  requireEqual(nextVersion, "0.1.0-alpha.3", "registry next version");
+  return { exactVersion, latestVersion, nextVersion, previousVersion, version };
+}
+
+export function validateRegistryProvenance({
+  attestations,
+  commit,
+  sha512,
+  version,
+  workflowRef,
+}) {
+  requireCommit(commit, "provenance workflow commit");
+  stablePatch(version, "provenance version");
+  if (typeof sha512 !== "string" || !/^[0-9a-f]{128}$/.test(sha512)) {
+    fail("Release workflow provenance sha512 must be lowercase hexadecimal.");
+  }
+  if (
+    typeof workflowRef !== "string" ||
+    !/^refs\/(heads\/main|tags\/v0\.1\.[1-9]\d*)$/.test(workflowRef)
+  ) {
+    fail("Release workflow provenance ref must be main or a stable 0.1.x tag.");
+  }
+  const entries = Array.isArray(attestations?.attestations)
+    ? attestations.attestations
+    : [];
+  const matches = entries.filter(
+    (entry) => entry?.predicateType === "https://slsa.dev/provenance/v1",
+  );
+  requireEqual(matches.length, 1, "SLSA provenance attestation count");
+  const encoded = matches[0]?.bundle?.dsseEnvelope?.payload;
+  if (typeof encoded !== "string" || encoded === "") {
+    fail("Release workflow SLSA provenance payload must be base64 encoded.");
+  }
+  let statement;
+  try {
+    statement = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+  } catch {
+    fail("Release workflow SLSA provenance payload must contain JSON.");
+  }
+  requireEqual(
+    statement?._type,
+    "https://in-toto.io/Statement/v1",
+    "provenance statement type",
+  );
+  requireEqual(
+    statement?.predicateType,
+    "https://slsa.dev/provenance/v1",
+    "provenance predicate type",
+  );
+  requireEqual(statement?.subject?.length, 1, "provenance subject count");
+  requireEqual(
+    statement?.subject?.[0]?.name,
+    `pkg:npm/cometapi@${version}`,
+    "provenance subject name",
+  );
+  requireEqual(
+    statement?.subject?.[0]?.digest?.sha512,
+    sha512,
+    "provenance subject digest",
+  );
+  const predicate = statement?.predicate;
+  requireEqual(
+    predicate?.buildDefinition?.buildType,
+    "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1",
+    "provenance build type",
+  );
+  const workflow = predicate?.buildDefinition?.externalParameters?.workflow;
+  requireEqual(
+    workflow?.repository,
+    "https://github.com/cometapi-dev/cometapi-node",
+    "provenance workflow repository",
+  );
+  requireEqual(
+    workflow?.path,
+    ".github/workflows/publish.yml",
+    "provenance workflow path",
+  );
+  requireEqual(workflow?.ref, workflowRef, "provenance workflow ref");
+  const github = predicate?.buildDefinition?.internalParameters?.github;
+  requireEqual(github?.event_name, "workflow_dispatch", "provenance event");
+  requireEqual(github?.repository_id, "1307188651", "provenance repository ID");
+  requireEqual(
+    github?.repository_owner_id,
+    "225111184",
+    "provenance repository owner ID",
+  );
+  requireEqual(
+    predicate?.buildDefinition?.resolvedDependencies?.length,
+    1,
+    "provenance resolved-dependency count",
+  );
+  const dependency = predicate?.buildDefinition?.resolvedDependencies?.[0];
+  requireEqual(
+    dependency?.uri,
+    `git+https://github.com/cometapi-dev/cometapi-node@${workflowRef}`,
+    "provenance source URI",
+  );
+  requireEqual(
+    dependency?.digest?.gitCommit,
+    commit,
+    "provenance source commit",
+  );
+  requireEqual(
+    predicate?.runDetails?.builder?.id,
+    "https://github.com/actions/runner/github-hosted",
+    "provenance builder",
+  );
+  const invocation = predicate?.runDetails?.metadata?.invocationId;
+  const invocationMatch =
+    typeof invocation === "string" &&
+    invocation.match(
+      /^https:\/\/github\.com\/cometapi-dev\/cometapi-node\/actions\/runs\/([1-9]\d*)\/attempts\/([1-9]\d*)$/,
+    );
+  if (!invocationMatch) {
+    fail(
+      "Release workflow provenance invocation must identify an exact run attempt.",
+    );
+  }
+  const provenanceRunId = Number(invocationMatch[1]);
+  const provenanceRunAttempt = Number(invocationMatch[2]);
+  requirePositiveInteger(provenanceRunId, "provenance run ID");
+  requirePositiveInteger(provenanceRunAttempt, "provenance run attempt");
+  return {
+    commit,
+    provenanceRunAttempt,
+    provenanceRunId,
+    version,
+    workflowRef,
+  };
+}
+
+export function validateRegistryProvenanceInvocation({
+  commit,
+  jobs,
+  run,
+  runAttempt,
+  runId,
+  workflowRef,
+}) {
+  requireCommit(commit, "provenance invocation commit");
+  requirePositiveInteger(runId, "provenance invocation run ID");
+  requirePositiveInteger(runAttempt, "provenance invocation run attempt");
+  requireEqual(run?.id, runId, "provenance invocation run ID");
+  requireEqual(
+    run?.run_attempt,
+    runAttempt,
+    "provenance invocation run attempt",
+  );
+  requireEqual(run?.name, "Publish", "provenance invocation workflow name");
+  requireEqual(
+    run?.path,
+    ".github/workflows/publish.yml",
+    "provenance invocation workflow path",
+  );
+  requireEqual(run?.event, "workflow_dispatch", "provenance invocation event");
+  requireEqual(
+    run?.head_branch,
+    workflowRef.replace(/^refs\/(?:heads|tags)\//, ""),
+    "provenance invocation ref",
+  );
+  requireEqual(run?.head_sha, commit, "provenance invocation commit");
+  requireEqual(
+    run?.repository?.full_name,
+    "cometapi-dev/cometapi-node",
+    "provenance invocation repository",
+  );
+  if (run?.status !== "in_progress" && run?.status !== "completed") {
+    fail("Release workflow provenance invocation must be active or completed.");
+  }
+  if (
+    run.status === "completed" &&
+    run.conclusion !== "success" &&
+    run.conclusion !== "failure"
+  ) {
+    fail(
+      "Release workflow completed provenance invocation must succeed or fail after publication.",
+    );
+  }
+  if (!Array.isArray(jobs)) {
+    fail("Release workflow provenance invocation jobs must be an array.");
+  }
+  const publishJobs = jobs.filter(
+    (job) => job?.name === "Publish with npm Trusted Publishing",
+  );
+  requireEqual(publishJobs.length, 1, "provenance publish-job count");
+  const publishJob = publishJobs[0];
+  requireEqual(publishJob?.run_id, runId, "provenance publish-job run ID");
+  requireEqual(
+    publishJob?.run_attempt,
+    runAttempt,
+    "provenance publish-job run attempt",
+  );
+  requireEqual(publishJob?.head_sha, commit, "provenance publish-job commit");
+  if (!Number.isInteger(publishJob?.runner_id) || publishJob.runner_id < 1) {
+    fail("Release workflow provenance publish job must have a runner.");
+  }
+  const publishSteps = Array.isArray(publishJob?.steps)
+    ? publishJob.steps.filter(
+        (step) => step?.name === "Publish the exact artifact with provenance",
+      )
+    : [];
+  requireEqual(publishSteps.length, 1, "provenance publish-step count");
+  requireEqual(
+    publishSteps[0]?.status,
+    "completed",
+    "provenance publish-step status",
+  );
+  requireEqual(
+    publishSteps[0]?.conclusion,
+    "success",
+    "provenance publish-step conclusion",
+  );
+  return { commit, runAttempt, runId, workflowRef };
+}
+
 export function validatePublishWorkflowDispatchRecoveryTrigger({
   actor,
   changedFiles,
   controlCommit,
+  controlCommitInput,
   controlFirstParent,
   eventName,
   eventRef,
   eventSha,
   mainCommit,
+  operation,
   releaseCommit,
   releaseTag,
+  recoveryPolicyId,
   sourcePublishRunAttempt,
   sourcePublishRunId,
   sourceReleaseCommit,
   sourceRunAttempt,
   sourceRunId,
-  task,
   triggeringActor,
   workflowRunAttempt,
+  workflowSha,
 }) {
   requireEqual(actor, PUBLISH_RECOVERY.actor, "publish recovery actor");
   requireEqual(
@@ -115,18 +1134,11 @@ export function validatePublishWorkflowDispatchRecoveryTrigger({
     "publish recovery triggering actor",
   );
   requireEqual(eventName, "workflow_dispatch", "publish recovery event");
-  requireEqual(
-    eventRef,
-    `refs/tags/${PUBLISH_RECOVERY.releaseTag}`,
-    "publish recovery ref",
-  );
+  requireEqual(eventRef, "refs/heads/main", "publish recovery ref");
   requireCommit(eventSha, "publish recovery event SHA");
-  requireEqual(
-    eventSha,
-    PUBLISH_RECOVERY.releaseCommit,
-    "publish recovery event SHA",
-  );
+  requireCommit(workflowSha, "publish recovery workflow SHA");
   requireCommit(controlCommit, "publish recovery control commit");
+  requireCommit(controlCommitInput, "publish recovery input control commit");
   requireCommit(controlFirstParent, "publish recovery control first parent");
   requireCommit(mainCommit, "publish recovery main commit");
   requireCommit(sourceReleaseCommit, "publish recovery source release commit");
@@ -134,6 +1146,13 @@ export function validatePublishWorkflowDispatchRecoveryTrigger({
     controlCommit,
     mainCommit,
     "publish recovery control and main commit agreement",
+  );
+  requireEqual(eventSha, controlCommit, "publish recovery event SHA");
+  requireEqual(workflowSha, controlCommit, "publish recovery workflow SHA");
+  requireEqual(
+    controlCommitInput,
+    controlCommit,
+    "publish recovery input control commit",
   );
   requireEqual(
     controlFirstParent,
@@ -188,8 +1207,13 @@ export function validatePublishWorkflowDispatchRecoveryTrigger({
     PUBLISH_RECOVERY.sourcePublishRunAttempt,
     "publish recovery source Publish run attempt",
   );
-  requireEqual(task, PUBLISH_RECOVERY.dispatchTask, "publish recovery task");
-  requirePositiveInteger(workflowRunAttempt, "publish recovery run attempt");
+  requireEqual(
+    operation,
+    PUBLISH_RECOVERY.dispatchTask,
+    "publish recovery operation",
+  );
+  requireEqual(workflowRunAttempt, 1, "publish recovery run attempt");
+  requirePositiveInteger(recoveryPolicyId, "publish recovery policy ID");
   if (!Array.isArray(changedFiles)) {
     fail("Release workflow publish recovery changed files must be an array.");
   }
@@ -205,6 +1229,105 @@ export function validatePublishWorkflowDispatchRecoveryTrigger({
     sourcePublishRunAttempt: PUBLISH_RECOVERY.sourcePublishRunAttempt,
     sourcePublishRunId: PUBLISH_RECOVERY.sourcePublishRunId,
   };
+}
+
+export function validateUniquePublishRecoveryRun({
+  controlCommit,
+  currentRunId,
+  responses,
+}) {
+  requireCommit(controlCommit, "publish recovery unique-run control commit");
+  requirePositiveInteger(
+    currentRunId,
+    "publish recovery unique-run current run ID",
+  );
+  if (!Array.isArray(responses) || responses.length === 0) {
+    fail(
+      "Release workflow publish recovery run responses must be a non-empty array.",
+    );
+  }
+
+  const runs = [];
+  let totalCount;
+  for (const response of responses) {
+    if (
+      response === null ||
+      typeof response !== "object" ||
+      Array.isArray(response)
+    ) {
+      fail("Release workflow publish recovery run response must be an object.");
+    }
+    if (!Number.isInteger(response.total_count) || response.total_count < 0) {
+      fail(
+        "Release workflow publish recovery response total count must be a non-negative integer.",
+      );
+    }
+    totalCount ??= response.total_count;
+    requireEqual(
+      response.total_count,
+      totalCount,
+      "publish recovery response total-count agreement",
+    );
+    if (!Array.isArray(response.workflow_runs)) {
+      fail(
+        "Release workflow publish recovery response workflow runs must be an array.",
+      );
+    }
+    runs.push(...response.workflow_runs);
+  }
+  requireEqual(
+    runs.length,
+    totalCount,
+    "publish recovery complete paginated run count",
+  );
+
+  const seen = new Set();
+  for (const run of runs) {
+    requirePositiveInteger(run?.id, "publish recovery candidate run ID");
+    if (seen.has(run.id)) {
+      fail(
+        "Release workflow publish recovery run set contains a duplicate run ID.",
+      );
+    }
+    seen.add(run.id);
+  }
+  requireEqual(totalCount, 1, "publish recovery exact control-run count");
+
+  const candidates = runs.filter(
+    (run) => run?.head_branch === "main" && run?.head_sha === controlCommit,
+  );
+  requireEqual(candidates.length, 1, "publish recovery matching run count");
+  const run = candidates[0];
+  requireEqual(run.id, currentRunId, "publish recovery current run ID");
+  requireEqual(run.event, "workflow_dispatch", "publish recovery run event");
+  requireEqual(run.name, "Publish", "publish recovery workflow name");
+  requireEqual(
+    run.path,
+    ".github/workflows/publish.yml",
+    "publish recovery workflow path",
+  );
+  requireEqual(
+    run.repository?.full_name,
+    "cometapi-dev/cometapi-node",
+    "publish recovery repository",
+  );
+  requireEqual(
+    run.head_repository?.full_name,
+    "cometapi-dev/cometapi-node",
+    "publish recovery head repository",
+  );
+  requireEqual(
+    run.actor?.login,
+    PUBLISH_RECOVERY.actor,
+    "publish recovery actor",
+  );
+  requireEqual(
+    run.triggering_actor?.login,
+    PUBLISH_RECOVERY.actor,
+    "publish recovery triggering actor",
+  );
+  requireEqual(run.run_attempt, 1, "publish recovery run attempt");
+  return { runAttempt: 1, runId: currentRunId };
 }
 
 function requireJob(job, { conclusion, id, name }) {
@@ -650,6 +1773,7 @@ export function selectPendingReleasePullRequest(
   pullRequests,
   {
     eventName,
+    operation = eventName === "workflow_dispatch" ? "prepare" : "release",
     releaseBranch,
     releaseCommit,
     releaseExists = false,
@@ -663,6 +1787,9 @@ export function selectPendingReleasePullRequest(
   requireCommit(releaseCommit, "current release commit");
   requireBoolean(releaseExists, "pre-action release existence");
   requirePositiveInteger(runAttempt, "run attempt");
+  if (operation !== "prepare" && operation !== "release") {
+    fail("Release workflow release operation must be prepare or release.");
+  }
   const pendingReleasePullRequests = pullRequests.filter(
     (pullRequest) =>
       pullRequest?.baseRef === "main" &&
@@ -675,7 +1802,13 @@ export function selectPendingReleasePullRequest(
     fail("Release workflow found multiple pending merged release PRs.");
   }
   if (pendingReleasePullRequests.length === 0) {
-    if (eventName === "push" && releaseExists) {
+    if (operation === "release") {
+      requireEqual(eventName, "push", "release operation event");
+      requireEqual(
+        releaseExists,
+        true,
+        "release recovery pre-action existence",
+      );
       if (runAttempt === 1) {
         fail(
           "Release workflow recovery is forbidden on the first run attempt.",
@@ -706,11 +1839,22 @@ export function selectPendingReleasePullRequest(
       );
       return recoveryPullRequest;
     }
-    requireEqual(eventName, "workflow_dispatch", "release preparation event");
+    if (eventName !== "workflow_dispatch" && eventName !== "push") {
+      fail(
+        "Release workflow preparation event must be push or workflow_dispatch.",
+      );
+    }
+    requireEqual(operation, "prepare", "release preparation operation");
+    requireEqual(
+      releaseExists,
+      false,
+      "release preparation candidate existence",
+    );
     requireEqual(runAttempt, 1, "release preparation run attempt");
     return null;
   }
 
+  requireEqual(operation, "release", "pending release operation");
   const pullRequest = pendingReleasePullRequests[0];
   requireEqual(
     pullRequest.headRef,
@@ -1254,11 +2398,6 @@ export function classifyPushReleasePresence({
     );
   }
   if (currentPatch === previousPatch) {
-    if (packageChanged) {
-      fail(
-        "Release workflow package.json push must change the stable package version.",
-      );
-    }
     if (!releaseExists) {
       fail(
         "Release workflow ignored push must retain the exact published current version.",
@@ -1290,7 +2429,7 @@ export function classifyPushReleasePresence({
       true,
       "published current release immutable state",
     );
-    return { mode: "ignore", version };
+    return { mode: "prepare", version };
   }
   if (currentPatch !== previousPatch + 1) {
     fail("Release workflow push must increment exactly one stable patch.");
