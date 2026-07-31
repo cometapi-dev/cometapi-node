@@ -5,9 +5,10 @@ Last updated: 2026-07-31
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
-Stable `0.1.1` completed the corrected options contract, immutable GitHub
-Release, bounded live smoke, OIDC publication, provenance, signature, separate
-public-install verification, and recovery-path cleanup on 2026-07-30.
+Stable `0.1.2` completed the public options type contract, release-neutral
+consumer documentation, the first permanent immutable-tag publication, bounded
+live smoke, OIDC provenance, public-install verification, and replay hardening
+on 2026-07-31.
 
 ## Product Target
 
@@ -24,9 +25,10 @@ Release then failed before invoking npm because its publication guard rejected
 the fixed `actions/setup-node` authentication placeholder.
 `0.1.0-alpha.3` subsequently completed the OIDC, provenance, ownership, and
 public-install verification sequence. Stable `0.1.1` completed its separately
-recorded release sequence on 2026-07-30. Stable 0.1.x packages use `latest`, and
-Registry Alpha artifacts use `next`; query npm and GitHub rather than treating
-this roadmap as current registry state.
+recorded recovery sequence on 2026-07-30, and stable `0.1.2` completed the
+permanent tag-bound sequence on 2026-07-31. Stable 0.1.x packages use `latest`,
+and Registry Alpha artifacts use `next`; query npm and GitHub rather than
+treating this roadmap as current registry state.
 
 ## Milestones
 
@@ -38,6 +40,7 @@ this roadmap as current registry state.
 | 0.1.x Registry Alpha       | Complete | Early adopters can install a functional, provenance-verified prerelease from npm's `next` channel through the OIDC-only publication path.      |
 | 0.1.0 Stable               | Complete | Users can install a fully verified package from npm's default channel.                                                                         |
 | 0.1.1 maintenance patch    | Complete | Users receive the corrected options contract; the permanent tag-bound release architecture is installed and the one-time recovery is recorded. |
+| 0.1.2 maintenance patch    | Complete | Users receive strict public option types and release-neutral package documentation through the verified permanent tag-bound publication path.  |
 | 0.2.0 provider-native text | Planned  | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                               |
 | 0.3.0 CometAPI resources   | Planned  | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                                |
 | Media and task APIs        | Later    | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                         |
@@ -121,11 +124,10 @@ The permanent state is `RELEASE_PLEASE_ENABLED=false`,
 `LIVE_SMOKE_ENABLED=true`, and exactly one npm Environment deployment policy,
 `tag:v*`. Current stable publication uses an unprivileged Release Please
 handoff followed by an immutable-tag dispatch, fresh verification and live
-smoke, and tag-bound npm OIDC. Stable `0.1.1` itself has main-bound provenance
-from the disclosed recovery, so the next explicitly authorized stable patch is
-the first end-to-end registry execution of the permanent tag-bound path. Full
-evidence is recorded in
-[RELEASING.md](./RELEASING.md#stable-011-release-evidence).
+smoke, and tag-bound npm OIDC. Stable `0.1.2` completed the first end-to-end
+registry execution of that permanent path. Full immutable evidence is recorded
+in [RELEASING.md](./RELEASING.md#stable-012-release-evidence); the earlier
+one-time recovery remains separately recorded as historical evidence.
 
 ## Private Remote Validation
 
@@ -304,14 +306,38 @@ Completion evidence:
   recovery-path cleanup. The evidence is recorded in
   [RELEASING.md](./RELEASING.md#stable-011-release-evidence).
 
+## 0.1.2: Public Contract and Tag-Bound Release Verification (Complete)
+
+Stable `0.1.2` redeclared `provider`, `workloadIdentity`, and
+`dangerouslyAllowBrowser` as optional `never` fields on `CometAPIOptions`.
+TypeScript negative tests now exercise variables, spreads,
+`satisfies ClientOptions`, and constrained generics through both the constructor
+and `withOptions`; the secret-free runtime guard remains authoritative for plain
+JavaScript and casts. The patch also made the README release-neutral and kept
+`package.json` as the sole candidate-version authority without changing the
+supported resource surface.
+
+The action-authored, exact-head-approved Release Please PR produced the
+immutable tag and GitHub Release. The unprivileged handoff then dispatched the
+exact tag, rebuilt and verified the artifact, ran the bounded three-request live
+smoke, and published through the tag-only npm Environment with OIDC provenance.
+When npm's attestation endpoint briefly returned `404` after successful
+publication, the single failed-job replay detected the byte-identical existing
+version and completed verification without invoking `npm publish` again.
+
+Post-publication hardening made that observed recovery finite and executable:
+handoff, exact-artifact verification, and live smoke are attempt-1-only;
+publication permits only an attempt-2 existing-version convergence check; and
+attempt 3 or later fails before entering the npm Environment. Release-specific
+PR, review, run, artifact, registry, provenance, and final-state evidence is
+recorded in [RELEASING.md](./RELEASING.md#stable-012-release-evidence).
+
 ## Stable 0.1.x Maintenance
 
 Maintenance patches close contract and release-process gaps without expanding
-the supported resource surface. The active maintenance work redeclares the
-three reserved client controls as optional `never`, executes negative tests for
-variables, spreads, `satisfies ClientOptions`, and constrained generics through
-both the constructor and `withOptions`, and preserves the runtime guard for
-plain JavaScript and casts.
+the supported resource surface. Future maintenance must preserve the strict
+reserved-option type and runtime boundary, the release-neutral consumer
+documentation, and the immutable-tag publication contract established above.
 
 Durable README, agent, compatibility, roadmap, and release guidance uses 0.1.x
 capability and channel language instead of copying a mutable exact version from
@@ -319,7 +345,7 @@ the registry. `package.json` is the sole candidate-version authority, the packed
 README must match the reviewed source byte-for-byte, and the release gates
 reject exact-version current, approval, unpublished, or in-progress claims.
 
-This maintenance work is complete only after the normal four-file Release
+Each maintenance patch is complete only after the normal four-file Release
 Please PR, immutable tag and GitHub Release, fresh bounded live smoke, tag-bound
 npm OIDC publication, and independent public-registry installation all pass.
 Release-specific evidence is recorded after publication rather than predicted
@@ -394,11 +420,10 @@ The repository will maintain:
   registry verification. Only the tag-bound dispatch can reach verification,
   live, or publication authority.
 
-All workflow files must pass local `actionlint`. The permanent tag-bound
-publication contract has passed static, mutation, pull-request, and
-default-branch CI, but `0.1.1` used the disclosed main-context recovery. Until a
-later stable patch executes the permanent path through registry publication,
-release reports must keep that remote end-to-end qualification explicit.
+All workflow files must pass local `actionlint`. Stable `0.1.2` completed the
+permanent tag-bound publication contract through registry verification. Its
+post-publication replay hardening then passed static and mutation checks,
+pull-request CI, exact-head owner audit, and default-branch CI.
 
 The initial manual alpha preparation starts with an empty version manifest and
 a temporary `release-as: 0.1.0-alpha.1` setting. Its reviewed pull request must
