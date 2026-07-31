@@ -167,3 +167,19 @@ smoke, OIDC publication, public-registry ESM/CommonJS and declaration checks,
 single effective OpenAI installation, official error identity, integrity,
 signature, and provenance evidence is recorded in
 [RELEASING.md](./RELEASING.md#stable-012-release-evidence).
+
+For stable `0.1.3`, the README, runnable ESM/CommonJS examples, and bounded
+release-tag validation moved to `gpt-5.6-sol` without expanding the supported
+operation surface. The source change passed
+[PR CI 30618613128](https://github.com/cometapi-dev/cometapi-node/actions/runs/30618613128),
+and the action-authored release candidate passed
+[CI run 30627706967 attempt 2](https://github.com/cometapi-dev/cometapi-node/actions/runs/30627706967/attempts/2).
+Release Please created the immutable
+[`v0.1.3` Release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.3),
+and
+[Publish run 30628187558](https://github.com/cometapi-dev/cometapi-node/actions/runs/30628187558)
+completed the tag-bound artifact and three-request live smoke, whose Chat
+Completions and Responses calls used `gpt-5.6-sol`, followed by OIDC
+publication, registry signature and provenance, and clean ESM/CommonJS public
+installation checks. Exact evidence is recorded in
+[RELEASING.md](./RELEASING.md#stable-013-release-evidence).

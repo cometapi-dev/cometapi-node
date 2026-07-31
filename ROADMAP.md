@@ -5,10 +5,9 @@ Last updated: 2026-07-31
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
-Stable `0.1.2` completed the public options type contract, release-neutral
-consumer documentation, the first permanent immutable-tag publication, bounded
-live smoke, OIDC provenance, public-install verification, and replay hardening
-on 2026-07-31.
+Stable `0.1.3` aligned the public examples and protected live validation on
+`gpt-5.6-sol`, preserved the bounded smoke budget, and completed the immutable
+tag, OIDC provenance, and public-install verification sequence on 2026-07-31.
 
 ## Product Target
 
@@ -25,10 +24,11 @@ Release then failed before invoking npm because its publication guard rejected
 the fixed `actions/setup-node` authentication placeholder.
 `0.1.0-alpha.3` subsequently completed the OIDC, provenance, ownership, and
 public-install verification sequence. Stable `0.1.1` completed its separately
-recorded recovery sequence on 2026-07-30, and stable `0.1.2` completed the
-permanent tag-bound sequence on 2026-07-31. Stable 0.1.x packages use `latest`,
-and Registry Alpha artifacts use `next`; query npm and GitHub rather than
-treating this roadmap as current registry state.
+recorded recovery sequence on 2026-07-30, stable `0.1.2` completed the first
+permanent tag-bound sequence, and stable `0.1.3` repeated that sequence with the
+updated example and live-smoke model on 2026-07-31. Stable 0.1.x packages use
+`latest`, and Registry Alpha artifacts use `next`; query npm and GitHub rather
+than treating this roadmap as current registry state.
 
 ## Milestones
 
@@ -41,6 +41,7 @@ treating this roadmap as current registry state.
 | 0.1.0 Stable               | Complete | Users can install a fully verified package from npm's default channel.                                                                         |
 | 0.1.1 maintenance patch    | Complete | Users receive the corrected options contract; the permanent tag-bound release architecture is installed and the one-time recovery is recorded. |
 | 0.1.2 maintenance patch    | Complete | Users receive strict public option types and release-neutral package documentation through the verified permanent tag-bound publication path.  |
+| 0.1.3 maintenance patch    | Complete | Users receive `gpt-5.6-sol` public examples backed by the same bounded model validation in the permanent tag-bound publication path.           |
 | 0.2.0 provider-native text | Planned  | Users can opt into Anthropic Messages and Gemini text adapters through isolated subpath exports.                                               |
 | 0.3.0 CometAPI resources   | Planned  | Users receive typed access to the first stable CometAPI-specific account or platform resources.                                                |
 | Media and task APIs        | Later    | Users receive typed image, video, audio, upload, polling, and task lifecycle helpers after their contracts are stable.                         |
@@ -125,9 +126,11 @@ The permanent state is `RELEASE_PLEASE_ENABLED=false`,
 `tag:v*`. Current stable publication uses an unprivileged Release Please
 handoff followed by an immutable-tag dispatch, fresh verification and live
 smoke, and tag-bound npm OIDC. Stable `0.1.2` completed the first end-to-end
-registry execution of that permanent path. Full immutable evidence is recorded
-in [RELEASING.md](./RELEASING.md#stable-012-release-evidence); the earlier
-one-time recovery remains separately recorded as historical evidence.
+registry execution of that permanent path, and stable `0.1.3` repeated it
+without a replay while aligning public and live-smoke model IDs. Full immutable
+evidence for the later execution is recorded in
+[RELEASING.md](./RELEASING.md#stable-013-release-evidence); the earlier one-time
+recovery remains separately recorded as historical evidence.
 
 ## Private Remote Validation
 
@@ -331,6 +334,26 @@ publication permits only an attempt-2 existing-version convergence check; and
 attempt 3 or later fails before entering the npm Environment. Release-specific
 PR, review, run, artifact, registry, provenance, and final-state evidence is
 recorded in [RELEASING.md](./RELEASING.md#stable-012-release-evidence).
+
+## 0.1.3: Model Example and Live Validation Refresh (Complete)
+
+Stable `0.1.3` replaced the older model ID in the README, runnable ESM and
+CommonJS examples, example documentation, and protected live-smoke defaults
+with `gpt-5.6-sol`. Chat Completions now passes `reasoning_effort: "none"`, and
+Responses passes `reasoning: { effort: "none" }`, so the existing 16-token
+release budget remains effective. Example mocks assert the model; live-smoke
+contracts assert the model and reasoning fields. This is an example and
+validation update, not a new supported operation or an SDK-level default-model
+contract.
+
+The source and action-authored release PRs passed their complete required
+matrices. Release Please created the immutable tag and Release, the unprivileged
+handoff dispatched one exact tag-bound Publish run, and that run rebuilt the
+artifact, passed exactly three sequential requests with Chat Completions and
+Responses using `gpt-5.6-sol`, published through npm OIDC, and completed
+signature, provenance, and independent public-install verification without
+replay. Release-specific evidence is recorded in
+[RELEASING.md](./RELEASING.md#stable-013-release-evidence).
 
 ## Stable 0.1.x Maintenance
 
