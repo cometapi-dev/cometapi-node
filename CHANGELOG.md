@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file. The format
 follows Keep a Changelog, and versions follow Semantic Versioning.
 
+## [0.1.2](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.1...v0.1.2) (2026-07-31)
+
+
+### Bug Fixes
+
+* bind publication to one current-main attempt ([553d320](https://github.com/cometapi-dev/cometapi-node/commit/553d320259cfaf71b84759adf509a39e487ed819))
+* dispatch recovery from immutable tag ([5f49304](https://github.com/cometapi-dev/cometapi-node/commit/5f493045a2205fe19904ca5be36f5bbf23378aec))
+* dispatch recovery from immutable tag ([c506ce2](https://github.com/cometapi-dev/cometapi-node/commit/c506ce2c4a199989f2fe5af2136b88afe32faeab))
+* harden options and publication contracts ([1d62b52](https://github.com/cometapi-dev/cometapi-node/commit/1d62b52fc5ca2fc803c11fbc99cf9c5991c6c974))
+* harden options and publication contracts ([c0934cc](https://github.com/cometapi-dev/cometapi-node/commit/c0934cc804fb5c23f0ff38e463cdfb00784da159))
+* harden release preparation and publish handoff ([37b811c](https://github.com/cometapi-dev/cometapi-node/commit/37b811c54773295487aa4200f349ec3edd30d729))
+* harden release preparation and publish handoff ([787f52f](https://github.com/cometapi-dev/cometapi-node/commit/787f52f4449aec66b845a3a1f69d456f8d25a481))
+* recover exact publish artifact ([22c313d](https://github.com/cometapi-dev/cometapi-node/commit/22c313d4f80c53ba01672dd35cc27b621d5ec9ce))
+* recover exact publish artifact ([525d4d0](https://github.com/cometapi-dev/cometapi-node/commit/525d4d0b8f5cf87a5eec53b04be53c331f511559))
+* recover publish from immutable tag ([8a80d82](https://github.com/cometapi-dev/cometapi-node/commit/8a80d8272a490ed6a7b47eede45aaeccae03c819))
+* recover publish from immutable tag ([aa4c3ca](https://github.com/cometapi-dev/cometapi-node/commit/aa4c3ca88b75001394d4f72c82b3a5e869b7664f))
+* reject duplicate recovery dispatches ([11871d9](https://github.com/cometapi-dev/cometapi-node/commit/11871d9f2b22e66f443628596ebd5863b4ea3576))
+* remove the one-time release recovery path ([c556624](https://github.com/cometapi-dev/cometapi-node/commit/c5566246abce065a39f1f66ed2b6e2d4bc89e62f))
+* remove the one-time v0.1.1 recovery path ([c319503](https://github.com/cometapi-dev/cometapi-node/commit/c319503684b371ad4a4f1ce78a156978de86072e))
+
 ## [0.1.1](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.0...v0.1.1) (2026-07-29)
 
 
