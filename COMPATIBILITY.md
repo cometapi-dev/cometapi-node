@@ -152,3 +152,18 @@ chain recorded in [RELEASING.md](./RELEASING.md#stable-011-release-evidence).
 Separate public-registry verification passed ESM, CommonJS, declarations,
 supported mocked calls, one effective OpenAI installation, official error
 identity, integrity, signature, and provenance.
+
+For stable `0.1.2`, the strict structural option declarations and packed
+ESM/CommonJS fixtures passed
+[source PR CI 30600555979](https://github.com/cometapi-dev/cometapi-node/actions/runs/30600555979)
+and the action-authored release candidate passed
+[CI run 30600746212 attempt 2](https://github.com/cometapi-dev/cometapi-node/actions/runs/30600746212/attempts/2).
+Release Please created the immutable
+[`v0.1.2` Release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.2),
+and
+[Publish run 30601661643](https://github.com/cometapi-dev/cometapi-node/actions/runs/30601661643)
+completed the first permanent tag-bound release sequence. Its bounded live
+smoke, OIDC publication, public-registry ESM/CommonJS and declaration checks,
+single effective OpenAI installation, official error identity, integrity,
+signature, and provenance evidence is recorded in
+[RELEASING.md](./RELEASING.md#stable-012-release-evidence).

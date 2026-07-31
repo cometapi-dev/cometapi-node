@@ -79,23 +79,19 @@ The unscoped `cometapi` package is the primary Node SDK. `@cometapi` is the
 standard scope for future official scoped packages; do not introduce new
 official packages under `@cometapi-dev`.
 
-Stable `0.1.1` established the runtime options boundary and repaired the release
-path without expanding the 0.1 resource surface. Release Please created the
-reviewed patch PR, immutable tag, and GitHub Release. Publication required a
-disclosed one-time main-context recovery because the immutable tag predated the
-repaired tag handoff. The recovery published only the exact previously verified
-artifact through npm OIDC, then the repository restored its variables and
-tag-only Environment policy. The current workflow contains no
-publication-recovery input, fixed recovery run or artifact ID,
-prior-package-artifact or live-evidence reuse, or branch-context publication
-path.
+Stable maintenance established the runtime options boundary without expanding
+the 0.1 resource surface. Release-specific recovery history and immutable
+evidence belong in `RELEASING.md`, not in this durable operating contract. The
+permanent stable-patch path uses a reviewed Release Please PR, an immutable tag
+and GitHub Release, an unprivileged tag handoff, fresh exact-artifact and bounded
+live verification, and tag-bound npm OIDC publication. That path has completed
+an end-to-end registry publication.
 
 Release Please remains disabled between explicitly authorized release
-operations. Permanent stable patches follow only the tag-bound path in
-`RELEASING.md`. The recovery provenance for stable `0.1.1` is historical
-evidence and does not prove an execution of the permanent path. The next
-explicitly authorized stable patch is that path's first end-to-end registry
-execution.
+operations. The current workflow contains no publication-recovery input, fixed
+recovery run or artifact ID, prior-package-artifact or live-evidence reuse, or
+branch-context publication path. Permanent stable patches follow only the
+tag-bound path in `RELEASING.md`.
 
 ## Product Contract
 
