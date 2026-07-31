@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 
 const script = new globalThis.URL("./live-smoke.mjs", import.meta.url);
 const LIVE_BASE_URL = "https://api.cometapi.com/v1";
+const DEFAULT_MODEL = "gpt-5.6-sol";
 const FULL_REQUEST_SEQUENCE = [
   `${LIVE_BASE_URL}/models`,
   `${LIVE_BASE_URL}/chat/completions`,
@@ -18,6 +19,7 @@ const environmentNames = [
   "COMETAPI_LIVE_REQUEST_LIMIT",
   "COMETAPI_LIVE_REQUEST_TIMEOUT_MS",
   "COMETAPI_LIVE_SMOKE",
+  "COMETAPI_SMOKE_MODEL",
 ];
 const originalEnvironment = new Map(
   environmentNames.map((name) => [name, process.env[name]]),
@@ -44,7 +46,7 @@ function completedResponse() {
   return {
     created_at: 1,
     id: "resp_live_contract",
-    model: "gpt-5.4",
+    model: DEFAULT_MODEL,
     object: "response",
     output: [],
     parallel_tool_calls: true,
@@ -65,7 +67,7 @@ function createMockFetch(scenario, requestURLs = []) {
         data: [
           {
             created: 1,
-            id: "gpt-5.4",
+            id: DEFAULT_MODEL,
             object: "model",
             owned_by: "cometapi",
           },
@@ -75,6 +77,9 @@ function createMockFetch(scenario, requestURLs = []) {
     }
 
     if (request.url.endsWith("/chat/completions")) {
+      const body = await request.clone().json();
+      assert.equal(body.model, DEFAULT_MODEL);
+      assert.equal(body.reasoning_effort, "none");
       return json({
         choices:
           scenario === "empty-chat"
@@ -88,12 +93,15 @@ function createMockFetch(scenario, requestURLs = []) {
               ],
         created: 1,
         id: "chatcmpl_live_contract",
-        model: "gpt-5.4",
+        model: DEFAULT_MODEL,
         object: "chat.completion",
       });
     }
 
     assert.ok(request.url.endsWith("/responses"));
+    const body = await request.clone().json();
+    assert.equal(body.model, DEFAULT_MODEL);
+    assert.deepEqual(body.reasoning, { effort: "none" });
     if (scenario === "failed-response") {
       return sse([
         {
@@ -179,6 +187,7 @@ async function runSuccessfulScenario() {
 function runFailingScenario(scenario, environment = {}) {
   const childProgram = [
     'import assert from "node:assert/strict";',
+    `const DEFAULT_MODEL = ${JSON.stringify(DEFAULT_MODEL)};`,
     `const requestURLs = [];`,
     json.toString(),
     sse.toString(),
@@ -203,6 +212,9 @@ function runFailingScenario(scenario, environment = {}) {
   };
   if (!("COMETAPI_BASE_URL" in environment)) {
     Reflect.deleteProperty(childEnvironment, "COMETAPI_BASE_URL");
+  }
+  if (!("COMETAPI_SMOKE_MODEL" in environment)) {
+    Reflect.deleteProperty(childEnvironment, "COMETAPI_SMOKE_MODEL");
   }
 
   return spawnSync(
@@ -233,6 +245,7 @@ try {
   process.env.COMETAPI_LIVE_REQUEST_TIMEOUT_MS = "60000";
   process.env.COMETAPI_LIVE_CONCURRENCY = "1";
   delete process.env.COMETAPI_BASE_URL;
+  delete process.env.COMETAPI_SMOKE_MODEL;
 
   await runSuccessfulScenario();
   assertFailingScenario({

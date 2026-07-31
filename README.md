@@ -103,14 +103,14 @@ import { CometAPI } from "cometapi";
 const client = new CometAPI();
 
 const response = await client.responses.create({
-  model: "gpt-5.4",
+  model: "gpt-5.6-sol",
   input: "Explain why the sky is blue in one sentence.",
 });
 
 console.log(response.output_text);
 
 const stream = await client.chat.completions.create({
-  model: "gpt-5.4",
+  model: "gpt-5.6-sol",
   messages: [{ role: "user", content: "Write one sentence about comets." }],
   stream: true,
 });
@@ -130,7 +130,7 @@ const client = new CometAPI();
 
 async function main() {
   const completion = await client.chat.completions.create({
-    model: "gpt-5.4",
+    model: "gpt-5.6-sol",
     messages: [{ role: "user", content: "Reply with one short greeting." }],
   });
   console.log(completion.choices[0]?.message?.content ?? "");
@@ -168,7 +168,7 @@ const client = new CometAPI({
 
 const response = await client.chat.completions.create(
   {
-    model: "gpt-5.4",
+    model: "gpt-5.6-sol",
     messages: [{ role: "user", content: "Reply with OK." }],
   },
   { timeout: 5_000 },

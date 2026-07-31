@@ -26,7 +26,7 @@ const REQUEST_TIMEOUT_MS = readBudget(
   60_000,
 );
 const concurrency = readBudget("COMETAPI_LIVE_CONCURRENCY", 1);
-const model = process.env.COMETAPI_SMOKE_MODEL ?? "gpt-5.4";
+const model = process.env.COMETAPI_SMOKE_MODEL ?? "gpt-5.6-sol";
 
 if (
   process.env.COMETAPI_BASE_URL !== undefined &&
@@ -89,6 +89,7 @@ const chat = await client.chat.completions.create({
   max_completion_tokens: OUTPUT_TOKEN_LIMIT,
   messages: [{ content: "Reply with OK.", role: "user" }],
   model,
+  reasoning_effort: "none",
 });
 assert.ok(chat.id, "Chat Completions returned no response ID");
 const chatChoice = chat.choices[0];
@@ -107,6 +108,7 @@ const stream = await client.responses.create({
   input: "Reply with OK.",
   max_output_tokens: OUTPUT_TOKEN_LIMIT,
   model,
+  reasoning: { effort: "none" },
   stream: true,
 });
 let eventCount = 0;

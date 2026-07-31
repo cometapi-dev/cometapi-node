@@ -72,8 +72,8 @@ and CommonJS fixtures.
 
 All repository documentation is written in English. Public behavior changes
 must update the README, compatibility matrix, examples, roadmap when milestone
-scope changes, and changelog. Examples use current model IDs such as `gpt-5.4`
-and must not contain real keys.
+scope changes, and changelog. Examples use current model IDs such as
+`gpt-5.6-sol` and must not contain real keys.
 
 Keep this repository self-contained. Do not add commands or links that require
 files outside the repository root, a sibling SDK, or a private checkout.

@@ -1,7 +1,7 @@
 # Examples
 
 These examples exercise only the supported 0.1 surface and use the current
-default example model, `gpt-5.4`.
+default example model, `gpt-5.6-sol`.
 
 - `esm.mjs` verifies ESM import, Responses, and streaming Chat Completions.
 - `commonjs.cjs` verifies CommonJS loading, non-streaming Chat Completions, and
