@@ -139,7 +139,9 @@ the exact Release-producing attempt, SHA, tag, version, URL, repository,
 workflow identity, run ID, and attempt in a schema-v2 exact-run artifact. An
 unprivileged `workflow_run` handoff validates only that attempt's artifact,
 exact tag, immutable Release, and current `main`, then dispatches `publish.yml`
-with `ref=v<version>`. Only that tag-bound `workflow_dispatch` can reach fresh
+with `ref=v<version>`. The handoff is attempt-1-only and refuses to dispatch if
+an exact child run already exists for the tag and commit. Only that tag-bound
+`workflow_dispatch` can reach fresh
 artifact verification, bounded live smoke, the npm Environment, or OIDC. A
 first-attempt manual run is explicitly release-inert and must succeed only after
 independently validating one canonical action-created patch PR; its event cannot
@@ -154,15 +156,22 @@ does not receive npm OIDC permission; `id-token: write` remains limited to the
 protected publish job. Repository variables gate both flows, and reruns remain
 fail-closed on exact tag, artifact, dist-tag, integrity, and provenance state.
 Registry package metadata and its attestation endpoint can converge at
-different times. Post-publication verification therefore retries attestation
-HTTP failures within a fixed time bound before failing, while preserving exact
-integrity and provenance validation. If publication succeeded before a later
-gate failed, only an idempotent replay of that same immutable-tag run may
-continue. The protected-state step records whether the exact version already
-exists; `publish-artifact.sh` then skips registry mutation only after its
-integrity matches the verified tarball and refuses a later `E404` instead of
-republishing. A failed-job replay preserves the same run's successful artifact
-and bounded live-smoke jobs rather than borrowing evidence from another run.
+different times. Post-publication verification therefore gives attestation HTTP
+failures one strict wall-clock-bounded retry window before failing; an early
+`404` is the known convergence case, while persistent URL, authentication,
+authorization, server, and transport failures remain terminal. The initial
+verification job freezes the prerelease dist-tag value, and every later registry
+gate requires it to remain unchanged rather than encoding a current package
+version in durable workflow guidance. If publication succeeded before a later
+gate failed, only one attempt-2 failed-job replay of that same immutable-tag run
+may continue, and only after attestations, signature, and provenance are already
+valid. Verification and bounded live smoke are attempt-1-only, so rerun-all
+fails before live API access; attempt 3 or later also fails. The protected-state
+step requires the exact version to exist on replay; `publish-artifact.sh` then
+skips registry mutation only after its integrity matches the verified tarball
+and refuses a later `E404` instead of republishing. The failed-job replay
+preserves the same run's successful artifact and bounded live-smoke jobs rather
+than borrowing evidence from another run.
 Manual preparation rejects attempt 2 or later; restart uses a new dispatch with
 Release creation disabled. A `push` rerun is bounded to the same run ID, SHA,
 candidate, and final-head review. It may retry while the tag and Release remain

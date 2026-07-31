@@ -283,26 +283,32 @@ repository root.
 - Prepare or refresh a release PR with a new first-attempt manual Release Please
   dispatch. Do not rerun a preparation dispatch. Release Please same-run Release
   reconciliation is allowed only under the exact conditions in `RELEASING.md`.
+- The successful Release Please `workflow_run` handoff is attempt-1-only and
+  must refuse to dispatch when any exact Publish child already exists for the
+  immutable tag and commit. Never rerun a handoff to create a second child run.
 - Never bypass a failed stable release with a manual or auxiliary tag, a
   branch-context publish, a temporary `main` npm Environment policy, cross-run
   artifact or live-evidence reuse, an arbitrary rerun, or a different patch
   version.
 - If `npm publish` succeeds but post-publication verification fails, first read
-  the exact public version, `latest`, `next`, integrity, attestation URL,
-  signature, and provenance. The pre-publish state allows the exact version to
-  be absent or equal to the candidate and `latest` to be the previous or
-  candidate patch; final state requires both exact and `latest` to equal the
-  candidate. `next` must always remain `0.1.0-alpha.3`. A transient attestation-
-  endpoint `404` is a registry convergence condition handled by the workflow's
-  single finite wait; exhaustion is terminal and must not be extended by reruns.
-  After the endpoint converges and independent signature and provenance checks
-  pass, at most one `rerun failed jobs` on the same immutable-tag run may resume
-  another failed post-publication gate. Confirm that GitHub preserves the
-  successful exact-artifact and live-smoke jobs, so the three-request smoke is
-  not repeated; stop if the replay expands that job set. The replay requires a
-  fresh Environment approval and must not publish again. An exact-version
-  metadata `E404`, second replay request, non-convergence, or any identity,
-  integrity, provenance, dist-tag, or configuration mismatch is a hard stop.
+  the exact public version, `latest`, `next`, integrity, and every readable
+  attestation, signature, and provenance field. When the exact version is
+  absent, `latest` must equal the previous patch. When the exact version equals
+  the candidate, `latest` may equal the previous patch or candidate. Final state
+  requires both exact and `latest` to equal the candidate, while `next` must
+  equal the prerelease value frozen by the initial verification job. A transient
+  early attestation-endpoint `404` is the known registry convergence condition;
+  all transport failures receive one wall-clock-bounded wait, and exhaustion is
+  terminal. Do not rerun to extend it. Only when attestations are readable and
+  independent signature and provenance checks have passed may exactly one
+  `rerun failed jobs` on the same immutable-tag run resume a different failed
+  post-publication gate. Confirm that GitHub preserves the successful
+  exact-artifact and live-smoke jobs; rerun-all must fail before live API access.
+  The attempt-2 publish job requires the exact version to exist, matching
+  integrity, and a fresh Environment approval; it must skip `npm publish`.
+  Attempt 3 or later, an exact-version metadata `E404`, a second replay request,
+  non-convergence, or any identity, integrity, provenance, dist-tag, or
+  configuration mismatch is a hard stop.
 - After registry verification, immediately restore
   `RELEASE_PLEASE_ENABLED=false`, keep `LIVE_SMOKE_ENABLED=true`, and require the
   npm Environment deployment-policy set to contain only `tag:v*`.

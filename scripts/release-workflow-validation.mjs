@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 const STABLE_VERSION_PATTERN = /^0\.1\.(0|[1-9]\d*)$/;
+const PRERELEASE_VERSION_PATTERN =
+  /^0\.1\.(?:0|[1-9]\d*)-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*$/;
 const RELEASE_PR_FILES = [
   ".release-please-manifest.json",
   "CHANGELOG.md",
@@ -16,9 +18,9 @@ const RELEASE_WORKFLOW_STEP = "Run Release Please";
 const PUBLISH_OPERATION = "release";
 const NPM_TAG_POLICY_ID = 55718965;
 const PUBLISH_WORKFLOW_CONTRACT_SHA256 =
-  "088366a4c0fdb060b330249f4f8db72c97b10925f7f737e47886dffce4dee9be";
+  "71e517276bc595ca7cb378997f5d9a007d0c2b8da98019c5dc870f74e0621745";
 const PUBLISH_HANDOFF_IF =
-  "vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'";
+  "vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'workflow_run' && github.run_attempt == 1 && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'";
 const PUBLISH_RESULT_IF = "steps.result.outputs.has-result == 'true'";
 const PUBLISH_CONDITIONAL_STEPS = new Set([
   "handoff:Install validation dependencies without lifecycle scripts",
@@ -27,7 +29,13 @@ const PUBLISH_CONDITIONAL_STEPS = new Set([
   "handoff:Dispatch the exact immutable tag",
 ]);
 const PUBLISH_VERIFY_IF =
-  "vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && inputs.publish_operation == 'release' && startsWith(github.ref, 'refs/tags/v0.1.') && github.ref == format('refs/tags/{0}', inputs.release_tag) && github.sha == inputs.release_commit && github.workflow_sha == inputs.control_commit && inputs.control_commit == inputs.release_commit";
+  "vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.run_attempt == 1 && inputs.publish_operation == 'release' && startsWith(github.ref, 'refs/tags/v0.1.') && github.ref == format('refs/tags/{0}', inputs.release_tag) && github.sha == inputs.release_commit && github.workflow_sha == inputs.control_commit && inputs.control_commit == inputs.release_commit";
+const PUBLISH_LIVE_IF =
+  "github.run_attempt == 1 && needs.verify.result == 'success'";
+const PUBLISH_JOB_IF =
+  "always() && (github.run_attempt == 1 || github.run_attempt == 2) && needs.live-smoke.result == 'success' && needs.verify.result == 'success'";
+const PUBLISH_CONCLUSION_IF =
+  "always() && github.event_name == 'workflow_dispatch' && inputs.publish_operation == 'release'";
 const PUBLISH_VERIFY_ENV = {
   SOURCE_RELEASE_COMMIT: "${{ inputs.release_commit }}",
   SOURCE_RELEASE_RUN_ATTEMPT: "${{ inputs.release_run_attempt }}",
@@ -131,6 +139,18 @@ function stablePatch(version, label) {
   return Number(match[1]);
 }
 
+export function validatePrereleaseDistTagBaseline(version) {
+  if (
+    typeof version !== "string" ||
+    !PRERELEASE_VERSION_PATTERN.test(version)
+  ) {
+    fail(
+      "Release workflow prerelease dist-tag baseline must be a 0.1.x prerelease version.",
+    );
+  }
+  return version;
+}
+
 function requireUniqueStep(job, name, label) {
   const matches = Array.isArray(job?.steps)
     ? job.steps.filter((step) => step?.name === name)
@@ -192,7 +212,7 @@ export function validatePublishWorkflowContract(workflow) {
   }
   requireEqual(
     JSON.stringify(Object.keys(jobs).sort()),
-    JSON.stringify(["handoff", "live-smoke", "publish", "verify"]),
+    JSON.stringify(["handoff", "live-smoke", "publish", "result", "verify"]),
     "Publish job set",
   );
   for (const [jobName, job] of Object.entries(jobs)) {
@@ -277,6 +297,8 @@ export function validatePublishWorkflowContract(workflow) {
   for (const fragment of [
     "actions/workflows/publish.yml/dispatches",
     "tag-dispatch-runs-before.json",
+    "An exact Publish run already exists for this immutable tag and commit.",
+    "$before[0] | map(.id) | index($id) | not",
     "Multiple Publish runs matched the immutable tag handoff.",
     '-f ref="$RELEASE_TAG"',
     '-f "inputs[publish_operation]=release"',
@@ -306,6 +328,31 @@ export function validatePublishWorkflowContract(workflow) {
     JSON.stringify(jobs.verify?.env),
     JSON.stringify(PUBLISH_VERIFY_ENV),
     "Publish verify source identity environment",
+  );
+  const verifyAttemptStep = requireUniqueStep(
+    jobs.verify,
+    "Reject a repeated verification attempt",
+    "Publish verification attempt guard",
+  );
+  requireEqual(
+    jobs.verify?.steps?.[0],
+    verifyAttemptStep,
+    "Publish verification attempt-guard order",
+  );
+  requireEqual(
+    verifyAttemptStep?.env?.WORKFLOW_RUN_ATTEMPT,
+    "${{ github.run_attempt }}",
+    "Publish verification run attempt",
+  );
+  requireEqual(
+    verifyAttemptStep?.run,
+    `set -euo pipefail
+if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" ]]; then
+  echo "Exact-artifact verification is restricted to the initial run attempt." >&2
+  exit 1
+fi
+`,
+    "Publish verification attempt guard",
   );
   const dispatchValidationStep = requireUniqueStep(
     jobs.verify,
@@ -358,10 +405,66 @@ export function validatePublishWorkflowContract(workflow) {
     "Publish live-smoke dependencies",
   );
   requireEqual(
+    jobs["live-smoke"]?.if,
+    PUBLISH_LIVE_IF,
+    "Publish live-smoke attempt gate",
+  );
+  const liveAttemptStep = requireUniqueStep(
+    jobs["live-smoke"],
+    "Reject a repeated live-smoke attempt",
+    "Publish live-smoke attempt guard",
+  );
+  requireEqual(
+    jobs["live-smoke"]?.steps?.[0],
+    liveAttemptStep,
+    "Publish live-smoke attempt-guard order",
+  );
+  requireEqual(
+    liveAttemptStep?.env?.WORKFLOW_RUN_ATTEMPT,
+    "${{ github.run_attempt }}",
+    "Publish live-smoke run attempt",
+  );
+  requireEqual(
+    liveAttemptStep?.run,
+    `set -euo pipefail
+if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" ]]; then
+  echo "The bounded live smoke is restricted to the initial run attempt." >&2
+  exit 1
+fi
+`,
+    "Publish live-smoke attempt guard",
+  );
+  requireEqual(
     jobs.verify?.outputs?.["release-please-snapshot"],
     "${{ steps.release-please-snapshot.outputs.digest }}",
     "Publish Release Please snapshot output",
   );
+  requireEqual(
+    jobs.verify?.outputs?.["expected-next-version"],
+    "${{ steps.registry-baseline.outputs.next-version }}",
+    "Publish prerelease dist-tag baseline output",
+  );
+  const registryBaselineStep = requireUniqueStep(
+    jobs.verify,
+    "Freeze the prerelease dist-tag",
+    "Publish prerelease dist-tag baseline",
+  );
+  requireEqual(
+    registryBaselineStep?.id,
+    "registry-baseline",
+    "Publish prerelease dist-tag baseline ID",
+  );
+  for (const fragment of [
+    'next_version="$(npm view cometapi@next version)"',
+    "validatePrereleaseDistTagBaseline(process.env.NEXT_VERSION)",
+    'echo "next-version=${next_version}" >> "$GITHUB_OUTPUT"',
+  ]) {
+    if (!registryBaselineStep?.run?.includes(fragment)) {
+      fail(
+        `Release workflow prerelease dist-tag baseline must contain ${fragment}.`,
+      );
+    }
+  }
   const releasePleaseSnapshotStep = requireUniqueStep(
     jobs.verify,
     "Freeze the Release Please run set",
@@ -479,6 +582,7 @@ export function validatePublishWorkflowContract(workflow) {
     JSON.stringify(["live-smoke", "verify"]),
     "Publish deployment dependencies",
   );
+  requireEqual(jobs.publish?.if, PUBLISH_JOB_IF, "Publish deployment gate");
   requireEqual(jobs.publish?.environment?.name, "npm", "Publish environment");
   requireEqual(
     JSON.stringify(jobs.publish?.permissions),
@@ -489,6 +593,32 @@ export function validatePublishWorkflowContract(workflow) {
       "id-token": "write",
     }),
     "Publish deployment permissions",
+  );
+  const publishAttemptStep = requireUniqueStep(
+    jobs.publish,
+    "Reject an out-of-bounds publication attempt",
+    "Publish publication attempt guard",
+  );
+  requireEqual(
+    jobs.publish?.steps?.[0],
+    publishAttemptStep,
+    "Publish publication attempt-guard order",
+  );
+  requireEqual(
+    publishAttemptStep?.env?.WORKFLOW_RUN_ATTEMPT,
+    "${{ github.run_attempt }}",
+    "Publish publication run attempt",
+  );
+  requireEqual(
+    publishAttemptStep?.run,
+    `set -euo pipefail
+if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" &&
+      "$WORKFLOW_RUN_ATTEMPT" != "2" ]]; then
+  echo "Publication permits only the initial attempt and one failed-job replay." >&2
+  exit 1
+fi
+`,
+    "Publish publication attempt guard",
   );
   const permissionCounts = { actionsWrite: 0, idTokenWrite: 0 };
   for (const job of Object.values(jobs)) {
@@ -519,6 +649,16 @@ export function validatePublishWorkflowContract(workflow) {
     "${{ vars.RELEASE_PLEASE_ENABLED }}",
     "Publish Release Please variable context",
   );
+  requireEqual(
+    reconfirmStep?.env?.WORKFLOW_RUN_ATTEMPT,
+    "${{ github.run_attempt }}",
+    "Publish protected-state run attempt",
+  );
+  requireEqual(
+    reconfirmStep?.env?.EXPECTED_NEXT_VERSION,
+    "${{ needs.verify.outputs.expected-next-version }}",
+    "Publish prerelease dist-tag baseline reconfirmation",
+  );
   for (const fragment of [
     "actions/workflows/release-please.yml/runs?per_page=100",
     'gh api --paginate --slurp \\\n  "repos/${GITHUB_REPOSITORY}/environments/npm/deployment-branch-policies?per_page=100"',
@@ -526,6 +666,8 @@ export function validatePublishWorkflowContract(workflow) {
     "snapshotReleasePleaseRuns",
     "expectedPolicyIds",
     "if (digest !== process.env.RELEASE_PLEASE_SNAPSHOT)",
+    'WORKFLOW_RUN_ATTEMPT" == "2" && -z "$exact_version"',
+    "expectedNextVersion: process.env.EXPECTED_NEXT_VERSION",
   ]) {
     if (
       typeof reconfirmStep?.run !== "string" ||
@@ -535,6 +677,24 @@ export function validatePublishWorkflowContract(workflow) {
         `Release workflow Publish protected-state reconfirmation must contain ${fragment}.`,
       );
     }
+  }
+  const exactVersionRead = reconfirmStep.run.indexOf(
+    'exact_version="$(npm view "cometapi@${VERSION}" version',
+  );
+  const replayVersionGuard = reconfirmStep.run.indexOf(
+    'if [[ "$WORKFLOW_RUN_ATTEMPT" == "2" && -z "$exact_version" ]]',
+  );
+  const replayExpectationOutput = reconfirmStep.run.indexOf(
+    'echo "expect-existing=true" >> "$GITHUB_OUTPUT"',
+  );
+  if (
+    exactVersionRead < 0 ||
+    replayVersionGuard <= exactVersionRead ||
+    replayExpectationOutput <= replayVersionGuard
+  ) {
+    fail(
+      "Release workflow replay must require the exact registry version before publishing.",
+    );
   }
   const publishStep = requireUniqueStep(
     jobs.publish,
@@ -551,12 +711,19 @@ export function validatePublishWorkflowContract(workflow) {
     "${{ github.token }}",
     "Publish registry verification token",
   );
+  requireEqual(
+    registryStep?.env?.EXPECTED_NEXT_VERSION,
+    "${{ needs.verify.outputs.expected-next-version }}",
+    "Publish registry prerelease dist-tag baseline",
+  );
   for (const fragment of [
     "bash scripts/fetch-attestations.sh",
     'post_exact_version="$(npm view',
     'post_tagged_version="$(npm view',
     'post_next_version="$(npm view cometapi@next version)"',
     'post_registry_dist="$(npm view',
+    'npm view cometapi@next version)" != "$EXPECTED_NEXT_VERSION"',
+    "expectedNextVersion: process.env.EXPECTED_NEXT_VERSION",
     "validatePublishedRegistryState",
   ]) {
     if (
@@ -567,6 +734,22 @@ export function validatePublishWorkflowContract(workflow) {
         `Release workflow public-registry verification must contain ${fragment}.`,
       );
     }
+  }
+  const attestationUrlRead = registryStep.run.indexOf('attestations_url="$(');
+  const attestationUrlValidation = registryStep.run.indexOf(
+    "validateRegistryAttestationUrl({",
+  );
+  const attestationFetch = registryStep.run.indexOf(
+    "bash scripts/fetch-attestations.sh",
+  );
+  if (
+    attestationUrlRead < 0 ||
+    attestationUrlValidation <= attestationUrlRead ||
+    attestationFetch <= attestationUrlValidation
+  ) {
+    fail(
+      "Release workflow must validate the registry attestation URL before fetching it.",
+    );
   }
   const publishSteps = jobs.publish?.steps ?? [];
   if (
@@ -586,6 +769,59 @@ export function validatePublishWorkflowContract(workflow) {
     publishStep?.env?.EXPECT_EXISTING,
     "${{ steps.pre-publish.outputs.expect-existing }}",
     "npm publication replay expectation",
+  );
+  requireEqual(
+    jobs.result?.if,
+    PUBLISH_CONCLUSION_IF,
+    "Publish conclusion gate",
+  );
+  requireEqual(
+    JSON.stringify(jobs.result?.needs),
+    JSON.stringify(["live-smoke", "publish", "verify"]),
+    "Publish conclusion dependencies",
+  );
+  requireEqual(
+    JSON.stringify(jobs.result?.permissions),
+    JSON.stringify({}),
+    "Publish conclusion permissions",
+  );
+  requireEqual(
+    jobs.result?.environment,
+    undefined,
+    "Publish conclusion environment",
+  );
+  const conclusionStep = requireUniqueStep(
+    jobs.result,
+    "Reject skipped or out-of-bounds publication",
+    "Publish conclusion",
+  );
+  requireEqual(jobs.result?.steps?.length, 1, "Publish conclusion step count");
+  requireEqual(
+    JSON.stringify(conclusionStep?.env),
+    JSON.stringify({
+      LIVE_SMOKE_RESULT: "${{ needs.live-smoke.result }}",
+      PUBLISH_RESULT: "${{ needs.publish.result }}",
+      VERIFY_RESULT: "${{ needs.verify.result }}",
+      WORKFLOW_RUN_ATTEMPT: "${{ github.run_attempt }}",
+    }),
+    "Publish conclusion evidence",
+  );
+  requireEqual(
+    conclusionStep?.run,
+    `set -euo pipefail
+if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" &&
+      "$WORKFLOW_RUN_ATTEMPT" != "2" ]]; then
+  echo "Publication permits only the initial attempt and one failed-job replay." >&2
+  exit 1
+fi
+if [[ "$VERIFY_RESULT" != "success" ||
+      "$LIVE_SMOKE_RESULT" != "success" ||
+      "$PUBLISH_RESULT" != "success" ]]; then
+  echo "The bounded publication job set did not complete successfully." >&2
+  exit 1
+fi
+`,
+    "Publish conclusion command",
   );
   requireEqual(
     createHash("sha256").update(JSON.stringify(workflow)).digest("hex"),
@@ -765,7 +1001,7 @@ export function validatePublishWorkflowDispatchTrigger({
   requireEqual(eventRef, `refs/tags/${releaseTag}`, "tag dispatch ref");
   requirePositiveInteger(sourceRunId, "tag dispatch source run ID");
   requirePositiveInteger(sourceRunAttempt, "tag dispatch source run attempt");
-  requirePositiveInteger(workflowRunAttempt, "tag dispatch run attempt");
+  requireEqual(workflowRunAttempt, 1, "tag dispatch run attempt");
   return {
     releaseCommit,
     releaseRunAttempt: sourceRunAttempt,
@@ -869,11 +1105,13 @@ export function validateNpmEnvironmentState({
 
 export function validateRegistryStateBeforePublish({
   exactVersion,
+  expectedNextVersion,
   latestVersion,
   nextVersion,
   version,
 }) {
   const patch = stablePatch(version, "registry candidate version");
+  validatePrereleaseDistTagBaseline(expectedNextVersion);
   if (patch < 1) {
     fail("Release workflow registry candidate must be newer than 0.1.0.");
   }
@@ -888,14 +1126,29 @@ export function validateRegistryStateBeforePublish({
       `Release workflow registry latest must equal ${allowedLatest.join(" or ")}; received ${String(latestVersion)}.`,
     );
   }
-  requireEqual(nextVersion, "0.1.0-alpha.3", "registry next version");
+  requireEqual(
+    nextVersion,
+    expectedNextVersion,
+    "registry prerelease dist-tag baseline",
+  );
   return { exactVersion, latestVersion, nextVersion, previousVersion, version };
+}
+
+export function validateRegistryAttestationUrl({ url, version }) {
+  stablePatch(version, "registry attestation version");
+  requireEqual(
+    url,
+    `https://registry.npmjs.org/-/npm/v1/attestations/cometapi@${version}`,
+    "registry attestation URL identity",
+  );
+  return { url, version };
 }
 
 export function validatePublishedRegistryState({
   attestationUrl,
   dist,
   exactVersion,
+  expectedNextVersion,
   expectedIntegrity,
   nextVersion,
   taggedVersion,
@@ -903,17 +1156,14 @@ export function validatePublishedRegistryState({
 }) {
   validateRegistryStateBeforePublish({
     exactVersion,
+    expectedNextVersion,
     latestVersion: taggedVersion,
     nextVersion,
     version,
   });
   requireEqual(exactVersion, version, "published registry exact version");
   requireEqual(taggedVersion, version, "published registry dist-tag");
-  requireEqual(
-    attestationUrl,
-    `https://registry.npmjs.org/-/npm/v1/attestations/cometapi@${version}`,
-    "published registry attestation URL identity",
-  );
+  validateRegistryAttestationUrl({ url: attestationUrl, version });
   if (dist === null || typeof dist !== "object" || Array.isArray(dist)) {
     fail("Release workflow published registry dist must be an object.");
   }

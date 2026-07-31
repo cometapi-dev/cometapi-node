@@ -47,6 +47,7 @@ jobs:
     if: >-
       vars.RELEASE_PLEASE_ENABLED == 'true' &&
       github.event_name == 'workflow_run' &&
+      github.run_attempt == 1 &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
@@ -243,7 +244,17 @@ jobs:
           after_runs="$RUNNER_TEMP/tag-dispatch-runs-after.json"
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/runs?event=workflow_dispatch&per_page=100" \
-            | jq '[.[].workflow_runs[].id]' > "$before_runs"
+            | jq '[.[].workflow_runs[]]' > "$before_runs"
+          prior_count="$(jq \
+            --arg commit "$RELEASE_COMMIT" --arg tag "$RELEASE_TAG" \
+            '[.[] | select(.actor.login == "github-actions[bot]" and
+              .triggering_actor.login == "github-actions[bot]" and
+              .event == "workflow_dispatch" and .head_branch == $tag and
+              .head_sha == $commit)] | length' "$before_runs")"
+          if [[ "$prior_count" != "0" ]]; then
+            echo "An exact Publish run already exists for this immutable tag and commit." >&2
+            exit 1
+          fi
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/publish.yml/dispatches" \
             -f ref="$RELEASE_TAG" \
@@ -262,7 +273,7 @@ jobs:
             candidate_count="$(jq \
               --arg commit "$RELEASE_COMMIT" --arg tag "$RELEASE_TAG" \
               --slurpfile before "$before_runs" \
-              '[.[] | select(.id as $id | ($before[0] | index($id) | not)) |
+              '[.[] | select(.id as $id | ($before[0] | map(.id) | index($id) | not)) |
                 select(.actor.login == "github-actions[bot]" and
                   .triggering_actor.login == "github-actions[bot]" and
                   .event == "workflow_dispatch" and .head_branch == $tag and
@@ -275,7 +286,7 @@ jobs:
               publish_run_id="$(jq -r \
                 --arg commit "$RELEASE_COMMIT" --arg tag "$RELEASE_TAG" \
                 --slurpfile before "$before_runs" \
-                '[.[] | select(.id as $id | ($before[0] | index($id) | not)) |
+                '[.[] | select(.id as $id | ($before[0] | map(.id) | index($id) | not)) |
                   select(.actor.login == "github-actions[bot]" and
                     .triggering_actor.login == "github-actions[bot]" and
                     .event == "workflow_dispatch" and .head_branch == $tag and
@@ -296,6 +307,7 @@ jobs:
     if: >-
       vars.RELEASE_PLEASE_ENABLED == 'true' &&
       github.event_name == 'workflow_dispatch' &&
+      github.run_attempt == 1 &&
       inputs.publish_operation == 'release' &&
       startsWith(github.ref, 'refs/tags/v0.1.') &&
       github.ref == format('refs/tags/{0}', inputs.release_tag) &&
@@ -312,11 +324,21 @@ jobs:
       artifact-name: ${{ steps.artifact-name.outputs.name }}
       control-commit: ${{ inputs.control_commit }}
       dist-tag: ${{ steps.version.outputs.dist-tag }}
+      expected-next-version: ${{ steps.registry-baseline.outputs.next-version }}
       release-commit: ${{ steps.trust.outputs.release-commit }}
       release-tag: ${{ steps.trust.outputs.release-tag }}
       release-please-snapshot: ${{ steps.release-please-snapshot.outputs.digest }}
       version: ${{ steps.version.outputs.version }}
     steps:
+      - name: Reject a repeated verification attempt
+        env:
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" ]]; then
+            echo "Exact-artifact verification is restricted to the initial run attempt." >&2
+            exit 1
+          fi
       - name: Check out the workflow control commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -576,6 +598,18 @@ jobs:
           EOF
       - name: Use a Trusted Publishing-capable npm CLI
         run: npm install --global npm@11.12.1
+      - name: Freeze the prerelease dist-tag
+        id: registry-baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          next_version="$(npm view cometapi@next version)"
+          NEXT_VERSION="$next_version" node --input-type=module <<'EOF'
+          import { validatePrereleaseDistTagBaseline } from "./scripts/release-workflow-validation.mjs";
+
+          validatePrereleaseDistTagBaseline(process.env.NEXT_VERSION);
+          EOF
+          echo "next-version=${next_version}" >> "$GITHUB_OUTPUT"
       - name: Install locked dependencies
         run: npm ci
       - name: Run release checks
@@ -630,6 +664,9 @@ jobs:
 
   live-smoke:
     name: Verify the release tag against CometAPI
+    if: >-
+      github.run_attempt == 1 &&
+      needs.verify.result == 'success'
     needs:
       - verify
     concurrency:
@@ -641,6 +678,15 @@ jobs:
     # without required reviewers and add COMETAPI_KEY before publishing a release.
     environment: live-smoke
     steps:
+      - name: Reject a repeated live-smoke attempt
+        env:
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" ]]; then
+            echo "The bounded live smoke is restricted to the initial run attempt." >&2
+            exit 1
+          fi
       - name: Check out the verified release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -668,6 +714,11 @@ jobs:
 
   publish:
     name: Publish with npm Trusted Publishing
+    if: >-
+      always() &&
+      (github.run_attempt == 1 || github.run_attempt == 2) &&
+      needs.live-smoke.result == 'success' &&
+      needs.verify.result == 'success'
     needs:
       - live-smoke
       - verify
@@ -684,6 +735,16 @@ jobs:
       deployments: read
       id-token: write
     steps:
+      - name: Reject an out-of-bounds publication attempt
+        env:
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" &&
+                "$WORKFLOW_RUN_ATTEMPT" != "2" ]]; then
+            echo "Publication permits only the initial attempt and one failed-job replay." >&2
+            exit 1
+          fi
       - name: Check out the verified release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -711,6 +772,7 @@ jobs:
           ENVIRONMENT_FILE: ${{ runner.temp }}/npm-environment.json
           EVENT_REF: ${{ github.ref }}
           EVENT_SHA: ${{ github.sha }}
+          EXPECTED_NEXT_VERSION: ${{ needs.verify.outputs.expected-next-version }}
           GH_TOKEN: ${{ github.token }}
           POLICIES_FILE: ${{ runner.temp }}/npm-deployment-policies.json
           RELEASE_COMMIT: ${{ needs.verify.outputs.release-commit }}
@@ -723,6 +785,7 @@ jobs:
           RELEASE_PLEASE_RUNS: ${{ runner.temp }}/release-please-runs-before-publish.json
           RELEASE_PLEASE_SNAPSHOT: ${{ needs.verify.outputs.release-please-snapshot }}
           VERSION: ${{ needs.verify.outputs.version }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         shell: bash
         run: |
@@ -793,6 +856,10 @@ jobs:
               echo "Unable to read the exact registry version before publication." >&2
               exit 1
             fi
+          fi
+          if [[ "$WORKFLOW_RUN_ATTEMPT" == "2" && -z "$exact_version" ]]; then
+            echo "The failed-job replay requires the exact registry version to exist." >&2
+            exit 1
           fi
           latest_version="$(npm view cometapi@latest version)"
           next_version="$(npm view cometapi@next version)"
@@ -886,6 +953,7 @@ jobs:
           });
           validateRegistryStateBeforePublish({
             exactVersion: process.env.EXACT_VERSION || null,
+            expectedNextVersion: process.env.EXPECTED_NEXT_VERSION,
             latestVersion: process.env.LATEST_VERSION,
             nextVersion: process.env.NEXT_VERSION,
             version,
@@ -907,6 +975,7 @@ jobs:
           CONTROL_COMMIT: ${{ needs.verify.outputs.control-commit }}
           CONTROL_VALIDATOR: ${{ runner.temp }}/release-workflow-validation.mjs
           DIST_TAG: ${{ needs.verify.outputs.dist-tag }}
+          EXPECTED_NEXT_VERSION: ${{ needs.verify.outputs.expected-next-version }}
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_REF: ${{ github.ref }}
           VERSION: ${{ needs.verify.outputs.version }}
@@ -949,13 +1018,25 @@ jobs:
             echo "Registry state did not converge for cometapi@${VERSION}, ${DIST_TAG}, integrity, and provenance." >&2
             exit 1
           fi
-          if [[ "$(npm view cometapi@next version)" != "0.1.0-alpha.3" ]]; then
+          if [[ "$(npm view cometapi@next version)" != "$EXPECTED_NEXT_VERSION" ]]; then
             echo "The next dist-tag changed during publication." >&2
             exit 1
           fi
 
           attestations_url="$(REGISTRY_DIST="$registry_dist" node -e 'process.stdout.write(JSON.parse(process.env.REGISTRY_DIST).attestations.url)')"
           attestations_file="$RUNNER_TEMP/npm-attestations.json"
+          ATTESTATIONS_URL="$attestations_url" \
+            node --input-type=module <<'EOF'
+          import { pathToFileURL } from "node:url";
+
+          const { validateRegistryAttestationUrl } = await import(
+            pathToFileURL(process.env.CONTROL_VALIDATOR)
+          );
+          validateRegistryAttestationUrl({
+            url: process.env.ATTESTATIONS_URL,
+            version: process.env.VERSION,
+          });
+          EOF
           ATTESTATIONS_FILE="$attestations_file" \
             ATTESTATIONS_URL="$attestations_url" \
             bash scripts/fetch-attestations.sh
@@ -980,6 +1061,7 @@ jobs:
             attestationUrl: process.env.ATTESTATIONS_URL,
             dist: JSON.parse(process.env.REGISTRY_DIST),
             exactVersion: process.env.EXACT_VERSION,
+            expectedNextVersion: process.env.EXPECTED_NEXT_VERSION,
             expectedIntegrity: process.env.EXPECTED_INTEGRITY,
             nextVersion: process.env.NEXT_VERSION,
             taggedVersion: process.env.TAGGED_VERSION,
@@ -1213,3 +1295,36 @@ jobs:
             process.exitCode = 1;
           });
           EOF
+
+  result:
+    name: Enforce the bounded publication result
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.publish_operation == 'release'
+    needs:
+      - live-smoke
+      - publish
+      - verify
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Reject skipped or out-of-bounds publication
+        env:
+          LIVE_SMOKE_RESULT: ${{ needs.live-smoke.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [[ "$WORKFLOW_RUN_ATTEMPT" != "1" &&
+                "$WORKFLOW_RUN_ATTEMPT" != "2" ]]; then
+            echo "Publication permits only the initial attempt and one failed-job replay." >&2
+            exit 1
+          fi
+          if [[ "$VERIFY_RESULT" != "success" ||
+                "$LIVE_SMOKE_RESULT" != "success" ||
+                "$PUBLISH_RESULT" != "success" ]]; then
+            echo "The bounded publication job set did not complete successfully." >&2
+            exit 1
+          fi
