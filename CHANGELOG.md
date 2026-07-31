@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file. The format
 follows Keep a Changelog, and versions follow Semantic Versioning.
 
+## [0.1.3](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.2...v0.1.3) (2026-07-31)
+
+
+### Bug Fixes
+
+* enforce bounded publication replay ([05041c4](https://github.com/cometapi-dev/cometapi-node/commit/05041c4080a57814a3d2e90122185951b9b84404))
+* harden post-publication convergence ([d02b87d](https://github.com/cometapi-dev/cometapi-node/commit/d02b87da330d4b71d194f5c3a6df727b20dc9df3))
+* harden post-publication convergence ([c4b930d](https://github.com/cometapi-dev/cometapi-node/commit/c4b930d46cd2fa0b6e99da9887667624d1351858))
+* update examples to gpt-5.6-sol ([3809692](https://github.com/cometapi-dev/cometapi-node/commit/3809692d35e2d9f98ba3a209947c716d8e4307b7))
+* update examples to gpt-5.6-sol ([cae4c97](https://github.com/cometapi-dev/cometapi-node/commit/cae4c97a29221fd46aa798d93c0ed10b6e94cb7d))
+
 ## [0.1.2](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.1...v0.1.2) (2026-07-31)
 
 
