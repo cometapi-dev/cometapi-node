@@ -95,7 +95,7 @@ function fixture(version = "0.1.0-alpha.1") {
         "# Contributing\n\nContributions must include tests.\n\n## Development setup\n\nInstall from the lock file before running checks.\n",
       license:
         'MIT License\n\nCopyright (c) 2026 CometAPI\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software, to use the Software subject to the MIT conditions.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.\n',
-      readme: `# CometAPI SDK\n\n${isPrerelease ? "**Pre-release:** the SDK is under active development." : "**Stable:** the SDK is supported for the documented 0.1 surface."} ${version} is approved for npm publication.\n\n## Supported 0.1 surface\n\n- \`chat.completions.create\`, streaming and non-streaming\n- \`responses.create\`, streaming and non-streaming\n- \`models.list\`\n`,
+      readme: `# CometAPI SDK\n\n${isPrerelease ? "**Pre-release:** development artifacts use the `next` channel." : "**Stable:** stable 0.1.x maintenance releases support the documented surface."}\n\n## Installation\n\n\`\`\`bash\nnpm install cometapi\n\`\`\`\n\nSee https://www.npmjs.com/package/cometapi for current registry state.\n\n## Supported 0.1 surface\n\n- \`chat.completions.create\`, streaming and non-streaming\n- \`responses.create\`, streaming and non-streaming\n- \`models.list\`\n`,
       releasing:
         "# Releasing\n\nRelease status is evidence-based.\n\n## Authorization boundary\n\nRemote publication requires maintainer authorization.\n",
       roadmap:
@@ -710,6 +710,42 @@ describe("release metadata validation", () => {
     });
   });
 
+  it("keeps durable README guidance byte-identical across patch releases", () => {
+    const firstPatch = fixture("0.1.1");
+    const secondPatch = fixture("0.1.2");
+    firstPatch.changelog = "## [0.1.1] - 2026-07-30\n";
+    secondPatch.changelog = "## [0.1.2] - 2026-07-31\n";
+
+    expect(firstPatch.releaseDocuments.readme).toBe(
+      secondPatch.releaseDocuments.readme,
+    );
+    for (const values of [firstPatch, secondPatch]) {
+      expect(() =>
+        validateReleaseMetadata({
+          ...values,
+          requireDatedChangelog: true,
+          requireFinalReleaseState: true,
+          requireReleasableDocs: true,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("rejects mutable exact-version claims in non-README release documents", () => {
+    const values = fixture("0.1.2");
+    values.changelog = "## [0.1.2] - 2026-07-31\n";
+    values.releaseDocuments.roadmap += "\nThe current npm release is 0.1.2.\n";
+
+    expect(() =>
+      validateReleaseMetadata({
+        ...values,
+        requireDatedChangelog: true,
+        requireFinalReleaseState: true,
+        requireReleasableDocs: true,
+      }),
+    ).toThrow(/ROADMAP\.md/);
+  });
+
   it.each([
     ["component", (config) => delete config.packages["."].component],
     [
@@ -1000,7 +1036,7 @@ describe("release metadata validation", () => {
       /README/,
     ],
     [
-      "missing README approval",
+      "missing durable README publication guidance",
       (values) => {
         values.releaseDocuments.readme =
           "CometAPI SDK release documentation.\n";
@@ -1080,10 +1116,10 @@ describe("release metadata validation", () => {
     });
   });
 
-  it("does not accept a release approval hidden in a comment", () => {
+  it("does not accept the stable install command hidden in a comment", () => {
     const values = fixture();
     values.changelog = `## [${values.sourceManifest.version}] - 2026-07-17\n`;
-    values.releaseDocuments.readme = `# CometAPI SDK\n\n<!-- ${values.sourceManifest.version} is approved for npm publication. -->\n`;
+    values.releaseDocuments.readme = `# CometAPI SDK\n\n<!-- npm install cometapi -->\n\nSee https://www.npmjs.com/package/cometapi for current registry state.\n`;
     expect(() =>
       validateReleaseMetadata({
         ...values,
@@ -1095,12 +1131,6 @@ describe("release metadata validation", () => {
   });
 
   it.each([
-    [
-      "README",
-      (values) => {
-        values.releaseDocuments.readme = `# CometAPI SDK\r\r\`\`\`text\r${values.sourceManifest.version} is approved for npm publication.\r\`\`\`\r`;
-      },
-    ],
     [
       "SECURITY",
       (values) => {

@@ -84,7 +84,7 @@ evidence is complete only when `npm owner ls cometapi` lists the
 maintainer-confirmed `cometapi_dev` account; until then this remains a Registry
 Alpha prerequisite.
 
-Public Preview, Registry Alpha, stable `0.1.0`, stable `0.1.1`, and Repository
+Public Preview, Registry Alpha, stable 0.1.x maintenance, and Repository
 foundation are complete. Future topic
 pushes, pull requests, merges, immutable GitHub Releases, bounded live smoke,
 npm publication, and environment approvals require authorization from the
@@ -184,7 +184,7 @@ that any workflow executed remotely.
 
 ## Version and dist-tag agreement
 
-`package.json` is the source of the candidate version; validation must not
+`package.json` is the sole candidate-version authority; validation must not
 hard-code a second version as an independent authority. Before release, local
 package checks derive that value and require:
 
@@ -195,6 +195,19 @@ package checks derive that value and require:
    during prerelease preparation.
 4. The packed package metadata name, version, dependency range, and runtime
    contract to match the source manifest.
+
+For normal stable maintenance, the generated Release Please PR changes exactly
+these four files:
+
+- `.release-please-manifest.json`
+- `CHANGELOG.md`
+- `package-lock.json`
+- `package.json`
+
+Those files carry the candidate-specific version agreement. README, status,
+compatibility, and runbook prose must remain publication-neutral so the
+generated PR does not require a manually predicted version or an additional
+documentation mutation.
 
 The release workflow then requires the Release Please manifest to equal the
 candidate, the one-time `release-as` bootstrap to be absent, the changelog
@@ -207,6 +220,14 @@ to run again.
 The workflow is the sole source of npm dist-tag selection: a version containing
 a prerelease component publishes to `next`, and a stable version publishes to
 `latest`. `package.json` must not define a static `publishConfig.tag`.
+Query exact public state when needed instead of copying it into durable prose:
+
+```bash
+npm view cometapi version
+npm view cometapi dist-tags --json
+gh release view --repo cometapi-dev/cometapi-node \
+  --json tagName,isDraft,isPrerelease,publishedAt,url
+```
 
 ## Releasable documentation and identity gate
 
@@ -217,8 +238,9 @@ live smoke, or registry access unless all of these conditions hold:
 
 1. `LICENSE` contains a maintainer-supplied copyright year and holder with no
    placeholder.
-2. `README.md` removes every local, unpublished, and pending-owner status and
-   explicitly states `<version> is approved for npm publication`.
+2. `README.md` contains the exact unpinned `npm install cometapi` command, links
+   to the unversioned npm package page, and contains no exact-version current,
+   approval, unpublished-candidate, or in-progress release claim.
 3. `SECURITY.md` and `SUPPORT.md` remove stale candidate status and each contain
    a maintainer-supplied canonical email address or GitHub repository contact URL.
 4. The candidate's dated `CHANGELOG.md` section contains no candidate-only
@@ -483,9 +505,10 @@ layers:
   host already declaring `openai@6.47.0`. The host resolved one effective
   OpenAI installation and preserved `APIError instanceof` identity. Registry
   signatures and attestations were verified with `npm audit signatures`.
-- The `next` dist-tag resolves to `0.1.0-alpha.3`. Stable publication moved
-  `latest` to `0.1.0`; the historical registry-created `latest` value on
-  `0.1.0-alpha.1` no longer remains.
+- At the Registry Alpha closeout on 2026-07-27, npm had assigned
+  `0.1.0-alpha.3` to the prerelease channel. At the stable `0.1.0` closeout, npm
+  had assigned `0.1.0` to the stable channel and replaced the registry-created
+  assignment for `0.1.0-alpha.1`.
 
 ## Stable 0.1.x sequence
 
@@ -670,8 +693,9 @@ layers:
   request budget. Its
   [npm job 90841672147](https://github.com/cometapi-dev/cometapi-node/actions/runs/30533520823/job/90841672147)
   used GitHub Actions OIDC and completed the public-registry gates.
-- npm now resolves `latest=0.1.1` and `next=0.1.0-alpha.3`. The registry tarball
-  is byte-identical to the source artifact and has SHA-1
+- At the stable `0.1.1` closeout on 2026-07-30, npm had assigned `0.1.1` to the
+  stable channel and `0.1.0-alpha.3` to the prerelease channel. The registry
+  tarball was byte-identical to the source artifact and had SHA-1
   `00edad522c9ffaf937facbe5a35ef211869551c1` and integrity
   `sha512-uYo573XD+ITsa8F4GbYLAlXMrj9SA1Qc4KBgvoRbnwwTvfX+Ye8QVo7xgSNOl9AoYpoglQCW8lEo9cvjwan+7Q==`.
   `npm audit signatures` passed. npm exposes both its publish attestation

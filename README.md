@@ -4,11 +4,11 @@ The official CometAPI entry point for the OpenAI-compatible API. The SDK keeps
 the official OpenAI JavaScript request, response, stream, and error types while
 defaulting the client to CometAPI.
 
-> **Stable 0.1 release:** `0.1.1` is published on npm's default `latest`
-> dist-tag. Its immutable GitHub Release, bounded live smoke, npm OIDC
-> publication, provenance, signature, and separate public-registry installation
-> verification are complete. The supported API remains limited to the
-> contract-tested 0.1 surface documented here and in
+> **Stable 0.1.x maintenance:** Stable packages install from npm's default
+> `latest` dist-tag, while prerelease artifacts use `next`. Exact package,
+> dist-tag, and GitHub Release state is intentionally not pinned in this README;
+> query the registries when that state matters. The supported API remains
+> limited to the contract-tested 0.1 surface documented here and in
 > [COMPATIBILITY.md](./COMPATIBILITY.md).
 
 ## Supported 0.1 surface
@@ -44,6 +44,17 @@ Install the stable package from npm's default `latest` dist-tag:
 
 ```bash
 npm install cometapi
+```
+
+The unversioned registry page is
+<https://www.npmjs.com/package/cometapi>. Query npm and GitHub instead of using
+an exact version copied from repository prose:
+
+```bash
+npm view cometapi version
+npm view cometapi dist-tags --json
+gh release view --repo cometapi-dev/cometapi-node \
+  --json tagName,isDraft,isPrerelease,publishedAt,url
 ```
 
 The release workflow is the sole source of the npm dist-tag: prerelease
@@ -164,12 +175,13 @@ const response = await client.chat.completions.create(
 );
 ```
 
-Starting with 0.1.1, the public type matches the runtime boundary that 0.1.0
-intended. The SDK owns CometAPI routing, authentication, and the Node-only
-secret boundary. Consequently, `provider`, `workloadIdentity`, and
-`dangerouslyAllowBrowser` are not `CometAPIOptions`. They are rejected both by
-the TypeScript declarations and at runtime when plain JavaScript or a type cast
-bypasses those declarations. The same restriction applies to inherited
+The 0.1.x public type matches the enforced runtime boundary. The SDK owns
+CometAPI routing, authentication, and the Node-only secret boundary.
+`CometAPIOptions` therefore declares `provider?: never`,
+`workloadIdentity?: never`, and `dangerouslyAllowBrowser?: never`. Non-`undefined`
+values are rejected by TypeScript, including through inferred variables,
+spreads, and constrained generics, and runtime validation protects plain
+JavaScript and type-cast bypasses. The same restriction applies to inherited
 `withOptions` calls. A rejection is an official OpenAI `OpenAIError` and names
 only the forbidden field; it never includes the supplied value.
 
@@ -229,24 +241,20 @@ parent.
 
 ## Project status
 
-The repository has completed Public Preview, Registry Alpha, stable `0.1.0`,
-the `0.1.1` maintenance patch, and Repository foundation. Blocking CI,
-protected repository rules, security reporting, protected environments, and
-the authorized bounded live smoke have passed. Stable `0.1.1` is available from
-`latest`; Registry Alpha `0.1.0-alpha.3` remains available from `next`. A
-separate public-registry check passed ESM, CommonJS, declarations, supported
-mocked calls, the compatible-OpenAI host fixture with one effective OpenAI
-installation, official error identity, integrity, signature, and provenance.
+The repository is in stable 0.1.x maintenance, and no 0.2 provider-adapter
+milestone is active. Repository foundation, Public Preview, and Registry Alpha
+are complete. Stable packages use `latest`; Registry Alpha artifacts use
+`next`. Use the npm and GitHub queries in [Installation](#installation) for
+exact current state. Release-specific CI, live-smoke, registry, integrity,
+signature, provenance, and public-install evidence is retained in
+[RELEASING.md](./RELEASING.md), not restated as mutable version status here.
 
-The immutable `0.1.0-alpha.2` GitHub release remains as an unpublished failure
-record because its guard stopped before invoking npm. Mocked responses, packed
-artifacts, GitHub Actions, trusted live tests, and npm publication remain
-separate evidence layers and must not be represented as another. Published npm
-artifacts are immutable, so the `0.1.1` tarball retains its candidate-era
-README; this post-release status first ships in a later package version. The
-one-time `0.1.1` publication recovery is documented as historical evidence in
-[RELEASING.md](./RELEASING.md); the current permanent release workflow is
-immutable-tag-bound. No 0.2 provider adapter work is included.
+Mocked responses, packed artifacts, GitHub Actions, trusted live tests, and npm
+publication remain separate evidence layers and must not be represented as one
+another. Exact failed-release, immutable-artifact, and one-time recovery history
+is retained in [RELEASING.md](./RELEASING.md) rather than reproduced in this
+consumer README. The permanent release workflow is immutable-tag-bound and
+publishes through npm OIDC.
 
 See:
 

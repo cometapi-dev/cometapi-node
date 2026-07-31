@@ -1,7 +1,7 @@
 # CometAPI TypeScript and Node.js SDK Roadmap
 
-Status: Stable 0.1.1 and Repository foundation complete
-Last updated: 2026-07-30
+Status: Stable 0.1.x maintenance and Repository foundation complete
+Last updated: 2026-07-31
 Repository contract: This roadmap is self-contained and is the public source
 of truth for this repository's release sequence.
 
@@ -18,13 +18,15 @@ small, auditable package for supported Node.js LTS runtimes.
 Private Remote Validation and Public Preview are complete for the sanitized
 repository. The repository is public with blocking CI, protected repository and
 tag rules, Private Vulnerability Reporting, protected environments, and
-authorized live-smoke evidence. The functional `0.1.0-alpha.1` prerelease is
-available from npm. The immutable `0.1.0-alpha.2` GitHub release failed locally
-before invoking npm because its publication guard rejected the fixed
-`actions/setup-node` authentication placeholder. `0.1.0-alpha.3` completed the
-OIDC, provenance, ownership, and public-install verification sequence and is
-available from npm's `next` channel. Stable `0.1.1` is available from npm's
-default `latest` channel with verified provenance and public-install evidence.
+authorized live-smoke evidence. Registry Alpha began when the functional
+`0.1.0-alpha.1` prerelease was published. The immutable `0.1.0-alpha.2` GitHub
+Release then failed before invoking npm because its publication guard rejected
+the fixed `actions/setup-node` authentication placeholder.
+`0.1.0-alpha.3` subsequently completed the OIDC, provenance, ownership, and
+public-install verification sequence. Stable `0.1.1` completed its separately
+recorded release sequence on 2026-07-30. Stable 0.1.x packages use `latest`, and
+Registry Alpha artifacts use `next`; query npm and GitHub rather than treating
+this roadmap as current registry state.
 
 ## Milestones
 
@@ -263,12 +265,13 @@ Explicit non-goals:
 
 ## 0.1.1: Options Contract and Release Repair (Complete)
 
-Stable `0.1.1` aligns the declarations with the supported 0.1 runtime
-boundary. `CometAPIOptions` and `withOptions` exclude `provider`,
-`workloadIdentity`, and `dangerouslyAllowBrowser`; runtime objects that bypass
-the declarations receive a secret-free official `OpenAIError`. Existing
-transport, observability, organization, project, webhook, and admin-key options
-remain available. The supported resource list does not change.
+Stable `0.1.1` omitted `provider`, `workloadIdentity`, and
+`dangerouslyAllowBrowser` from `CometAPIOptions`, constrained `withOptions`, and
+rejected runtime bypasses with a secret-free official `OpenAIError`. That
+declaration rejected fresh object literals but still admitted structurally
+typed variables; runtime enforcement remained intact. Existing transport,
+observability, organization, project, webhook, and admin-key options remained
+available, and the supported resource list did not change.
 
 The patch also installs the permanent stable Release Please path with explicit
 component identity, patch versioning, pull-request configuration, normal
@@ -283,15 +286,16 @@ approval, and declaration or runtime option bypasses.
 
 Completion evidence:
 
-- Source and packed ESM/CommonJS declarations pass executed TypeScript negative
-  tests, while runtime bypass tests preserve official error identity and do not
-  expose option values.
+- Source and packed ESM/CommonJS declarations passed the then-required fresh
+  object-literal TypeScript negative tests, while runtime bypass tests preserved
+  official error identity and did not expose option values.
 - The repair PR and generated `0.1.1` release PR passed required CI on their
   exact final heads, and a distinct human administrator formally approved the
   action-authored release PR's final head.
 - Release Please created the exact immutable `v0.1.1` Release. The bounded
   three-request live smoke and npm OIDC publication completed through the
-  disclosed one-time recovery without changing `next=0.1.0-alpha.3`.
+  disclosed one-time recovery without changing the Registry Alpha `next`
+  dist-tag.
 - A public-registry install verifies ESM, CommonJS, declarations, supported
   mocked calls, one effective OpenAI installation, API error identity,
   integrity, signatures, and provenance.
@@ -299,6 +303,27 @@ Completion evidence:
   `LIVE_SMOKE_ENABLED=true`, restored the sole `tag:v*` policy, and merged the
   recovery-path cleanup. The evidence is recorded in
   [RELEASING.md](./RELEASING.md#stable-011-release-evidence).
+
+## Stable 0.1.x Maintenance
+
+Maintenance patches close contract and release-process gaps without expanding
+the supported resource surface. The active maintenance work redeclares the
+three reserved client controls as optional `never`, executes negative tests for
+variables, spreads, `satisfies ClientOptions`, and constrained generics through
+both the constructor and `withOptions`, and preserves the runtime guard for
+plain JavaScript and casts.
+
+Durable README, agent, compatibility, roadmap, and release guidance uses 0.1.x
+capability and channel language instead of copying a mutable exact version from
+the registry. `package.json` is the sole candidate-version authority, the packed
+README must match the reviewed source byte-for-byte, and the release gates
+reject exact-version current, approval, unpublished, or in-progress claims.
+
+This maintenance work is complete only after the normal four-file Release
+Please PR, immutable tag and GitHub Release, fresh bounded live smoke, tag-bound
+npm OIDC publication, and independent public-registry installation all pass.
+Release-specific evidence is recorded after publication rather than predicted
+in advance.
 
 ## 0.2.0: Provider-Native Text Adapters
 
@@ -380,14 +405,18 @@ a temporary `release-as: 0.1.0-alpha.1` setting. Its reviewed pull request must
 record that version in the manifest and remove `release-as` before merge so
 later Release Please prereleases advance normally.
 
-`package.json` is the local version source. Package validation derives the
-version from it and checks the lock root, Release Please manifest-or-bootstrap,
-single changelog heading, and packed metadata. Publication additionally checks
-the immutable tag and GitHub release and fails closed while the license,
-README release status, security or support contacts, or repository identity
-still contain unresolved or candidate-only values. The publish workflow alone
-selects the npm dist-tag: `next` for prereleases and `latest` for stable
-versions. A static `publishConfig.tag` is forbidden.
+`package.json` is the sole candidate-version authority. Package validation
+derives the version from it and checks the lock root, Release Please
+manifest-or-bootstrap, single changelog heading, and packed metadata. A normal
+stable Release Please PR changes exactly `.release-please-manifest.json`,
+`CHANGELOG.md`, `package-lock.json`, and `package.json`; durable documentation
+uses 0.1.x capability and channel language instead of candidate-specific
+status. Publication additionally checks the immutable tag and GitHub Release
+and fails closed while identity or public documentation contains unresolved or
+candidate-only values. The publish workflow alone selects the npm dist-tag:
+`next` for prereleases and `latest` for stable versions. A static
+`publishConfig.tag` is forbidden. Exact public state must be queried from npm
+and GitHub.
 
 Scheduled live smoke requires `LIVE_SMOKE_ENABLED=true`; an unset or other
 value prevents live execution. Release Please requires

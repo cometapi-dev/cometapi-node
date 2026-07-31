@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "npm run typecheck && node verify.mjs && node verify.cjs",
-    "typecheck": "tsc --noEmit --project tsconfig.json"
+    "typecheck": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project tsconfig.nonexact.json"
   },
   "dependencies": {
     "openai": "6.47.0"

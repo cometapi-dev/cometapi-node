@@ -3,9 +3,12 @@
 Compatibility document version: 0.1  
 Package line: `0.1.x`
 
-Stable release: `0.1.1`; the immutable Release, bounded live smoke, npm OIDC
-publication, and separate public-registry verification completed on 2026-07-30.
-Registry Alpha `0.1.0-alpha.3` remains available from npm's `next` channel.
+Maintenance status: stable `0.1.x`. Stable packages use npm's `latest` channel,
+and Registry Alpha artifacts use `next`. Exact package, dist-tag, and GitHub
+Release state is intentionally not pinned here; query
+<https://www.npmjs.com/package/cometapi> and
+<https://github.com/cometapi-dev/cometapi-node/releases>. Dated evidence for
+each completed release remains below.
 
 This matrix defines the contract-tested 0.1 compatibility surface. Inheritance
 from the official OpenAI client does not by itself establish CometAPI support.
@@ -42,24 +45,27 @@ error contract.
 
 The 0.1 client keeps supported OpenAI transport and observability options, while
 reserving CometAPI routing, authentication, and the browser security boundary.
-The 0.1.0 declarations mistakenly admitted the three reserved fields even
-though they could not produce valid, supported CometAPI behavior; 0.1.1 corrects
-that contract:
+Earlier stable declarations omitted the three reserved fields, which rejected
+fresh object literals but still admitted structurally typed variables. Those
+fields never produced valid, supported CometAPI behavior. Stable maintenance
+therefore makes the prohibition structural:
 
 | Option group                                                                                 | Contract                                     |
 | -------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | `timeout`, `maxRetries`, `fetch`, `fetchOptions`, `defaultHeaders`, `defaultQuery`, `logger` | Supported constructor pass-through           |
 | `organization`, `project`, `webhookSecret`, `adminAPIKey`                                    | Supported constructor pass-through           |
 | Per-request options                                                                          | Supported for the contract-tested operations |
-| `provider`, `workloadIdentity`, `dangerouslyAllowBrowser`                                    | Rejected by declarations and at runtime      |
+| `provider?: never`, `workloadIdentity?: never`, `dangerouslyAllowBrowser?: never`            | Rejected by declarations and at runtime      |
 
 `provider` and `workloadIdentity` would conflict with the CometAPI API key and
 base URL injected by the SDK. `dangerouslyAllowBrowser` would cross the 0.1
-long-lived-key boundary. The constructor and `withOptions` enforce the same
-rule. Runtime rejections use the official OpenAI `OpenAIError`, identify only
-the forbidden field, and do not include its value. Compile-time negative tests
-are executed by TypeScript against source and packed ESM/CommonJS declarations;
-runtime tests cover plain JavaScript and type-cast bypasses.
+long-lived-key boundary. Redeclaring all three fields as optional `never` makes
+non-`undefined` values incompatible through object literals, inferred
+variables, spreads, and constrained generics. The constructor and `withOptions`
+enforce the same rule at runtime. Runtime rejections use the official OpenAI
+`OpenAIError`, identify only the forbidden field, and do not include its value.
+Compile-time negative tests run against source and packed ESM/CommonJS
+declarations; runtime tests cover plain JavaScript and type-cast bypasses.
 
 ## Inherited but unsupported in 0.1
 

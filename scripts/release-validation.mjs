@@ -9,6 +9,12 @@ const SEMVER_PATTERN = new RegExp(
     `(?:-(${PRERELEASE_IDENTIFIER}(?:\\.${PRERELEASE_IDENTIFIER})*))?` +
     `(?:\\+(${BUILD_IDENTIFIER}(?:\\.${BUILD_IDENTIFIER})*))?$`,
 );
+const SEMVER_TOKEN_PATTERN = new RegExp(
+  `(?<![0-9A-Za-z_.])v?${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}` +
+    `(?:-${PRERELEASE_IDENTIFIER}(?:\\.${PRERELEASE_IDENTIFIER})*)?` +
+    `(?:\\+${BUILD_IDENTIFIER}(?:\\.${BUILD_IDENTIFIER})*)?(?![0-9A-Za-z_]|\\.\\d)`,
+  "gi",
+);
 
 export const SUPPORTED_NODE_ENGINES = "^22.0.0 || ^24.0.0";
 export const SUPPORTED_OPENAI_RANGE = "^6.47.0";
@@ -65,6 +71,30 @@ const PREPARATION_NARRATIVE_PATTERNS = [
   /SDK_PRD\.md/i,
   /cometapi-worksapce/i,
   /\b(?:Claude|Codex)\b/i,
+];
+const THIRD_PARTY_VERSION_PREFIX =
+  /(?:OpenAI|Node(?:\.js)?|TypeScript|Release Please|actionlint|publint|Vitest|ESLint|Prettier|tsup|setup-node|npm\s+(?:CLI|client))\b[^.!?;\n]{0,48}$/i;
+const MUTABLE_RELEASE_STATE_PATTERNS = [
+  /\b(?:current|currently|latest(?!-)|newest|now)\b[^.!?;\n]{0,80}\b(?:distribution|maintenance|milestone|npm|package|patch|published|release|stable|status|version)\b/i,
+  /\b(?:distribution|maintenance|milestone|npm|package|patch|published|release|stable|status|version)\b[^.!?;\n]{0,80}\b(?:current|currently|latest(?!-)|newest|now)\b/i,
+  /\bstable\s+(?:maintenance\s+)?release\s*:/i,
+  /\bstatus\s*:[^.!?;\n]{0,80}\b(?:complete|published|released|stable)\b/i,
+  /\bcurrent\s+milestone\b/i,
+  /\b(?:is|are|remains|has|have)\s+(?:been\s+)?(?:available|complete|published|released)\b/i,
+  /\b(?:available|published|released)\s+from\s+npm\b/i,
+  /\b(?:latest|next)\s*(?:=|:|points?\s+to|resolves?\s+to|remains)\s*COMETAPI_VERSION\b/i,
+  /\b(?:repair|release)\s+is\s+in\s+progress\b/i,
+  /\bapproved\s+for\s+npm\s+publication\b/i,
+];
+const MUTABLE_RELEASE_TABLE_PATTERN =
+  /\|\s*version\s*\|\s*status\s*\|[\s\S]{0,160}\bCOMETAPI_VERSION\b[\s\S]{0,80}\|\s*(?:current|latest|published|released|stable)\s*\|/i;
+const HISTORICAL_RELEASE_CONTEXT =
+  /\b(?:as of\s+\d{4}-\d{2}-\d{2}|at\s+(?:the\s+)?[^.!?;\n]{0,40}\bcloseout|(?:completed|published|released)\s+(?:at|on)\s+\d{4}-\d{2}-\d{2})\b/i;
+const README_RELEASE_STATE_PATTERNS = [
+  /\bapproved\s+for\s+npm\s+publication\b/i,
+  /\bremains?\s+unpublished\b/i,
+  /\b(?:repair|release)\s+is\s+in\s+progress\b/i,
+  /\b(?:has\s+)?not\s+(?:yet\s+)?been\s+published\b/i,
 ];
 const MARKDOWN_BLOCK_CONTAINERS = new Set([
   "blockquote",
@@ -190,6 +220,182 @@ function parseMarkdownDocument(text) {
     root,
     text: markdownNodeText(root),
   };
+}
+
+function markdownCodeValues(node, values = []) {
+  if (node.type === "code") {
+    values.push(node.value);
+    return values;
+  }
+  if (node.type === "html") return values;
+  if (Array.isArray(node.children)) {
+    node.children.forEach((child) => markdownCodeValues(child, values));
+  }
+  return values;
+}
+
+function markdownReleaseStatements(text) {
+  const statements = [];
+  const visit = (node) => {
+    if (node.type === "code" || node.type === "html") return;
+    if (node.type === "heading" || node.type === "paragraph") {
+      statements.push({
+        line: node.position?.start.line ?? 1,
+        text: markdownNodeText(node),
+      });
+      return;
+    }
+    if (Array.isArray(node.children)) node.children.forEach(visit);
+  };
+  visit(fromMarkdown(text));
+  return statements;
+}
+
+function releaseClaimWindow(statement, start, end) {
+  let windowStart = 0;
+  for (let index = start - 1; index >= 0; index -= 1) {
+    const character = statement[index];
+    if (
+      character === "\n" ||
+      character === ";" ||
+      character === "!" ||
+      character === "?" ||
+      (character === "." && /\s/.test(statement[index + 1] ?? ""))
+    ) {
+      windowStart = index + 1;
+      break;
+    }
+  }
+
+  let windowEnd = statement.length;
+  for (let index = end; index < statement.length; index += 1) {
+    const character = statement[index];
+    if (
+      character === "\n" ||
+      character === ";" ||
+      character === "!" ||
+      character === "?" ||
+      (character === "." &&
+        (index === statement.length - 1 ||
+          /\s/.test(statement[index + 1] ?? "")))
+    ) {
+      windowEnd = index + 1;
+      break;
+    }
+  }
+  return statement.slice(windowStart, windowEnd).trim();
+}
+
+function isThirdPartyVersion(statement, versionStart) {
+  return THIRD_PARTY_VERSION_PREFIX.test(
+    statement.slice(Math.max(0, versionStart - 96), versionStart),
+  );
+}
+
+function replaceSemanticVersionTokens(value) {
+  return value.replace(
+    new RegExp(SEMVER_TOKEN_PATTERN.source, SEMVER_TOKEN_PATTERN.flags),
+    "COMETAPI_VERSION",
+  );
+}
+
+function isMutablePublishedVersionClaim(statement, match) {
+  if (isThirdPartyVersion(statement, match.index)) return false;
+  const window = releaseClaimWindow(
+    statement,
+    match.index,
+    match.index + match[0].length,
+  );
+  const normalizedWindow = replaceSemanticVersionTokens(window);
+  if (HISTORICAL_RELEASE_CONTEXT.test(normalizedWindow)) return false;
+  if (
+    MUTABLE_RELEASE_STATE_PATTERNS.some((pattern) =>
+      pattern.test(normalizedWindow),
+    )
+  ) {
+    return true;
+  }
+  if (!statement.includes("|")) return false;
+  return MUTABLE_RELEASE_TABLE_PATTERN.test(
+    replaceSemanticVersionTokens(statement),
+  );
+}
+
+export function collectMutablePublishedVersionClaims(documents = {}) {
+  const violations = [];
+  for (const [filename, text] of Object.entries(documents)) {
+    if (typeof text !== "string") continue;
+    for (const statement of markdownReleaseStatements(text)) {
+      for (const match of statement.text.matchAll(SEMVER_TOKEN_PATTERN)) {
+        if (isMutablePublishedVersionClaim(statement.text, match)) {
+          violations.push(
+            `${filename}:${String(statement.line)}: contains a mutable exact-version publication claim; use capability/channel wording and query npm for current registry state.`,
+          );
+          break;
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+export function validatePublicationNeutralReadme(readme) {
+  if (typeof readme !== "string" || readme.trim().length === 0) {
+    throw new Error(
+      "README.md must contain publication-neutral release guidance.",
+    );
+  }
+  const document = parseMarkdownDocument(readme);
+  const commandText = [
+    document.text,
+    ...markdownCodeValues(document.root),
+  ].join("\n");
+  const mutableClaims = collectMutablePublishedVersionClaims({
+    "README.md": readme,
+  });
+  if (mutableClaims.length > 0) throw new Error(mutableClaims[0]);
+  if (
+    README_RELEASE_STATE_PATTERNS.some((pattern) => pattern.test(document.text))
+  ) {
+    throw new Error(
+      "README.md must not contain approval, unpublished, or in-progress release state.",
+    );
+  }
+  if (/^\s*npm\s+install\s+cometapi@\S+\s*$/im.test(commandText)) {
+    throw new Error(
+      "README.md must not contain an exact or tagged npm install command.",
+    );
+  }
+  if (!/^\s*npm\s+install\s+cometapi\s*$/im.test(commandText)) {
+    throw new Error(
+      "README.md must contain the unpinned stable install command 'npm install cometapi'.",
+    );
+  }
+  if (
+    /https:\/\/www\.npmjs\.com\/package\/cometapi\/v\/v?\d+\.\d+\.\d+/i.test(
+      document.referenceText,
+    )
+  ) {
+    throw new Error("README.md must not contain a versioned npm package URL.");
+  }
+  if (
+    !/https:\/\/www\.npmjs\.com\/package\/cometapi(?:[\s/)#?]|$)/i.test(
+      document.referenceText,
+    )
+  ) {
+    throw new Error(
+      "README.md must link to the unversioned cometapi npm package page.",
+    );
+  }
+  if (
+    new RegExp(SEMVER_TOKEN_PATTERN.source, SEMVER_TOKEN_PATTERN.flags).test(
+      [document.referenceText, ...markdownCodeValues(document.root)].join("\n"),
+    )
+  ) {
+    throw new Error(
+      "README.md must not pin exact package versions; use release-line guidance and registry queries.",
+    );
+  }
 }
 
 function isISODate(value) {
@@ -533,6 +739,16 @@ export function collectPublicPreviewViolations({
     });
   }
 
+  violations.push(
+    ...collectMutablePublishedVersionClaims(
+      Object.fromEntries(
+        PUBLIC_DOCUMENTS.filter(([field]) => field !== "readme").map(
+          ([field, filename]) => [filename, documents[field]],
+        ),
+      ),
+    ),
+  );
+
   collectViolation(violations, () =>
     requireExact(
       sourceManifest?.name,
@@ -639,6 +855,9 @@ export function collectPublicPreviewViolations({
 
   const readmeDocument = markdownDocuments.get("readme");
   if (readmeDocument !== undefined) {
+    collectViolation(violations, () =>
+      validatePublicationNeutralReadme(documents.readme),
+    );
     const firstSection = markdownHeadings(readmeDocument).find(
       ({ level, nodeIndex }) => nodeIndex > 0 && level >= 2,
     );
@@ -648,7 +867,9 @@ export function collectPublicPreviewViolations({
       .join("\n");
     collectViolation(violations, () => {
       const { isPrerelease } = parseSemanticVersion(sourceManifest?.version);
-      const labelsPrerelease = /\bpre(?:-|\s)?release\b/i.test(preamble);
+      const labelsPrerelease = /(?:^|\n)\s*pre(?:-|\s)?release\s*:/i.test(
+        preamble,
+      );
       if (isPrerelease && !labelsPrerelease) {
         throw new Error(
           "README.md must label the project as a pre-release near the top of the document.",
@@ -778,6 +999,18 @@ function releaseChangelogSection(changelog, version) {
 }
 
 export function validateReleasableDocuments({ changelog, documents, version }) {
+  const mutableClaims = collectMutablePublishedVersionClaims(
+    Object.fromEntries(
+      PUBLIC_DOCUMENTS.map(([field, filename]) => [
+        filename,
+        documents?.[field],
+      ]),
+    ),
+  );
+  if (mutableClaims.length > 0) {
+    throw new Error(mutableClaims.join("\n"));
+  }
+
   const license = assertDocumentText(documents, "license", "LICENSE");
   assertNoOwnerPlaceholder(license, "LICENSE");
   if (!/copyright\s+(?:\(c\)|©)?\s*\d{4}(?:-\d{4})?\s+\S+/i.test(license)) {
@@ -786,20 +1019,11 @@ export function validateReleasableDocuments({ changelog, documents, version }) {
     );
   }
 
-  const readmeDocument = parseMarkdownDocument(
-    assertDocumentText(documents, "readme", "README.md"),
-  );
+  const readme = assertDocumentText(documents, "readme", "README.md");
+  validatePublicationNeutralReadme(readme);
+  const readmeDocument = parseMarkdownDocument(readme);
   assertNoOwnerPlaceholder(readmeDocument.referenceText, "README.md");
   assertNoStalePublicationState(readmeDocument.text, "README.md");
-  const approvalPattern = new RegExp(
-    `\\b${escapeRegularExpression(version)}\\s+is\\s+approved\\s+for\\s+npm\\s+publication\\b`,
-    "i",
-  );
-  if (!approvalPattern.test(readmeDocument.text)) {
-    throw new Error(
-      "README.md must explicitly state '<version> is approved for npm publication' before tagging.",
-    );
-  }
 
   const securityDocument = parseMarkdownDocument(
     assertDocumentText(documents, "security", "SECURITY.md"),

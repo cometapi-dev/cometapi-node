@@ -9,7 +9,7 @@ const UNSUPPORTED_COMETAPI_OPTIONS = [
 ] as const satisfies readonly (keyof ClientOptions)[];
 type UnsupportedCometAPIOption = (typeof UNSUPPORTED_COMETAPI_OPTIONS)[number];
 
-function sanitizeOptions<T extends Partial<ClientOptions>>(
+function validateAndSnapshotOptions<T extends Partial<ClientOptions>>(
   options: T,
 ): Omit<T, UnsupportedCometAPIOption> {
   for (const option of UNSUPPORTED_COMETAPI_OPTIONS) {
@@ -54,6 +54,12 @@ export interface CometAPIOptions extends Omit<
   apiKey?: string;
   /** OpenAI-compatible API base. Defaults to `COMETAPI_BASE_URL`, then CometAPI. */
   baseURL?: string;
+  /** CometAPI owns provider routing. */
+  provider?: never;
+  /** CometAPI owns API-key authentication. */
+  workloadIdentity?: never;
+  /** Browser-side long-lived key use is unsupported. */
+  dangerouslyAllowBrowser?: never;
 }
 
 /**
@@ -66,7 +72,7 @@ export interface CometAPIOptions extends Omit<
  */
 export class CometAPI extends OpenAI {
   constructor(options: CometAPIOptions = {}) {
-    const supportedOptions = sanitizeOptions(options);
+    const supportedOptions = validateAndSnapshotOptions(options);
     const {
       apiKey: explicitAPIKey,
       baseURL: explicitBaseURL,
@@ -80,6 +86,6 @@ export class CometAPI extends OpenAI {
   }
 
   override withOptions(options: Partial<CometAPIOptions>): this {
-    return super.withOptions(sanitizeOptions(options));
+    return super.withOptions(validateAndSnapshotOptions(options));
   }
 }

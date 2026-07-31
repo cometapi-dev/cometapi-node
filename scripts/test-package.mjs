@@ -10,7 +10,10 @@ import {
   removeTemporaryDirectory,
   run,
 } from "./lib.mjs";
-import { validateReleaseMetadata } from "./release-validation.mjs";
+import {
+  validatePublicationNeutralReadme,
+  validateReleaseMetadata,
+} from "./release-validation.mjs";
 
 const CANONICAL_AUTHOR = "CometAPI";
 const CANONICAL_BUGS = {
@@ -67,6 +70,7 @@ const packageLock = readJSON(join(ROOT, "package-lock.json"));
 const releaseManifest = readJSON(join(ROOT, ".release-please-manifest.json"));
 const releaseConfig = readJSON(join(ROOT, "release-please-config.json"));
 const changelog = readFileSync(join(ROOT, "CHANGELOG.md"), "utf8");
+const sourceReadme = readFileSync(join(ROOT, "README.md"), "utf8");
 const releaseMetadata = validateReleaseMetadata({
   changelog,
   packageLock,
@@ -164,6 +168,17 @@ try {
   assert.equal(packedManifest.dependencies.openai, "^6.47.0");
   assertCanonicalIdentity(packedManifest, "Packed package.json");
   assert.deepEqual(paths, expected);
+
+  const packedReadme = readFileSync(
+    join(packageDirectory, "README.md"),
+    "utf8",
+  );
+  assert.equal(
+    packedReadme,
+    sourceReadme,
+    "Packed README.md must exactly match the reviewed source document",
+  );
+  validatePublicationNeutralReadme(packedReadme);
 
   for (const file of ["dist/index.js", "dist/index.cjs"]) {
     const contents = readFileSync(join(packageDirectory, file), "utf8");
