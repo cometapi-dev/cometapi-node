@@ -672,6 +672,93 @@ Finally, commit-level `Release-As:` is rejected before the action because the
 GitHub documents that a `GITHUB_TOKEN`-created PR's opened or synchronize event
 [creates an approval-required workflow run](https://github.com/github/docs/blob/e1e4aa937308f21c411c248b4966873536bb0cba/data/reusables/actions/actions-do-not-trigger-workflows.md#L1-L6).
 
+## Stable 0.1.3 release evidence
+
+Stable `0.1.3` completed on 2026-07-31 with these independently auditable
+layers:
+
+- Source [PR #48](https://github.com/cometapi-dev/cometapi-node/pull/48)
+  updated the README, runnable ESM/CommonJS examples, mocked example fixtures,
+  and protected live-smoke defaults to `gpt-5.6-sol`. It also disabled reasoning
+  explicitly in the bounded chat and Responses requests so the 16-token cap
+  remained effective. Final head
+  `cae4c97a29221fd46aa798d93c0ed10b6e94cb7d` passed
+  [CI run 30618613128](https://github.com/cometapi-dev/cometapi-node/actions/runs/30618613128)
+  and merged as
+  [`3809692d35e2d9f98ba3a209947c716d8e4307b7`](https://github.com/cometapi-dev/cometapi-node/commit/3809692d35e2d9f98ba3a209947c716d8e4307b7).
+- Manual Release Please preparation
+  [run 30627666360 attempt 1](https://github.com/cometapi-dev/cometapi-node/actions/runs/30627666360/attempts/1)
+  ran from that exact merge on `main` and created the action-authored release
+  PR below.
+- The resulting four-file release
+  [PR #49](https://github.com/cometapi-dev/cometapi-node/pull/49) had final head
+  `39894513ae2534d778a0a4b8bc2a978533bec40b` and changed only the manifest,
+  changelog, package lock, and package manifest. After the human workflow gate,
+  its complete blocking matrix passed in
+  [CI run 30627706967 attempt 2](https://github.com/cometapi-dev/cometapi-node/actions/runs/30627706967/attempts/2).
+  Human repository administrator `tensornull`, distinct from bot author
+  `github-actions[bot]`, submitted formal
+  [review 4828166257](https://github.com/cometapi-dev/cometapi-node/pull/49#pullrequestreview-4828166257)
+  with `state=APPROVED` against that exact head before merge. The reviewed merge
+  produced
+  [`265375a088cce50d2e5980ca557404fd01028efc`](https://github.com/cometapi-dev/cometapi-node/commit/265375a088cce50d2e5980ca557404fd01028efc).
+- [Release Please run 30628129319 attempt 1](https://github.com/cometapi-dev/cometapi-node/actions/runs/30628129319/attempts/1)
+  created the exact lightweight `v0.1.3` tag and immutable non-prerelease GitHub
+  Release ID `363031910`. The bot-authored
+  [`v0.1.3` Release](https://github.com/cometapi-dev/cometapi-node/releases/tag/v0.1.3)
+  targets the reviewed merge commit and was published at
+  `2026-07-31T11:45:32Z`.
+- The unprivileged
+  [handoff run 30628167257 attempt 1](https://github.com/cometapi-dev/cometapi-node/actions/runs/30628167257/attempts/1)
+  validated the exact Release Please result and immutable Release before
+  dispatching the tag-bound
+  [Publish run 30628187558 attempt 1](https://github.com/cometapi-dev/cometapi-node/actions/runs/30628187558/attempts/1).
+  That run rebuilt the release commit, passed the full release checks and
+  public declarations/fixtures, and uploaded artifact ID `8792282959`, named
+  `npm-package-0.1.3-30628187558-1`, with ZIP digest
+  `sha256:f896a2a24ef8b6c30aac03327d022a277558c99db8c8ca2e32b3a4f7b25502f3`.
+  Its sole tarball has SHA-256
+  `283b1dbc91f2eeb84d675da2623bc25eab4148da333f7a77b07be548b6589293`
+  and is byte-identical to the public registry tarball.
+- The same run's
+  [live job 91148676643](https://github.com/cometapi-dev/cometapi-node/actions/runs/30628187558/job/91148676643)
+  checked out `refs/tags/v0.1.3` and passed exactly three sequential requests,
+  with Chat Completions and Responses using `gpt-5.6-sol`, a 16-token output
+  cap, 60-second per-request timeout, concurrency one, and
+  stop-on-first-failure behavior.
+- Protected npm job
+  [91148760122](https://github.com/cometapi-dev/cometapi-node/actions/runs/30628187558/job/91148760122)
+  published through the tag-only npm Environment and GitHub Actions OIDC at
+  `2026-07-31T11:51:06.196Z`. Attempt 1 then completed exact artifact,
+  dist-tag, signature, attestation, provenance, and public-install verification
+  without a replay.
+- At closeout, npm's stable channel resolved to `0.1.3`, while the prerelease
+  channel remained `0.1.0-alpha.3`. The package has SHA-1
+  `e000b2066b6c19b6ff4a327ed9451dba896cc939` and integrity
+  `sha512-ByPYZsoLGDYZeyMZCnq99CzT3IhveylPMG8gB8bLlBSpRP8g/FdD8jrQvZMWx+4+qaVSTQp4HVHHYsU9POeFtw==`.
+  `npm audit signatures` verified registry signatures for all three installed
+  packages and attestations for two. npm exposes its publish attestation at
+  [Sigstore index 2300742325](https://search.sigstore.dev/?logIndex=2300742325)
+  and SLSA provenance at
+  [index 2300742191](https://search.sigstore.dev/?logIndex=2300742191). The
+  provenance binds `cometapi@0.1.3` to `publish.yml@refs/tags/v0.1.3`, commit
+  `265375a088cce50d2e5980ca557404fd01028efc`, and Publish run
+  `30628187558/1`.
+- Independent public-registry verification downloaded the workflow artifact
+  and registry tarball, proved byte identity and the integrity above, installed
+  `cometapi@0.1.3` in clean ESM and CommonJS consumers, and resolved one
+  effective `openai@6.47.0` installation while preserving the public class and
+  official error-type boundary.
+- Final readback kept `main` at the release commit, passed
+  [default-branch CI 30628129332](https://github.com/cometapi-dev/cometapi-node/actions/runs/30628129332),
+  restored `RELEASE_PLEASE_ENABLED=false`, kept `LIVE_SMOKE_ENABLED=true`, and
+  retained exactly one npm Environment deployment policy, `tag:v*` (policy ID
+  `55718965`).
+
+This release repeated the permanent immutable-tag path without recovery or
+cross-run evidence reuse and moved the protected live validation to the same
+model ID shown in the public examples.
+
 ## Stable 0.1.2 release evidence
 
 Stable `0.1.2` completed on 2026-07-31 with these independently auditable
