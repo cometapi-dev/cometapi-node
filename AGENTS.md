@@ -51,14 +51,15 @@ repository.
   merely to complete lifecycle cleanup. Fail closed and report the exact state
   whenever a required cleanliness, fetch, or fast-forward condition is not met.
 
-## Current Milestone: Stable 0.1.1 and Repository Foundation Complete
+## Current Milestone: Stable 0.1.x Maintenance
 
-Private Remote Validation, Public Preview, Registry Alpha, stable `0.1.0`, and
-the `0.1.1` maintenance patch are complete. The canonical repository is public,
-`0.1.1` is available from npm's `latest` channel, and `0.1.0-alpha.3` remains
-available from `next`; the published lines have verified provenance and
-public-install evidence. No later milestone is active. Do not begin the 0.2
-provider adapters without an explicit maintainer request.
+Private Remote Validation, Public Preview, Registry Alpha, and Repository
+foundation are complete. The canonical repository is public and remains in
+stable 0.1.x maintenance: stable packages use npm's `latest` channel and
+Registry Alpha artifacts use `next`. Do not pin an exact current package or
+Release version in durable repository guidance. Query npm and GitHub when exact
+state matters. No later milestone is active; do not begin the 0.2 provider
+adapters without an explicit maintainer request.
 
 The accepted identity is:
 
@@ -78,21 +79,23 @@ The unscoped `cometapi` package is the primary Node SDK. `@cometapi` is the
 standard scope for future official scoped packages; do not introduce new
 official packages under `@cometapi-dev`.
 
-Stable `0.1.1` corrected the public options boundary without expanding the 0.1
-resource surface. Release Please created the reviewed patch PR, immutable tag,
-and GitHub Release. Publication required a disclosed one-time main-context
-recovery because the immutable tag predated the repaired tag handoff. The
-recovery published only the exact previously verified artifact through npm
-OIDC, then the repository restored its variables and tag-only Environment
-policy. The current workflow contains no publication-recovery input, fixed
-recovery run or artifact ID, prior-package-artifact or live-evidence reuse, or
-branch-context publication path.
+Stable `0.1.1` established the runtime options boundary and repaired the release
+path without expanding the 0.1 resource surface. Release Please created the
+reviewed patch PR, immutable tag, and GitHub Release. Publication required a
+disclosed one-time main-context recovery because the immutable tag predated the
+repaired tag handoff. The recovery published only the exact previously verified
+artifact through npm OIDC, then the repository restored its variables and
+tag-only Environment policy. The current workflow contains no
+publication-recovery input, fixed recovery run or artifact ID,
+prior-package-artifact or live-evidence reuse, or branch-context publication
+path.
 
 Release Please remains disabled between explicitly authorized release
 operations. Permanent stable patches follow only the tag-bound path in
-`RELEASING.md`. The `0.1.1` recovery provenance is historical evidence, not
-proof that the current permanent tag path has completed a registry publication;
-the next explicitly authorized stable patch is its first end-to-end execution.
+`RELEASING.md`. The recovery provenance for stable `0.1.1` is historical
+evidence and does not prove an execution of the permanent path. The next
+explicitly authorized stable patch is that path's first end-to-end registry
+execution.
 
 ## Product Contract
 
@@ -125,6 +128,11 @@ message translation are not 0.1 features.
   Do not hand-write replacements for those layers.
 - Use only documented public OpenAI constructor and client options. Do not
   depend on private upstream attributes or methods.
+- Declare CometAPI-owned `provider`, `workloadIdentity`, and
+  `dangerouslyAllowBrowser` fields as optional `never` properties on
+  `CometAPIOptions`. The constructor and `withOptions` must reject every
+  non-`undefined` value at runtime as well as through TypeScript variables,
+  spreads, and constrained generics.
 - Preserve official OpenAI request, response, stream, and exception types for
   the supported 0.1 operations.
 - Keep CometAPI-specific resources in `src/resources/` and their types in
@@ -243,6 +251,10 @@ repository root.
 - Inspect `npm pack` output, install the exact tarball in clean ESM, CommonJS,
   and compatible-OpenAI host fixtures, and verify version agreement before
   publication.
+- Treat `package.json` as the sole candidate-version authority. A normal stable
+  Release Please PR changes exactly `.release-please-manifest.json`,
+  `CHANGELOG.md`, `package-lock.json`, and `package.json`; all four version
+  records must agree, while durable documentation remains publication-neutral.
 - Keep development checks compatible with unresolved maintainer input, but
   make the publish workflow fail closed until maintainers have supplied the
   copyright holder, canonical security and support contacts, repository

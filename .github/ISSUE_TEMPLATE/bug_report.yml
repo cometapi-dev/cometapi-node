@@ -12,7 +12,8 @@ body:
     id: version
     attributes:
       label: CometAPI SDK version
-      placeholder: 0.1.0-alpha.1
+      description: Run `npm list cometapi` and report the installed package version.
+      placeholder: Paste the installed package version
     validations:
       required: true
   - type: input

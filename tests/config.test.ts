@@ -12,6 +12,44 @@ const ENV_KEYS = [
 ] as const;
 
 const savedEnvironment = new Map<string, string | undefined>();
+const UNSUPPORTED_OPTION_CASES = [
+  {
+    label: "provider object",
+    optionName: "provider",
+    unsupportedOptions: {
+      provider: { credential: "provider-secret-must-not-leak" },
+    },
+  },
+  {
+    label: "null provider",
+    optionName: "provider",
+    unsupportedOptions: { provider: null },
+  },
+  {
+    label: "workload identity object",
+    optionName: "workloadIdentity",
+    unsupportedOptions: {
+      workloadIdentity: {
+        clientSecret: "workload-secret-must-not-leak",
+      },
+    },
+  },
+  {
+    label: "null workload identity",
+    optionName: "workloadIdentity",
+    unsupportedOptions: { workloadIdentity: null },
+  },
+  {
+    label: "enabled browser bypass",
+    optionName: "dangerouslyAllowBrowser",
+    unsupportedOptions: { dangerouslyAllowBrowser: true },
+  },
+  {
+    label: "disabled browser bypass",
+    optionName: "dangerouslyAllowBrowser",
+    unsupportedOptions: { dangerouslyAllowBrowser: false },
+  },
+] as const;
 
 function createLogger() {
   return {
@@ -214,20 +252,9 @@ describe("CometAPI configuration", () => {
     );
   });
 
-  it.each([
-    ["provider", { provider: { credential: "provider-secret-must-not-leak" } }],
-    [
-      "workloadIdentity",
-      {
-        workloadIdentity: {
-          clientSecret: "workload-secret-must-not-leak",
-        },
-      },
-    ],
-    ["dangerouslyAllowBrowser", { dangerouslyAllowBrowser: true }],
-  ])(
-    "rejects the unsupported %s constructor option with a secret-free OpenAIError",
-    (optionName, unsupportedOptions) => {
+  it.each(UNSUPPORTED_OPTION_CASES)(
+    "rejects the unsupported $label constructor option with a secret-free OpenAIError",
+    ({ optionName, unsupportedOptions }) => {
       const apiKey = "unsupported-constructor-key-must-not-leak";
       const logger = createLogger();
       const error = captureConfigurationError({
@@ -251,20 +278,9 @@ describe("CometAPI configuration", () => {
     },
   );
 
-  it.each([
-    ["provider", { provider: { credential: "provider-secret-must-not-leak" } }],
-    [
-      "workloadIdentity",
-      {
-        workloadIdentity: {
-          clientSecret: "workload-secret-must-not-leak",
-        },
-      },
-    ],
-    ["dangerouslyAllowBrowser", { dangerouslyAllowBrowser: true }],
-  ])(
-    "rejects the unsupported %s withOptions override with a secret-free OpenAIError",
-    (optionName, unsupportedOptions) => {
+  it.each(UNSUPPORTED_OPTION_CASES)(
+    "rejects the unsupported $label withOptions override with a secret-free OpenAIError",
+    ({ optionName, unsupportedOptions }) => {
       const apiKey = "unsupported-with-options-key-must-not-leak";
       const logger = createLogger();
       const client = new CometAPI({ apiKey, logger, logLevel: "debug" });

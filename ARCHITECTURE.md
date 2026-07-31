@@ -29,14 +29,16 @@ only for CometAPI defaults and public branding:
 3. The default base URL is `https://api.cometapi.com/v1`.
 4. Other documented and supported OpenAI client options pass through unchanged.
 
-The public `CometAPIOptions` type excludes the upstream `provider`,
-`workloadIdentity`, and `dangerouslyAllowBrowser` fields in addition to the
-CometAPI-owned `apiKey` and `baseURL` fields. Provider and workload-identity
-routing conflict with the API key and base URL that this client injects.
-Browser-side long-lived key use is outside the 0.1 security boundary. These
-fields never represented valid CometAPI behavior, so their removal from the
-public type is a 0.1.1 contract correction rather than a supported feature
-removal.
+The public `CometAPIOptions` type omits the upstream definitions of `provider`,
+`workloadIdentity`, and `dangerouslyAllowBrowser`, then redeclares those names as
+`provider?: never`, `workloadIdentity?: never`, and
+`dangerouslyAllowBrowser?: never`. Provider and workload-identity routing
+conflict with the API key and base URL that this client injects. Browser-side
+long-lived key use is outside the 0.1 security boundary. The optional-`never`
+contract makes variables, spreads, and constrained generics structurally
+incompatible when they carry a non-`undefined` reserved value. These fields
+never represented valid CometAPI behavior, so tightening the declaration within
+stable 0.1.x is not a supported feature removal.
 
 The inherited `withOptions` path is constrained to the same
 `CometAPIOptions` contract. Both the constructor and `withOptions` validate
@@ -99,15 +101,22 @@ The package manifest declares only intended runtime files. Generated build
 artifacts and dependency directories are not committed. A successful source-tree
 import is not package evidence; verification must use the packed artifact.
 
-`package.json` is the source of the candidate version. Local and release checks
-derive the version from it and require agreement with the package-lock root,
-the Release Please manifest or the documented one-time bootstrap, the single
-candidate changelog heading, and packed metadata. Remote publication adds exact
-tag and GitHub release agreement.
+`package.json` is the sole source of the candidate version. Local and release
+checks derive the version from it and require agreement with the package-lock
+root, the Release Please manifest or the documented one-time bootstrap, the
+single candidate changelog heading, and packed metadata. A normal stable
+Release Please PR changes exactly `.release-please-manifest.json`,
+`CHANGELOG.md`, `package-lock.json`, and `package.json`; version-specific status
+does not belong in its durable documentation. Remote publication adds exact tag
+and GitHub Release agreement.
 
 The publish workflow is the sole source of npm dist-tag selection: prereleases
 use `next`, stable versions use `latest`. The package manifest must not carry a
 static dist-tag because that would make stable and prerelease policy diverge.
+Exact registry and Release state must be queried from npm and GitHub rather than
+inferred from repository prose. The unversioned package page is
+<https://www.npmjs.com/package/cometapi>, and GitHub release state is available
+from <https://github.com/cometapi-dev/cometapi-node/releases>.
 Trusted Publishing is the only executable authentication path. The protected-
 environment token bootstrap used for `0.1.0-alpha.1` is historical evidence;
 current workflows contain no token publication path and reject registry-token

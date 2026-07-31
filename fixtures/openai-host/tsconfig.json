@@ -10,5 +10,10 @@
     "strict": true,
     "target": "ES2022"
   },
-  "include": ["consumer.mts", "consumer.cts"]
+  "include": [
+    "consumer.mts",
+    "consumer.cts",
+    "exact-optional-consumer.mts",
+    "exact-optional-consumer.cts"
+  ]
 }
