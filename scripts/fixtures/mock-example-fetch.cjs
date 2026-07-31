@@ -37,7 +37,7 @@ const expectations =
           method: "POST",
           path: "/v1/responses",
           body: {
-            model: "gpt-5.4",
+            model: "gpt-5.6-sol",
             input: "Explain why the sky is blue in one sentence.",
           },
           response: () =>
@@ -47,7 +47,7 @@ const expectations =
                 object: "response",
                 created_at: 1,
                 status: "completed",
-                model: "gpt-5.4",
+                model: "gpt-5.6-sol",
                 output: [
                   {
                     id: "msg_example",
@@ -75,7 +75,7 @@ const expectations =
           method: "POST",
           path: "/v1/chat/completions",
           body: {
-            model: "gpt-5.4",
+            model: "gpt-5.6-sol",
             messages: [
               { role: "user", content: "Write one sentence about comets." },
             ],
@@ -84,9 +84,9 @@ const expectations =
           response: () =>
             new Response(
               [
-                'data: {"id":"chat_example","object":"chat.completion.chunk","created":1,"model":"gpt-5.4","choices":[{"index":0,"delta":{"content":"Comets "},"finish_reason":null}]}',
+                'data: {"id":"chat_example","object":"chat.completion.chunk","created":1,"model":"gpt-5.6-sol","choices":[{"index":0,"delta":{"content":"Comets "},"finish_reason":null}]}',
                 "",
-                'data: {"id":"chat_example","object":"chat.completion.chunk","created":1,"model":"gpt-5.4","choices":[{"index":0,"delta":{"content":"shine."},"finish_reason":null}]}',
+                'data: {"id":"chat_example","object":"chat.completion.chunk","created":1,"model":"gpt-5.6-sol","choices":[{"index":0,"delta":{"content":"shine."},"finish_reason":null}]}',
                 "",
                 "data: [DONE]",
                 "",
@@ -100,7 +100,7 @@ const expectations =
           method: "POST",
           path: "/v1/chat/completions",
           body: {
-            model: "gpt-5.4",
+            model: "gpt-5.6-sol",
             messages: [
               { role: "user", content: "Reply with one short greeting." },
             ],
@@ -111,7 +111,7 @@ const expectations =
                 id: "chat_example",
                 object: "chat.completion",
                 created: 1,
-                model: "gpt-5.4",
+                model: "gpt-5.6-sol",
                 choices: [
                   {
                     index: 0,
@@ -137,7 +137,7 @@ const expectations =
                 object: "list",
                 data: [
                   {
-                    id: "gpt-5.4",
+                    id: "gpt-5.6-sol",
                     object: "model",
                     created: 1,
                     owned_by: "cometapi",

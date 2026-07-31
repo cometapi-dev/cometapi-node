@@ -99,7 +99,7 @@ try {
     [
       "commonjs",
       "commonjs.cjs",
-      "Hello from CometAPI!\ngpt-5.4\nclaude-sonnet-4-6\n",
+      "Hello from CometAPI!\ngpt-5.6-sol\nclaude-sonnet-4-6\n",
     ],
   ]) {
     const output = run(

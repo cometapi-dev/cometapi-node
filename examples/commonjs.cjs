@@ -4,7 +4,7 @@ const client = new CometAPI();
 
 async function main() {
   const completion = await client.chat.completions.create({
-    model: "gpt-5.4",
+    model: "gpt-5.6-sol",
     messages: [{ role: "user", content: "Reply with one short greeting." }],
   });
   console.log(completion.choices[0]?.message?.content ?? "");
