@@ -345,7 +345,9 @@ The repository maintains four independently auditable workflows:
   stable `v0.1.x` tag and release commit. Replays are integrity-idempotent, not
   exactly-once: an existing version is accepted only when its registry integrity
   matches the downloaded artifact, after which the bounded registry, signature,
-  and provenance checks run again.
+  and provenance checks run again. Package metadata and the attestation endpoint
+  may converge independently, so attestation HTTP failures, including an early
+  `404`, receive a bounded ten-minute retry. Exhaustion remains a hard failure.
 
 The one-time `0.1.1` main-context publication exception is historical evidence,
 not a reusable release route. Its dispatch inputs, fixed evidence identifiers,
@@ -560,13 +562,14 @@ or any head change, invalidates the approval.
 The release-PR merge creates the only `push` run that may call Release Please in
 release mode. From that merge through successful registry verification and the
 final readback, do not start a new Release Please workflow or rerun any run
-except the bounded source-run retry described below; publication freezes the
-complete Release Please run set. Through post-action validation, do not edit the
-release PR, change its labels or review, or mutate its branch. Keep `main` frozen
-at the release commit through successful registry verification and the final
-variable and Environment-policy readback; every handoff, tag, and pre-publish
-gate requires that exact identity. A rerun may retry the same release candidate
-only while no tag or Release exists. If an earlier attempt of that same run
+except the bounded source-run retry described below or the exact post-publish
+failed-job replay described after the handoff; publication freezes the complete
+Release Please run set. Through post-action validation, do not edit the release
+PR, change its labels or review, or mutate its branch. Keep `main` frozen at the
+release commit through successful registry verification and the final variable
+and Environment-policy readback; every handoff, tag, and pre-publish gate
+requires that exact identity. A Release Please rerun may retry the same release
+candidate only while no tag or Release exists. If an earlier attempt of that run
 already created the Release, same-run reconciliation is allowed only after
 proving the exact run ID, SHA, tag, bot author, immutable state, target, URL,
 notes, and publication time inside one earlier Release Please step. It may only
@@ -579,12 +582,42 @@ verify the artifact, run the fresh bounded live smoke, enter the npm
 Environment, request OIDC, or verify the registry. The permanent npm Environment
 policy set is exactly `tag:v*`. After registry verification, immediately restore
 `RELEASE_PLEASE_ENABLED=false` and keep `LIVE_SMOKE_ENABLED=true`.
+The handoff itself runs only on attempt 1 and refuses the dispatch when any
+exact Publish child already exists for that immutable tag and commit. A handoff
+rerun may never create a replacement child publication run.
 
 Never substitute a manually authored release PR, manual or auxiliary tag,
-branch-context publication, temporary `main` Environment policy, reused artifact
-or live evidence, arbitrary rerun, or different patch version. An ambiguous npm
-result requires exact registry integrity, signature, and provenance inspection;
-it never authorizes an automatic retry.
+branch-context publication, temporary `main` Environment policy, cross-run
+artifact or live-evidence reuse, arbitrary rerun, or different patch version. An
+ambiguous npm result requires exact registry integrity, signature, and
+provenance inspection; it never authorizes an automatic retry.
+
+If the exact publish step succeeded but a later registry verification step
+failed, query the immutable version and both dist-tags before taking any action.
+When the exact version is absent, `latest` must equal the previous patch. When
+the exact version equals the candidate, `latest` may equal the previous patch or
+candidate. Final verification requires the exact version and `latest` to equal
+the candidate. Throughout the run, `next` must equal the prerelease value
+captured by the initial verification job; durable guidance does not pin that
+registry value.
+
+An early attestation-endpoint `404` is the known convergence case. Other HTTP or
+transport failures receive the same finite retry, but persistent authentication,
+authorization, URL, server, or convergence failures remain failures. Let the
+workflow's strict ten-minute wall-clock fetch finish; exhaustion is terminal, so
+stop and report rather than rerunning to extend the wait. Only after attestations
+are readable and independent signature and provenance checks pass may a
+different failed post-publication gate use exactly one `rerun failed jobs` on
+the same tag-bound run. Before approving that replay, confirm that GitHub kept
+the successful exact-artifact and live-smoke jobs. Rerun-all is invalid and its
+attempt guards must fail before live API access. The attempt-2 protected
+preflight must record that the exact version exists, and the idempotent
+publication script must report matching integrity and skip `npm publish`. An
+exact-version metadata `E404` after that preflight is a hard stop rather than
+permission to republish. The failed publish job still requires a fresh npm
+Environment approval. Attempt 3 or later, a second replay request, retry
+exhaustion, or any mismatch is terminal. After successful verification, restore
+`RELEASE_PLEASE_ENABLED=false` immediately.
 
 The `0.1.1` repair used the immutable `0.1.0` commit as a one-cycle
 `last-release-sha` only for its initial preparation, then removed the anchor.

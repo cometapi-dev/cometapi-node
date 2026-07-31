@@ -3,7 +3,13 @@
 set -euo pipefail
 
 : "${DIST_TAG:?DIST_TAG is required}"
+: "${EXPECT_EXISTING:?EXPECT_EXISTING is required}"
 : "${VERSION:?VERSION is required}"
+
+if [[ "$EXPECT_EXISTING" != "true" && "$EXPECT_EXISTING" != "false" ]]; then
+  echo "EXPECT_EXISTING must be true or false." >&2
+  exit 1
+fi
 
 artifact_directory="${ARTIFACT_DIRECTORY:-release-artifacts}"
 
@@ -37,6 +43,9 @@ if (dist.integrity !== process.env.LOCAL_INTEGRITY) {
 }
 EOF
   echo "cometapi@${VERSION} already matches the verified artifact; resuming checks."
+elif grep -q "E404" "$view_error" && [[ "$EXPECT_EXISTING" == "true" ]]; then
+  echo "The pre-publish check found this version, but the registry now returns E404; refusing to publish again." >&2
+  exit 1
 elif grep -q "E404" "$view_error"; then
   npm publish "${tarballs[0]}" --access public --provenance --tag "$DIST_TAG"
 else

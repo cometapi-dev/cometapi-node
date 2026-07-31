@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -41,6 +42,10 @@ function fixture() {
     [
       "#!/usr/bin/env bash",
       'if [[ "$1" == "view" ]]; then',
+      '  if [[ -n "${NPM_VIEW_DIST:-}" ]]; then',
+      '    printf "%s\\n" "$NPM_VIEW_DIST"',
+      "    exit 0",
+      "  fi",
       '  echo "npm error code E404" >&2',
       "  exit 1",
       "fi",
@@ -60,8 +65,10 @@ function fixture() {
 
 function runPublish({
   distTag = "next",
+  expectExisting = "false",
   nodeAuthToken = "",
   npmToken = "",
+  registryIntegrity = "",
   version = "0.1.0-alpha.3",
 } = {}) {
   const { bin, log, root } = fixture();
@@ -72,9 +79,13 @@ function runPublish({
       ...process.env,
       ARTIFACT_DIRECTORY: "artifacts",
       DIST_TAG: distTag,
+      EXPECT_EXISTING: expectExisting,
       NODE_AUTH_TOKEN: nodeAuthToken,
       NPM_CALL_LOG: log,
       NPM_TOKEN: npmToken,
+      NPM_VIEW_DIST: registryIntegrity
+        ? JSON.stringify({ integrity: registryIntegrity })
+        : "",
       PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
       VERSION: version,
     },
@@ -109,6 +120,43 @@ describe("publish artifact authentication", () => {
     expect(result.stderr).toContain(
       "publication must use npm Trusted Publishing",
     );
+    expect(log).toBe("");
+  });
+
+  it("resumes verification without publishing an existing matching artifact", () => {
+    const integrity = `sha512-${createHash("sha512")
+      .update("artifact\n")
+      .digest("base64")}`;
+    const { log, result } = runPublish({ registryIntegrity: integrity });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      "already matches the verified artifact; resuming checks",
+    );
+    expect(log).toBe("");
+  });
+
+  it("rejects an existing version with different integrity", () => {
+    const { log, result } = runPublish({
+      registryIntegrity: "sha512-different",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "The existing registry version has different integrity",
+    );
+    expect(log).toBe("");
+  });
+
+  it("never republishes when the protected preflight found the exact version", () => {
+    const { log, result } = runPublish({ expectExisting: "true" });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("refusing to publish again");
+    expect(log).toBe("");
+  });
+
+  it("rejects an invalid protected preflight state", () => {
+    const { log, result } = runPublish({ expectExisting: "maybe" });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("EXPECT_EXISTING must be true or false");
     expect(log).toBe("");
   });
 });

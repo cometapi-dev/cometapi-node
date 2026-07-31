@@ -40,6 +40,10 @@ const releaseWorkflowValidation = readFileSync(
   new URL("../scripts/release-workflow-validation.mjs", import.meta.url),
   "utf8",
 );
+const fetchAttestations = readFileSync(
+  new URL("../scripts/fetch-attestations.sh", import.meta.url),
+  "utf8",
+);
 const releasePleaseWorkflow = parse(workflows["release-please.yml"]);
 const publishWorkflow = parse(workflows["publish.yml"]);
 
@@ -565,15 +569,36 @@ describe("GitHub Actions workflow contract", () => {
     expect(publishJob).not.toContain("source_publish");
     expect(publishJob).toContain("validateRegistryProvenance");
     expect(publishJob).toContain("validateRegistryProvenanceInvocation");
+    expect(publishJob).toContain("bash scripts/fetch-attestations.sh");
+    expect(publishJob).toContain("validatePublishedRegistryState");
+    expect(publishJob).toContain("post_exact_version");
+    expect(publishJob).toContain("post_tagged_version");
+    expect(publishJob).toContain("post_next_version");
+    expect(publishJob).toContain("post_registry_dist");
+    expect(fetchAttestations).toContain(
+      'deadline="${ATTESTATION_DEADLINE_SECONDS:-600}"',
+    );
+    expect(fetchAttestations).toContain(
+      "clock_gettime(CLOCK_MONOTONIC) * 1000",
+    );
+    expect(fetchAttestations).toContain(
+      "deadline_milliseconds=$((deadline * 1000))",
+    );
+    expect(fetchAttestations).toContain("--remove-on-error");
+    expect(fetchAttestations).toContain('--output "$candidate"');
     expect(publishJob).toContain("WORKFLOW_REF: ${{ github.ref }}");
     expect(publishJob).toContain("provenance.provenanceRunId");
     expect(publishJob).toContain("PROVENANCE_RUN_ATTEMPT");
     expect(publishJob).toContain(
       "for state in in_progress queued waiting requested pending",
     );
-    expect(publishJob).toContain(
-      'npm view cometapi@next version)" != "0.1.0-alpha.3"',
+    expect(publishWorkflow.jobs.verify.outputs["expected-next-version"]).toBe(
+      "${{ steps.registry-baseline.outputs.next-version }}",
     );
+    expect(publishJob).toContain(
+      'npm view cometapi@next version)" != "$EXPECTED_NEXT_VERSION"',
+    );
+    expect(publish).not.toContain("0.1.0-alpha.3");
     expect(publishJob).toContain(
       "RELEASE_PLEASE_ENABLED: ${{ vars.RELEASE_PLEASE_ENABLED }}",
     );

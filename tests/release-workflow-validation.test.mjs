@@ -15,9 +15,12 @@ import {
   validateMergedReleasePullRequest,
   validateOpenReleasePullRequestCollisions,
   validatePostActionPullRequestSnapshot,
+  validatePrereleaseDistTagBaseline,
   validateNpmEnvironmentState,
   validatePublishWorkflowContract,
   validatePublishWorkflowDispatchTrigger,
+  validatePublishedRegistryState,
+  validateRegistryAttestationUrl,
   validateRegistryProvenance,
   validateRegistryProvenanceInvocation,
   validateRegistryStateBeforePublish,
@@ -39,6 +42,7 @@ const RELEASE_BRANCH = "release-please--branches--main--components--cometapi";
 const RELEASE_SHA = "a".repeat(40);
 const BRANCH_SHA = "b".repeat(40);
 const RUN_ID = 123456789;
+const NEXT_BASELINE = "0.1.0-alpha.3";
 const PUBLISH_WORKFLOW = parse(
   readFileSync(
     new URL("../.github/workflows/publish.yml", import.meta.url),
@@ -343,18 +347,11 @@ describe("Publish tag dispatch trigger", () => {
     ["source run", { sourceRunId: 0 }],
     ["source attempt", { sourceRunAttempt: 0 }],
     ["run attempt", { workflowRunAttempt: 0 }],
+    ["replay attempt", { workflowRunAttempt: 2 }],
   ])("rejects tag handoff drift in %s", (_name, overrides) => {
     expect(() =>
       validatePublishWorkflowDispatchTrigger(tagTrigger(overrides)),
     ).toThrow(/release workflow/i);
-  });
-
-  it("allows an idempotent rerun of the same tag handoff", () => {
-    expect(
-      validatePublishWorkflowDispatchTrigger(
-        tagTrigger({ workflowRunAttempt: 2 }),
-      ),
-    ).toMatchObject({ releaseRunId: RUN_ID });
   });
 });
 
@@ -436,6 +433,68 @@ describe("Publish workflow dispatch contract", () => {
       },
     ],
     [
+      "missing verification attempt guard",
+      (workflow) => {
+        workflow.jobs.verify.steps.shift();
+      },
+    ],
+    [
+      "late verification attempt guard",
+      (workflow) => {
+        const [guard] = workflow.jobs.verify.steps.splice(0, 1);
+        workflow.jobs.verify.steps.splice(2, 0, guard);
+      },
+    ],
+    [
+      "verification on replay attempt",
+      (workflow) => {
+        workflow.jobs.verify.steps[0].run =
+          workflow.jobs.verify.steps[0].run.replace('!= "1"', '== "0"');
+      },
+    ],
+    [
+      "missing live-smoke attempt guard",
+      (workflow) => {
+        workflow.jobs["live-smoke"].steps.shift();
+      },
+    ],
+    [
+      "late live-smoke attempt guard",
+      (workflow) => {
+        const [guard] = workflow.jobs["live-smoke"].steps.splice(0, 1);
+        workflow.jobs["live-smoke"].steps.splice(2, 0, guard);
+      },
+    ],
+    [
+      "missing publication attempt guard",
+      (workflow) => {
+        workflow.jobs.publish.steps.shift();
+      },
+    ],
+    [
+      "late publication attempt guard",
+      (workflow) => {
+        const [guard] = workflow.jobs.publish.steps.splice(0, 1);
+        workflow.jobs.publish.steps.splice(2, 0, guard);
+      },
+    ],
+    [
+      "third publication attempt",
+      (workflow) => {
+        workflow.jobs.publish.steps[0].run =
+          workflow.jobs.publish.steps[0].run.replace(
+            '!= "2"',
+            '!= "2" && "$WORKFLOW_RUN_ATTEMPT" != "3"',
+          );
+      },
+    ],
+    [
+      "missing prerelease dist-tag baseline",
+      (workflow) => {
+        delete workflow.jobs.verify.outputs["expected-next-version"];
+      },
+    ],
+    [
       "missing Release Please run snapshot",
       (workflow) => {
         delete workflow.jobs.verify.outputs["release-please-snapshot"];
@@ -499,6 +558,35 @@ describe("Publish workflow dispatch contract", () => {
       },
     ],
     [
+      "replay without the exact registry version",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        step.run = step.run.replace(
+          /if \[\[ "\$WORKFLOW_RUN_ATTEMPT" == "2" && -z "\$exact_version" \]\]; then\n {2}echo "The failed-job replay requires the exact registry version to exist\." >&2\n {2}exit 1\nfi\n/,
+          "",
+        );
+      },
+    ],
+    [
+      "late replay exact-version guard",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) =>
+            name === "Reconfirm protected state immediately before publication",
+        );
+        const guard = `if [[ "$WORKFLOW_RUN_ATTEMPT" == "2" && -z "$exact_version" ]]; then
+  echo "The failed-job replay requires the exact registry version to exist." >&2
+  exit 1
+fi
+`;
+        step.run = step.run.replace(guard, "");
+        step.run += guard;
+      },
+    ],
+    [
       "different uploaded artifact",
       (workflow) => {
         const step = workflow.jobs.verify.steps.find(
@@ -511,6 +599,15 @@ describe("Publish workflow dispatch contract", () => {
       "live-smoke dependency",
       (workflow) => {
         workflow.jobs["live-smoke"].needs = ["handoff", "verify"];
+      },
+    ],
+    [
+      "replayed live-smoke job",
+      (workflow) => {
+        workflow.jobs["live-smoke"].if = workflow.jobs["live-smoke"].if.replace(
+          "github.run_attempt == 1",
+          "github.run_attempt >= 1",
+        );
       },
     ],
     [
@@ -538,6 +635,15 @@ describe("Publish workflow dispatch contract", () => {
       },
     ],
     [
+      "replayed tag verification job",
+      (workflow) => {
+        workflow.jobs.verify.if = workflow.jobs.verify.if.replace(
+          "github.run_attempt == 1",
+          "github.run_attempt >= 1",
+        );
+      },
+    ],
+    [
       "unguarded tag dispatch",
       (workflow) => {
         workflow.jobs.verify.if += " || true";
@@ -553,6 +659,27 @@ describe("Publish workflow dispatch contract", () => {
       "unguarded handoff",
       (workflow) => {
         workflow.jobs.handoff.if += " || true";
+      },
+    ],
+    [
+      "replayed handoff dispatch",
+      (workflow) => {
+        workflow.jobs.handoff.if = workflow.jobs.handoff.if.replace(
+          "github.run_attempt == 1",
+          "github.run_attempt >= 1",
+        );
+      },
+    ],
+    [
+      "duplicate immutable-tag dispatch",
+      (workflow) => {
+        const step = workflow.jobs.handoff.steps.find(
+          ({ name }) => name === "Dispatch the exact immutable tag",
+        );
+        step.run = step.run.replace(
+          /prior_count="\$\(jq[\s\S]*?if \[\[ "\$prior_count" != "0" \]\]; then\n {2}echo "An exact Publish run already exists for this immutable tag and commit\." >&2\n {2}exit 1\nfi\n/,
+          "",
+        );
       },
     ],
     [
@@ -714,6 +841,63 @@ describe("Publish workflow dispatch contract", () => {
       },
     ],
     [
+      "unbounded attestation fetch",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        step.run = step.run.replace(
+          "bash scripts/fetch-attestations.sh",
+          'curl "$attestations_url" > "$attestations_file"',
+        );
+      },
+    ],
+    [
+      "missing pre-fetch attestation URL validation",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        step.run = step.run.replace(
+          /validateRegistryAttestationUrl\(\{\n {2}url: process\.env\.ATTESTATIONS_URL,\n {2}version: process\.env\.VERSION,\n\}\);\n/,
+          "",
+        );
+      },
+    ],
+    [
+      "post-fetch attestation URL validation",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        const call = `validateRegistryAttestationUrl({
+  url: process.env.ATTESTATIONS_URL,
+  version: process.env.VERSION,
+});
+`;
+        step.run = step.run.replace(call, "");
+        step.run += call;
+      },
+    ],
+    [
+      "missing post-attestation registry readback",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        step.run = step.run.replace("validatePublishedRegistryState", "");
+      },
+    ],
+    [
+      "missing existing-version replay expectation",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Publish the exact artifact with provenance",
+        );
+        delete step.env.EXPECT_EXISTING;
+      },
+    ],
+    [
       "normal live-smoke condition",
       (workflow) => {
         const step = workflow.jobs["live-smoke"].steps.find(
@@ -763,6 +947,27 @@ describe("Publish workflow dispatch contract", () => {
           steps[verifyIndex],
           steps[publishIndex],
         ];
+      },
+    ],
+    [
+      "unbounded publication job gate",
+      (workflow) => {
+        workflow.jobs.publish.if = workflow.jobs.publish.if.replace(
+          "(github.run_attempt == 1 || github.run_attempt == 2)",
+          "github.run_attempt >= 1",
+        );
+      },
+    ],
+    [
+      "missing bounded publication conclusion",
+      (workflow) => {
+        delete workflow.jobs.result;
+      },
+    ],
+    [
+      "skipped bounded publication conclusion",
+      (workflow) => {
+        workflow.jobs.result.if = "${{ false }}";
       },
     ],
   ])("rejects %s", (_name, mutate) => {
@@ -857,22 +1062,104 @@ describe("npm publication state", () => {
     expect(
       validateRegistryStateBeforePublish({
         exactVersion: null,
+        expectedNextVersion: NEXT_BASELINE,
         latestVersion: "0.1.0",
-        nextVersion: "0.1.0-alpha.3",
+        nextVersion: NEXT_BASELINE,
         version: "0.1.1",
       }),
     ).toMatchObject({ previousVersion: "0.1.0" });
+  });
+
+  it.each([
+    "",
+    "0.1.2",
+    "0.2.0-alpha.1",
+    "0.1.0-alpha.01",
+    "0.1.0-alpha\nnext=bad",
+  ])("rejects an invalid prerelease dist-tag baseline %j", (version) => {
+    expect(() => validatePrereleaseDistTagBaseline(version)).toThrow(
+      /release workflow/i,
+    );
   });
 
   it("accepts an idempotent replay only at the same exact version", () => {
     expect(
       validateRegistryStateBeforePublish({
         exactVersion: "0.1.1",
+        expectedNextVersion: NEXT_BASELINE,
         latestVersion: "0.1.1",
-        nextVersion: "0.1.0-alpha.3",
+        nextVersion: NEXT_BASELINE,
         version: "0.1.1",
       }),
     ).toMatchObject({ exactVersion: "0.1.1" });
+  });
+
+  function publishedRegistryFixture() {
+    return {
+      attestationUrl:
+        "https://registry.npmjs.org/-/npm/v1/attestations/cometapi@0.1.2",
+      dist: {
+        attestations: {
+          provenance: { predicateType: "https://slsa.dev/provenance/v1" },
+          url: "https://registry.npmjs.org/-/npm/v1/attestations/cometapi@0.1.2",
+        },
+        integrity: "sha512-exact",
+      },
+      exactVersion: "0.1.2",
+      expectedNextVersion: NEXT_BASELINE,
+      expectedIntegrity: "sha512-exact",
+      nextVersion: NEXT_BASELINE,
+      taggedVersion: "0.1.2",
+      version: "0.1.2",
+    };
+  }
+
+  it("revalidates immutable and mutable registry state after attestation convergence", () => {
+    expect(
+      validatePublishedRegistryState(publishedRegistryFixture()),
+    ).toMatchObject({
+      exactVersion: "0.1.2",
+      nextVersion: "0.1.0-alpha.3",
+      taggedVersion: "0.1.2",
+    });
+  });
+
+  it("accepts only the canonical npm attestation endpoint before fetching", () => {
+    expect(
+      validateRegistryAttestationUrl({
+        url: publishedRegistryFixture().attestationUrl,
+        version: "0.1.2",
+      }),
+    ).toMatchObject({ version: "0.1.2" });
+    expect(() =>
+      validateRegistryAttestationUrl({
+        url: "https://example.com/attestations",
+        version: "0.1.2",
+      }),
+    ).toThrow(/release workflow/i);
+  });
+
+  it.each([
+    ["exact version", (state) => (state.exactVersion = "0.1.1")],
+    ["dist-tag", (state) => (state.taggedVersion = "0.1.1")],
+    ["next", (state) => (state.nextVersion = "0.1.0-alpha.4")],
+    ["integrity", (state) => (state.dist.integrity = "sha512-different")],
+    ["attestation URL identity", (state) => (state.attestationUrl += "-other")],
+    [
+      "attestation URL",
+      (state) => (state.dist.attestations.url += "-different"),
+    ],
+    [
+      "provenance predicate",
+      (state) =>
+        (state.dist.attestations.provenance.predicateType = "unexpected"),
+    ],
+  ])("rejects post-attestation registry drift in %s", (_name, mutate) => {
+    const state = publishedRegistryFixture();
+    mutate(state);
+    expect(() => validatePublishedRegistryState(state)).toThrow(
+      /release workflow/i,
+    );
   });
 
   it.each([
@@ -880,8 +1167,9 @@ describe("npm publication state", () => {
       "wrong latest",
       {
         exactVersion: null,
+        expectedNextVersion: NEXT_BASELINE,
         latestVersion: "0.1.1",
-        nextVersion: "0.1.0-alpha.3",
+        nextVersion: NEXT_BASELINE,
         version: "0.1.1",
       },
     ],
@@ -889,6 +1177,7 @@ describe("npm publication state", () => {
       "changed next",
       {
         exactVersion: null,
+        expectedNextVersion: NEXT_BASELINE,
         latestVersion: "0.1.0",
         nextVersion: "0.1.0-alpha.4",
         version: "0.1.1",
@@ -898,8 +1187,9 @@ describe("npm publication state", () => {
       "wrong exact",
       {
         exactVersion: "0.1.2",
+        expectedNextVersion: NEXT_BASELINE,
         latestVersion: "0.1.0",
-        nextVersion: "0.1.0-alpha.3",
+        nextVersion: NEXT_BASELINE,
         version: "0.1.1",
       },
     ],
@@ -907,8 +1197,9 @@ describe("npm publication state", () => {
       "0.2 release",
       {
         exactVersion: null,
+        expectedNextVersion: NEXT_BASELINE,
         latestVersion: "0.1.1",
-        nextVersion: "0.1.0-alpha.3",
+        nextVersion: NEXT_BASELINE,
         version: "0.2.0",
       },
     ],
