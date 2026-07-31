@@ -153,6 +153,16 @@ Release Please and publication remain separate trust domains. Release Please
 does not receive npm OIDC permission; `id-token: write` remains limited to the
 protected publish job. Repository variables gate both flows, and reruns remain
 fail-closed on exact tag, artifact, dist-tag, integrity, and provenance state.
+Registry package metadata and its attestation endpoint can converge at
+different times. Post-publication verification therefore retries attestation
+HTTP failures within a fixed time bound before failing, while preserving exact
+integrity and provenance validation. If publication succeeded before a later
+gate failed, only an idempotent replay of that same immutable-tag run may
+continue. The protected-state step records whether the exact version already
+exists; `publish-artifact.sh` then skips registry mutation only after its
+integrity matches the verified tarball and refuses a later `E404` instead of
+republishing. A failed-job replay preserves the same run's successful artifact
+and bounded live-smoke jobs rather than borrowing evidence from another run.
 Manual preparation rejects attempt 2 or later; restart uses a new dispatch with
 Release creation disabled. A `push` rerun is bounded to the same run ID, SHA,
 candidate, and final-head review. It may retry while the tag and Release remain

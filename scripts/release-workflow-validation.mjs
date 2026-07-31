@@ -16,7 +16,7 @@ const RELEASE_WORKFLOW_STEP = "Run Release Please";
 const PUBLISH_OPERATION = "release";
 const NPM_TAG_POLICY_ID = 55718965;
 const PUBLISH_WORKFLOW_CONTRACT_SHA256 =
-  "43f70219c4b8deed5a68a7a369821cc18f891119b373134fda8ca46fc7080e24";
+  "088366a4c0fdb060b330249f4f8db72c97b10925f7f737e47886dffce4dee9be";
 const PUBLISH_HANDOFF_IF =
   "vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'";
 const PUBLISH_RESULT_IF = "steps.result.outputs.has-result == 'true'";
@@ -505,6 +505,11 @@ export function validatePublishWorkflowContract(workflow) {
     "Publish protected-state reconfirmation",
   );
   requireEqual(
+    reconfirmStep?.id,
+    "pre-publish",
+    "Publish protected-state output identity",
+  );
+  requireEqual(
     reconfirmStep?.env?.RELEASE_PLEASE_SNAPSHOT,
     "${{ needs.verify.outputs.release-please-snapshot }}",
     "Publish Release Please snapshot reconfirmation",
@@ -546,6 +551,23 @@ export function validatePublishWorkflowContract(workflow) {
     "${{ github.token }}",
     "Publish registry verification token",
   );
+  for (const fragment of [
+    "bash scripts/fetch-attestations.sh",
+    'post_exact_version="$(npm view',
+    'post_tagged_version="$(npm view',
+    'post_next_version="$(npm view cometapi@next version)"',
+    'post_registry_dist="$(npm view',
+    "validatePublishedRegistryState",
+  ]) {
+    if (
+      typeof registryStep?.run !== "string" ||
+      !registryStep.run.includes(fragment)
+    ) {
+      fail(
+        `Release workflow public-registry verification must contain ${fragment}.`,
+      );
+    }
+  }
   const publishSteps = jobs.publish?.steps ?? [];
   if (
     publishSteps.indexOf(reconfirmStep) >= publishSteps.indexOf(publishStep) ||
@@ -559,6 +581,11 @@ export function validatePublishWorkflowContract(workflow) {
     publishStep?.run,
     "bash scripts/publish-artifact.sh",
     "npm publication command",
+  );
+  requireEqual(
+    publishStep?.env?.EXPECT_EXISTING,
+    "${{ steps.pre-publish.outputs.expect-existing }}",
+    "npm publication replay expectation",
   );
   requireEqual(
     createHash("sha256").update(JSON.stringify(workflow)).digest("hex"),
@@ -863,6 +890,62 @@ export function validateRegistryStateBeforePublish({
   }
   requireEqual(nextVersion, "0.1.0-alpha.3", "registry next version");
   return { exactVersion, latestVersion, nextVersion, previousVersion, version };
+}
+
+export function validatePublishedRegistryState({
+  attestationUrl,
+  dist,
+  exactVersion,
+  expectedIntegrity,
+  nextVersion,
+  taggedVersion,
+  version,
+}) {
+  validateRegistryStateBeforePublish({
+    exactVersion,
+    latestVersion: taggedVersion,
+    nextVersion,
+    version,
+  });
+  requireEqual(exactVersion, version, "published registry exact version");
+  requireEqual(taggedVersion, version, "published registry dist-tag");
+  requireEqual(
+    attestationUrl,
+    `https://registry.npmjs.org/-/npm/v1/attestations/cometapi@${version}`,
+    "published registry attestation URL identity",
+  );
+  if (dist === null || typeof dist !== "object" || Array.isArray(dist)) {
+    fail("Release workflow published registry dist must be an object.");
+  }
+  if (
+    typeof expectedIntegrity !== "string" ||
+    !expectedIntegrity.startsWith("sha512-")
+  ) {
+    fail("Release workflow expected registry integrity must use sha512.");
+  }
+  requireEqual(
+    dist.integrity,
+    expectedIntegrity,
+    "published registry integrity",
+  );
+  requireEqual(
+    dist.attestations?.url,
+    attestationUrl,
+    "published registry attestation URL",
+  );
+  requireEqual(
+    dist.attestations?.provenance?.predicateType,
+    "https://slsa.dev/provenance/v1",
+    "published registry provenance predicate",
+  );
+  return {
+    attestationUrl,
+    exactVersion,
+    integrity: dist.integrity,
+    nextVersion,
+    taggedVersion,
+    version,
+  };
 }
 
 export function validateRegistryProvenance({

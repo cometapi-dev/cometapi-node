@@ -284,8 +284,19 @@ repository root.
   dispatch. Do not rerun a preparation dispatch. Release Please same-run Release
   reconciliation is allowed only under the exact conditions in `RELEASING.md`.
 - Never bypass a failed stable release with a manual or auxiliary tag, a
-  branch-context publish, a temporary `main` npm Environment policy, reused
-  artifact or live evidence, an arbitrary rerun, or a different patch version.
+  branch-context publish, a temporary `main` npm Environment policy, cross-run
+  artifact or live-evidence reuse, an arbitrary rerun, or a different patch
+  version.
+- If `npm publish` succeeds but post-publication verification fails, first read
+  the exact public version, dist-tags, integrity, attestation URL, signature,
+  and provenance. A transient attestation-endpoint `404` is a registry
+  convergence condition and the workflow must retry it with a finite bound. If
+  exact integrity matches, only `rerun failed jobs` on the same immutable-tag
+  run may resume verification. Confirm that GitHub preserves the successful
+  exact-artifact and live-smoke jobs, so the three-request smoke is not repeated;
+  stop if the replay expands that job set. The replay must remain fail-closed,
+  requires a fresh Environment approval, and must not publish again. Stop on any
+  identity, integrity, provenance, dist-tag, or configuration mismatch.
 - After registry verification, immediately restore
   `RELEASE_PLEASE_ENABLED=false`, keep `LIVE_SMOKE_ENABLED=true`, and require the
   npm Environment deployment-policy set to contain only `tag:v*`.

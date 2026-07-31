@@ -18,6 +18,7 @@ import {
   validateNpmEnvironmentState,
   validatePublishWorkflowContract,
   validatePublishWorkflowDispatchTrigger,
+  validatePublishedRegistryState,
   validateRegistryProvenance,
   validateRegistryProvenanceInvocation,
   validateRegistryStateBeforePublish,
@@ -714,6 +715,36 @@ describe("Publish workflow dispatch contract", () => {
       },
     ],
     [
+      "unbounded attestation fetch",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        step.run = step.run.replace(
+          "bash scripts/fetch-attestations.sh",
+          'curl "$attestations_url" > "$attestations_file"',
+        );
+      },
+    ],
+    [
+      "missing post-attestation registry readback",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Verify the public registry artifact",
+        );
+        step.run = step.run.replace("validatePublishedRegistryState", "");
+      },
+    ],
+    [
+      "missing existing-version replay expectation",
+      (workflow) => {
+        const step = workflow.jobs.publish.steps.find(
+          ({ name }) => name === "Publish the exact artifact with provenance",
+        );
+        delete step.env.EXPECT_EXISTING;
+      },
+    ],
+    [
       "normal live-smoke condition",
       (workflow) => {
         const step = workflow.jobs["live-smoke"].steps.find(
@@ -873,6 +904,58 @@ describe("npm publication state", () => {
         version: "0.1.1",
       }),
     ).toMatchObject({ exactVersion: "0.1.1" });
+  });
+
+  function publishedRegistryFixture() {
+    return {
+      attestationUrl:
+        "https://registry.npmjs.org/-/npm/v1/attestations/cometapi@0.1.2",
+      dist: {
+        attestations: {
+          provenance: { predicateType: "https://slsa.dev/provenance/v1" },
+          url: "https://registry.npmjs.org/-/npm/v1/attestations/cometapi@0.1.2",
+        },
+        integrity: "sha512-exact",
+      },
+      exactVersion: "0.1.2",
+      expectedIntegrity: "sha512-exact",
+      nextVersion: "0.1.0-alpha.3",
+      taggedVersion: "0.1.2",
+      version: "0.1.2",
+    };
+  }
+
+  it("revalidates immutable and mutable registry state after attestation convergence", () => {
+    expect(
+      validatePublishedRegistryState(publishedRegistryFixture()),
+    ).toMatchObject({
+      exactVersion: "0.1.2",
+      nextVersion: "0.1.0-alpha.3",
+      taggedVersion: "0.1.2",
+    });
+  });
+
+  it.each([
+    ["exact version", (state) => (state.exactVersion = "0.1.1")],
+    ["dist-tag", (state) => (state.taggedVersion = "0.1.1")],
+    ["next", (state) => (state.nextVersion = "0.1.0-alpha.4")],
+    ["integrity", (state) => (state.dist.integrity = "sha512-different")],
+    ["attestation URL identity", (state) => (state.attestationUrl += "-other")],
+    [
+      "attestation URL",
+      (state) => (state.dist.attestations.url += "-different"),
+    ],
+    [
+      "provenance predicate",
+      (state) =>
+        (state.dist.attestations.provenance.predicateType = "unexpected"),
+    ],
+  ])("rejects post-attestation registry drift in %s", (_name, mutate) => {
+    const state = publishedRegistryFixture();
+    mutate(state);
+    expect(() => validatePublishedRegistryState(state)).toThrow(
+      /release workflow/i,
+    );
   });
 
   it.each([
