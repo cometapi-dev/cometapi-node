@@ -288,15 +288,21 @@ repository root.
   artifact or live-evidence reuse, an arbitrary rerun, or a different patch
   version.
 - If `npm publish` succeeds but post-publication verification fails, first read
-  the exact public version, dist-tags, integrity, attestation URL, signature,
-  and provenance. A transient attestation-endpoint `404` is a registry
-  convergence condition and the workflow must retry it with a finite bound. If
-  exact integrity matches, only `rerun failed jobs` on the same immutable-tag
-  run may resume verification. Confirm that GitHub preserves the successful
-  exact-artifact and live-smoke jobs, so the three-request smoke is not repeated;
-  stop if the replay expands that job set. The replay must remain fail-closed,
-  requires a fresh Environment approval, and must not publish again. Stop on any
-  identity, integrity, provenance, dist-tag, or configuration mismatch.
+  the exact public version, `latest`, `next`, integrity, attestation URL,
+  signature, and provenance. The pre-publish state allows the exact version to
+  be absent or equal to the candidate and `latest` to be the previous or
+  candidate patch; final state requires both exact and `latest` to equal the
+  candidate. `next` must always remain `0.1.0-alpha.3`. A transient attestation-
+  endpoint `404` is a registry convergence condition handled by the workflow's
+  single finite wait; exhaustion is terminal and must not be extended by reruns.
+  After the endpoint converges and independent signature and provenance checks
+  pass, at most one `rerun failed jobs` on the same immutable-tag run may resume
+  another failed post-publication gate. Confirm that GitHub preserves the
+  successful exact-artifact and live-smoke jobs, so the three-request smoke is
+  not repeated; stop if the replay expands that job set. The replay requires a
+  fresh Environment approval and must not publish again. An exact-version
+  metadata `E404`, second replay request, non-convergence, or any identity,
+  integrity, provenance, dist-tag, or configuration mismatch is a hard stop.
 - After registry verification, immediately restore
   `RELEASE_PLEASE_ENABLED=false`, keep `LIVE_SMOKE_ENABLED=true`, and require the
   npm Environment deployment-policy set to contain only `tag:v*`.

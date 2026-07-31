@@ -584,23 +584,32 @@ policy set is exactly `tag:v*`. After registry verification, immediately restore
 `RELEASE_PLEASE_ENABLED=false` and keep `LIVE_SMOKE_ENABLED=true`.
 
 Never substitute a manually authored release PR, manual or auxiliary tag,
-branch-context publication, temporary `main` Environment policy, reused artifact
-or live evidence, arbitrary rerun, or different patch version. An ambiguous npm
-result requires exact registry integrity, signature, and provenance inspection;
-it never authorizes an automatic retry.
+branch-context publication, temporary `main` Environment policy, cross-run
+artifact or live-evidence reuse, arbitrary rerun, or different patch version. An
+ambiguous npm result requires exact registry integrity, signature, and
+provenance inspection; it never authorizes an automatic retry.
 
 If the exact publish step succeeded but a later registry verification step
 failed, query the immutable version and both dist-tags before taking any action.
-When the public integrity matches the verified artifact and the tag, Release,
-workflow, provenance, and protected configuration remain exact, rerun only the
-failed jobs of that same tag-bound run. Confirm before approval that GitHub kept
-the successful exact-artifact and live-smoke jobs instead of scheduling them
-again; never use rerun-all for this recovery. The protected preflight must record
-that the exact version exists, and the idempotent publication script must report
-matching integrity and skip `npm publish`. A later `E404` is a hard stop rather
-than permission to republish. The failed publish job still requires a fresh npm
-Environment approval. Stop instead of replaying on any mismatch. After
-successful verification, restore `RELEASE_PLEASE_ENABLED=false` immediately.
+At pre-publish, the exact version may be absent or equal the candidate and
+`latest` may equal the previous or candidate patch; `next` must equal
+`0.1.0-alpha.3`. Final verification requires the exact version and `latest` to
+equal the candidate while `next` remains unchanged.
+
+An attestation-endpoint `404` may be the sole unresolved item while npm
+converges. Let the workflow's bounded ten-minute fetch finish; if it exhausts,
+stop and report rather than rerunning to extend the wait. Only after that endpoint
+is readable and independent signature and provenance checks pass may one failed
+post-publication gate use exactly one `rerun failed jobs` on the same tag-bound
+run. Confirm before approval that GitHub kept the successful exact-artifact and
+live-smoke jobs instead of scheduling them again; never use rerun-all for this
+recovery. The protected preflight must record that the exact version exists, and
+the idempotent publication script must report matching integrity and skip
+`npm publish`. An exact-version metadata `E404` after that preflight is a hard
+stop rather than permission to republish. The failed publish job still requires
+a fresh npm Environment approval. Stop on a second replay request or any
+mismatch. After successful verification, restore
+`RELEASE_PLEASE_ENABLED=false` immediately.
 
 The `0.1.1` repair used the immutable `0.1.0` commit as a one-cycle
 `last-release-sha` only for its initial preparation, then removed the anchor.
