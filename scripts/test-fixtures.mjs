@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 import {
@@ -23,15 +23,9 @@ if (tarballArgument !== -1 && !suppliedTarball) {
 const lock = readJSON(join(ROOT, "package-lock.json"));
 const lockedOpenAIVersion = lock.packages["node_modules/openai"]?.version;
 assert.ok(lockedOpenAIVersion, "package-lock.json must lock OpenAI");
-for (const fixture of ["esm", "commonjs", "openai-host"]) {
-  const manifest = readJSON(join(ROOT, "fixtures", fixture, "package.json"));
-  assert.equal(
-    manifest.dependencies?.openai,
-    lockedOpenAIVersion,
-    `${fixture} must pin the locked OpenAI version`,
-  );
-}
-
+const supportedOpenAIRange = readJSON(join(ROOT, "package.json")).dependencies
+  ?.openai;
+assert.ok(supportedOpenAIRange, "package.json must declare OpenAI support");
 try {
   const tarball =
     (suppliedTarball ? resolve(ROOT, suppliedTarball) : undefined) ??
@@ -42,10 +36,30 @@ try {
     cpSync(join(ROOT, "fixtures", fixture), fixtureDirectory, {
       recursive: true,
     });
+    const manifestPath = join(fixtureDirectory, "package.json");
+    const manifest = readJSON(manifestPath);
+    assert.equal(
+      manifest.dependencies?.openai,
+      supportedOpenAIRange,
+      `${fixture} must declare the supported OpenAI range before installation`,
+    );
+    manifest.dependencies.openai = lockedOpenAIVersion;
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     run(
       "npm",
       ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
       { cwd: fixtureDirectory },
+    );
+    const dependencyTree = JSON.parse(
+      run("npm", ["ls", "openai", "--all", "--json"], {
+        capture: true,
+        cwd: fixtureDirectory,
+      }),
+    );
+    assert.equal(
+      dependencyTree.dependencies?.openai?.version,
+      lockedOpenAIVersion,
+      `${fixture} must install the locked OpenAI version`,
     );
 
     if (fixture === "openai-host") {
