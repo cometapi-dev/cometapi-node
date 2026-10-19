@@ -7,7 +7,7 @@
     "typecheck": "tsc --noEmit --project tsconfig.json && tsc --noEmit --project tsconfig.nonexact.json"
   },
   "dependencies": {
-    "openai": "6.47.0"
+    "openai": "^6.47.0"
   },
   "devDependencies": {
     "typescript": "5.9.3"

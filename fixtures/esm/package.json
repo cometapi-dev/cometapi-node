@@ -6,6 +6,6 @@
     "test": "node index.mjs"
   },
   "dependencies": {
-    "openai": "6.47.0"
+    "openai": "^6.47.0"
   }
 }

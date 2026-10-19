@@ -5,6 +5,6 @@
     "test": "node index.cjs"
   },
   "dependencies": {
-    "openai": "6.47.0"
+    "openai": "^6.47.0"
   }
 }
