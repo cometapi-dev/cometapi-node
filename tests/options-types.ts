@@ -177,4 +177,4 @@ rejectProviderFromConstrainedGeneric(inferredProviderOptions);
 rejectWorkloadFromConstrainedGeneric(inferredWorkloadIdentityOptions);
 rejectBrowserFromConstrainedGeneric(inferredBrowserOptions);
 
-void [browserOptions, providerOptions, workloadIdentityOptions];
+export { browserOptions, providerOptions, workloadIdentityOptions };
