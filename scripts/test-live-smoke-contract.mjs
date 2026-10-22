@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { TextEncoder } from "node:util";
+import { ReadableStream } from "node:stream/web";
 
 const script = new globalThis.URL("./live-smoke.mjs", import.meta.url);
 const LIVE_BASE_URL = "https://api.cometapi.com/v1";
@@ -15,6 +17,7 @@ const environmentNames = [
   "COMETAPI_BASE_URL",
   "COMETAPI_KEY",
   "COMETAPI_LIVE_CONCURRENCY",
+  "COMETAPI_LIVE_RETRY_BUDGET",
   "COMETAPI_LIVE_MAX_OUTPUT_TOKENS",
   "COMETAPI_LIVE_REQUEST_LIMIT",
   "COMETAPI_LIVE_REQUEST_TIMEOUT_MS",
@@ -25,9 +28,10 @@ const originalEnvironment = new Map(
   environmentNames.map((name) => [name, process.env[name]]),
 );
 
-function json(body) {
+function json(body, { headers = {}, status = 200 } = {}) {
   return new Response(JSON.stringify(body), {
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
+    status,
   });
 }
 
@@ -40,6 +44,33 @@ function sse(messages) {
   return new Response(contents, {
     headers: { "content-type": "text/event-stream" },
   });
+}
+
+function interruptedSse() {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            `event: response.output_text.delta\ndata: ${JSON.stringify({
+              content_index: 0,
+              delta: "partial",
+              item_id: "msg_live_contract",
+              output_index: 0,
+              sequence_number: 0,
+              type: "response.output_text.delta",
+            })}\n\n`,
+          ),
+        );
+        const error = Object.assign(new Error("stream interrupted"), {
+          code: "ECONNRESET",
+        });
+        controller.error(error);
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
 }
 
 function completedResponse() {
@@ -60,7 +91,12 @@ function createMockFetch(scenario, requestURLs = []) {
   return async (input, init) => {
     const request = new Request(input, init);
     requestURLs.push(request.url);
-    assert.equal(request.headers.get("authorization"), "Bearer mock-live-key");
+    if (scenario !== "redaction") {
+      assert.equal(
+        request.headers.get("authorization"),
+        "Bearer mock-live-key",
+      );
+    }
 
     if (request.url.endsWith("/models")) {
       return json({
@@ -82,7 +118,7 @@ function createMockFetch(scenario, requestURLs = []) {
       assert.equal(body.reasoning_effort, "none");
       return json({
         choices:
-          scenario === "empty-chat"
+          scenario === "empty-chat" || scenario === "redaction"
             ? []
             : [
                 {
@@ -99,6 +135,70 @@ function createMockFetch(scenario, requestURLs = []) {
     }
 
     assert.ok(request.url.endsWith("/responses"));
+    if (
+      scenario === "unauthorized-response" &&
+      requestURLs.filter((url) => url.endsWith("/responses")).length === 1
+    ) {
+      return json(
+        {
+          error: {
+            code: "invalid_api_key",
+            message: "unauthorized",
+            type: "authentication_error",
+          },
+        },
+        { status: 401 },
+      );
+    }
+    if (
+      (scenario === "timeout-response" || scenario === "retry-exhausted") &&
+      (scenario === "retry-exhausted" ||
+        requestURLs.filter((url) => url.endsWith("/responses")).length === 1)
+    ) {
+      throw new globalThis.DOMException(
+        "The operation was aborted",
+        "AbortError",
+      );
+    }
+    if (
+      scenario === "connection-response" &&
+      requestURLs.filter((url) => url.endsWith("/responses")).length === 1
+    ) {
+      throw new TypeError("fetch failed");
+    }
+    if (
+      scenario === "stream-interruption" &&
+      requestURLs.filter((url) => url.endsWith("/responses")).length === 1
+    ) {
+      return interruptedSse();
+    }
+    if (
+      scenario === "retry-response" &&
+      requestURLs.filter((url) => url.endsWith("/responses")).length === 1
+    ) {
+      return json(
+        {
+          error: {
+            code: "server_error",
+            message: "temporary response failure",
+            type: "server_error",
+          },
+        },
+        { headers: { "retry-after-ms": "0" }, status: 500 },
+      );
+    }
+    if (scenario === "auth-error") {
+      return json(
+        {
+          error: {
+            code: "invalid_api_key",
+            message: "mock authentication failure",
+            type: "authentication_error",
+          },
+        },
+        { status: 401 },
+      );
+    }
     const body = await request.clone().json();
     assert.equal(body.model, DEFAULT_MODEL);
     assert.deepEqual(body.reasoning, { effort: "none" });
@@ -184,13 +284,25 @@ async function runSuccessfulScenario() {
   assert.deepEqual(requestURLs, FULL_REQUEST_SEQUENCE);
 }
 
-function runFailingScenario(scenario, environment = {}) {
+async function runRetryScenario() {
+  const requestURLs = [];
+  globalThis.fetch = createMockFetch("retry-response", requestURLs);
+  await import(`${script.href}?scenario=retry-response`);
+  assert.deepEqual(requestURLs, [
+    ...FULL_REQUEST_SEQUENCE,
+    `${LIVE_BASE_URL}/responses`,
+  ]);
+}
+
+function runScenario(scenario, environment = {}) {
   const childProgram = [
     'import assert from "node:assert/strict";',
     `const DEFAULT_MODEL = ${JSON.stringify(DEFAULT_MODEL)};`,
     `const requestURLs = [];`,
+    "console.log = () => undefined;",
     json.toString(),
     sse.toString(),
+    interruptedSse.toString(),
     completedResponse.toString(),
     createMockFetch.toString(),
     `globalThis.fetch = createMockFetch(${JSON.stringify(scenario)}, requestURLs);`,
@@ -204,8 +316,9 @@ function runFailingScenario(scenario, environment = {}) {
     ...process.env,
     COMETAPI_KEY: "mock-live-key",
     COMETAPI_LIVE_CONCURRENCY: "1",
+    COMETAPI_LIVE_RETRY_BUDGET: "1",
     COMETAPI_LIVE_MAX_OUTPUT_TOKENS: "16",
-    COMETAPI_LIVE_REQUEST_LIMIT: "3",
+    COMETAPI_LIVE_REQUEST_LIMIT: "4",
     COMETAPI_LIVE_REQUEST_TIMEOUT_MS: "60000",
     COMETAPI_LIVE_SMOKE: "1",
     ...environment,
@@ -230,9 +343,15 @@ function assertFailingScenario({
   expectedRequests,
   scenario,
 }) {
-  const result = runFailingScenario(scenario, environment);
+  const result = runScenario(scenario, environment);
   assert.notEqual(result.status, 0, `${scenario} must fail the live runner`);
   assert.match(result.stderr, expectedError);
+  assert.deepEqual(JSON.parse(result.stdout), expectedRequests);
+}
+
+function assertSuccessfulScenario({ environment, expectedRequests, scenario }) {
+  const result = runScenario(scenario, environment);
+  assert.equal(result.status, 0, `${scenario} must pass the live runner`);
   assert.deepEqual(JSON.parse(result.stdout), expectedRequests);
 }
 
@@ -240,7 +359,8 @@ try {
   console.log = () => undefined;
   process.env.COMETAPI_KEY = "mock-live-key";
   process.env.COMETAPI_LIVE_SMOKE = "1";
-  process.env.COMETAPI_LIVE_REQUEST_LIMIT = "3";
+  process.env.COMETAPI_LIVE_RETRY_BUDGET = "1";
+  process.env.COMETAPI_LIVE_REQUEST_LIMIT = "4";
   process.env.COMETAPI_LIVE_MAX_OUTPUT_TOKENS = "16";
   process.env.COMETAPI_LIVE_REQUEST_TIMEOUT_MS = "60000";
   process.env.COMETAPI_LIVE_CONCURRENCY = "1";
@@ -248,6 +368,72 @@ try {
   delete process.env.COMETAPI_SMOKE_MODEL;
 
   await runSuccessfulScenario();
+  await runRetryScenario();
+  assertSuccessfulScenario({
+    expectedRequests: [...FULL_REQUEST_SEQUENCE, `${LIVE_BASE_URL}/responses`],
+    scenario: "retry-response",
+  });
+  for (const scenario of [
+    "connection-response",
+    "timeout-response",
+    "stream-interruption",
+  ]) {
+    assertSuccessfulScenario({
+      expectedRequests: [
+        ...FULL_REQUEST_SEQUENCE,
+        `${LIVE_BASE_URL}/responses`,
+      ],
+      scenario,
+    });
+  }
+  assertFailingScenario({
+    environment: { COMETAPI_LIVE_RETRY_BUDGET: "2" },
+    expectedError: /between 0 and 1/,
+    expectedRequests: [],
+    scenario: "invalid-retry-budget",
+  });
+  assertFailingScenario({
+    environment: {
+      COMETAPI_LIVE_RETRY_BUDGET: "1",
+      COMETAPI_LIVE_REQUEST_LIMIT: "3",
+    },
+    expectedError: /logical count plus the global retry budget/,
+    expectedRequests: [],
+    scenario: "invalid-request-budget",
+  });
+  assertFailingScenario({
+    environment: {
+      COMETAPI_LIVE_RETRY_BUDGET: "0",
+      COMETAPI_LIVE_REQUEST_LIMIT: "3",
+    },
+    expectedError: /operation was aborted|Request timed out/,
+    expectedRequests: FULL_REQUEST_SEQUENCE,
+    scenario: "timeout-response",
+  });
+  assertFailingScenario({
+    expectedError: /operation was aborted|Request timed out/,
+    expectedRequests: [...FULL_REQUEST_SEQUENCE, `${LIVE_BASE_URL}/responses`],
+    scenario: "retry-exhausted",
+  });
+  assertFailingScenario({
+    expectedError: /401/,
+    expectedRequests: FULL_REQUEST_SEQUENCE,
+    scenario: "auth-error",
+  });
+  assertFailingScenario({
+    expectedError: /401|unauthorized|authentication/i,
+    expectedRequests: FULL_REQUEST_SEQUENCE,
+    scenario: "unauthorized-response",
+  });
+  const redactionSecret = "mock-live-secret-must-not-leak";
+  const redaction = runScenario("redaction", {
+    COMETAPI_KEY: redactionSecret,
+  });
+  assert.notEqual(redaction.status, 0);
+  assert.doesNotMatch(
+    `${redaction.stdout}\n${redaction.stderr}`,
+    new RegExp(redactionSecret),
+  );
   assertFailingScenario({
     environment: { COMETAPI_BASE_URL: "https://attacker.invalid/v1" },
     expectedError: /endpoint is pinned/,

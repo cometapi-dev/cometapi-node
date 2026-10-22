@@ -79,6 +79,27 @@ describe("GitHub Actions workflow contract", () => {
     );
   });
 
+  it("keeps transient live retries bounded in scheduled and release smoke", () => {
+    for (const name of ["live-smoke.yml", "publish.yml"]) {
+      const smoke = job(
+        workflow(name),
+        name === "live-smoke.yml" ? "smoke" : "live-smoke",
+      );
+      expect(smoke).toContain(
+        name === "live-smoke.yml"
+          ? 'COMETAPI_LIVE_RETRY_BUDGET: "1"'
+          : 'COMETAPI_LIVE_RETRY_BUDGET: "0"',
+      );
+      expect(smoke).toContain(
+        name === "live-smoke.yml"
+          ? 'COMETAPI_LIVE_REQUEST_LIMIT: "4"'
+          : 'COMETAPI_LIVE_REQUEST_LIMIT: "3"',
+      );
+      expect(smoke).toContain('COMETAPI_LIVE_REQUEST_TIMEOUT_MS: "60000"');
+      expect(smoke).toContain('COMETAPI_LIVE_CONCURRENCY: "1"');
+    }
+  });
+
   it("keeps supported runtimes blocking and Node.js 26 advisory", () => {
     const ci = workflow("ci.yml");
     const locked = job(ci, "locked");
