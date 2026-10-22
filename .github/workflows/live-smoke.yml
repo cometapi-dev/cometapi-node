@@ -42,11 +42,13 @@ jobs:
           COMETAPI_KEY: ${{ secrets.COMETAPI_KEY }}
           COMETAPI_LIVE_SMOKE: "1"
           COMETAPI_SMOKE_MODEL: ${{ vars.COMETAPI_SMOKE_MODEL || 'gpt-5.6-sol' }}
-          COMETAPI_LIVE_REQUEST_LIMIT: "3"
+          COMETAPI_LIVE_RETRY_BUDGET: "1"
+          COMETAPI_LIVE_REQUEST_LIMIT: "4"
           COMETAPI_LIVE_MAX_OUTPUT_TOKENS: "16"
           COMETAPI_LIVE_REQUEST_TIMEOUT_MS: "60000"
           COMETAPI_LIVE_CONCURRENCY: "1"
-        # The test performs exactly three sequential requests (Models, Chat
-        # non-streaming, Responses streaming), stops on the first failure, and
+        # The test performs exactly three sequential logical requests (Models,
+        # Chat non-streaming, Responses streaming), permits one global official
+        # transient retry, stops on the first logical failure, and
         # never prints the credential.
         run: npm run test:live

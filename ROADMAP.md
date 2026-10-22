@@ -185,8 +185,9 @@ The readiness criteria remain:
   requires approval by the current release approver and permits self-review.
 - Default-branch CI is rerun successfully, the fail-closed content gate reports
   all violations together and then passes, and an explicitly authorized
-  protected live smoke passes within the three-request, 16-output-token,
-  60-second-per-request, concurrency-one, stop-on-first-failure budget.
+  protected live smoke passes within the three-logical-request, one-global-
+  retry, four-HTTP-attempt, 16-output-token, 60-second-per-request,
+  concurrency-one, stop-on-first-logical-failure budget.
 
 ## 0.1.0-alpha.1: Registry Alpha
 
@@ -432,8 +433,11 @@ The repository will maintain:
 - `ci.yml` for offline pull-request and default-branch checks.
 - `live-smoke.yml` for budgeted trusted compatibility tests from the default
   branch to the pinned CometAPI HTTPS endpoint. Each run is fixed at exactly
-  three sequential requests, a 16-token output cap, a 60-second per-request
-  timeout, concurrency one, and stop on the first failure.
+  three sequential logical requests, permits one global official transient
+  retry, caps total HTTP attempts at four, uses a 16-token output cap and a
+  60-second per-request timeout, fixes concurrency at one, and stops on the
+  first logical failure. The release-tag smoke sets the retry budget to zero
+  and retains a three-attempt limit.
 - `release-please.yml` for the reviewed version and changelog PR and the
   corresponding immutable tag and GitHub Release.
 - `publish.yml` for trusted Release Please completion, immutable-release and

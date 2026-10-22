@@ -279,11 +279,13 @@ The repository maintains four independently auditable workflows:
   and 24, with Node.js 26 advisory.
 - `live-smoke.yml`: trusted scheduled and manual default-branch-only low-cost
   compatibility tests against the pinned CometAPI HTTPS endpoint. Each run makes
-  exactly three sequential requests, caps generated output at 16 tokens, applies
-  a 60-second timeout to each request, fixes concurrency at one, and stops on the
-  first failure. Standalone and release smoke jobs share one repository-wide
-  concurrency group. Scheduled and manual live execution requires
-  `LIVE_SMOKE_ENABLED=true`.
+  exactly three sequential logical requests, permits one global official
+  transient retry, caps total HTTP attempts at four, caps generated output at
+  16 tokens, applies a 60-second timeout to each request, fixes concurrency at
+  one, and stops on the first logical failure. Standalone and release smoke jobs
+  share one repository-wide concurrency group. Scheduled and manual live
+  execution requires `LIVE_SMOKE_ENABLED=true`. The release-tag smoke sets the
+  retry budget to zero and retains a three-attempt limit.
 - `release-please.yml`: patch-only versioning, an explicit `cometapi` branch
   component, separate pull requests, and the pinned root-package title
   `chore(main): release <version>`. It requires
@@ -414,8 +416,9 @@ dist-tag. Before authorizing release:
    immutable GitHub prerelease.
 9. Let the release workflow verify `immutable: true`, `main` ancestry, the
    exact tarball, and the trusted release-tag live smoke: exactly three
-   sequential requests, 16 output tokens, 60 seconds per request, concurrency
-   one, and stop on the first failure.
+   sequential logical requests, a zero retry budget, three HTTP attempts, 16
+   output tokens, 60 seconds per request, concurrency one, and stop on the
+   first logical failure.
 10. Approve publication of that same tarball through the protected `npm`
     environment with OIDC and provenance, or use the one-time alpha.1 bootstrap
     only when normal Trusted Publishing cannot create the new package. The

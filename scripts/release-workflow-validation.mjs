@@ -18,7 +18,7 @@ const RELEASE_WORKFLOW_STEP = "Run Release Please";
 const PUBLISH_OPERATION = "release";
 const NPM_TAG_POLICY_ID = 55718965;
 const PUBLISH_WORKFLOW_CONTRACT_SHA256 =
-  "081af3a47c0bef1ff38a77cf038ab3c66b8c14ea2b524c42bc4f2c21e41f9f79";
+  "684e15c13835ae3b139929ae78e5bbd5ba618ea8f30ebba8dbb4c42004d57a06";
 const PUBLISH_HANDOFF_IF =
   "vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'workflow_run' && github.run_attempt == 1 && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'";
 const PUBLISH_RESULT_IF = "steps.result.outputs.has-result == 'true'";
@@ -570,6 +570,7 @@ fi
       COMETAPI_KEY: "${{ secrets.COMETAPI_KEY }}",
       COMETAPI_LIVE_SMOKE: "1",
       COMETAPI_SMOKE_MODEL: "${{ vars.COMETAPI_SMOKE_MODEL || 'gpt-5.6-sol' }}",
+      COMETAPI_LIVE_RETRY_BUDGET: "0",
       COMETAPI_LIVE_REQUEST_LIMIT: "3",
       COMETAPI_LIVE_MAX_OUTPUT_TOKENS: "16",
       COMETAPI_LIVE_REQUEST_TIMEOUT_MS: "60000",
