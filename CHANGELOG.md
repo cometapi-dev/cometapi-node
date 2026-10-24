@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. The format
 follows Keep a Changelog, and versions follow Semantic Versioning.
 
+## [0.1.4](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.3...v0.1.4) (2026-10-24)
+
+
+### Bug Fixes
+
+* enforce patched Node.js runtime floors ([#65](https://github.com/cometapi-dev/cometapi-node/issues/65)) ([c670ecb](https://github.com/cometapi-dev/cometapi-node/commit/c670ecbd4c386784134ed3d479f667b12345178f))
+
 ## [0.1.3](https://github.com/cometapi-dev/cometapi-node/compare/v0.1.2...v0.1.3) (2026-07-31)
 
 
