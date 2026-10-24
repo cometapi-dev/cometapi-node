@@ -104,7 +104,10 @@ describe("GitHub Actions workflow contract", () => {
     const ci = workflow("ci.yml");
     const locked = job(ci, "locked");
     expect(locked).toMatch(
-      /matrix:\n {8}node-version:\n {10}- 22\.23\.4\n {10}- 24\.22\.1/,
+      /matrix:\n {8}include:\n {10}- node-version: 22\.23\.4\n {12}node-major: "22"\n {10}- node-version: 24\.22\.1\n {12}node-major: "24"/,
+    );
+    expect(locked).toMatch(
+      /^ {4}name: Locked OpenAI \/ Node\.js \$\{\{ matrix\.node-major \}\}\.x$/m,
     );
     expect(locked).not.toContain("- 26.x");
 
