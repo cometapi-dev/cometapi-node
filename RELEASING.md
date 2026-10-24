@@ -438,10 +438,10 @@ dist-tag. Before authorizing release:
     call before marking the alpha released. Enable Release Please only after
     the initial manual alpha is complete.
 
-The normal publication runner uses Node.js 22.14.0 or later and npm CLI 11.5.1
-or later; Node.js 24 is preferred. npm Trusted Publishing requires the manifest
-`repository.url` to match the canonical GitHub repository exactly. Publication
-is blocked until that canonical URL is configured.
+The normal publication runner uses Node.js 24.22.1 or later and npm CLI 11.5.1
+or later; a Node.js 22 runner must use 22.23.4 or later. npm Trusted Publishing
+requires the manifest `repository.url` to match the canonical GitHub repository
+exactly. Publication is blocked until that canonical URL is configured.
 
 ## Conditional first-publication bootstrap
 

@@ -17,7 +17,7 @@ incidental 0.1 change. Propose future scope through an issue and roadmap update.
 
 ## Development setup
 
-Use Node.js 22 or 24 and install exactly from the lock file:
+Use patched Node.js 22.23.4+ or 24.22.1+ and install exactly from the lock file:
 
 ```bash
 npm ci

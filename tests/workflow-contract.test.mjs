@@ -104,13 +104,13 @@ describe("GitHub Actions workflow contract", () => {
     const ci = workflow("ci.yml");
     const locked = job(ci, "locked");
     expect(locked).toMatch(
-      /matrix:\n {8}node-version:\n {10}- 22\.x\n {10}- 24\.x/,
+      /matrix:\n {8}node-version:\n {10}- 22\.23\.4\n {10}- 24\.22\.1/,
     );
     expect(locked).not.toContain("- 26.x");
 
     const advisory = job(ci, "current-node-advisory");
     expect(advisory).toMatch(/^ {4}continue-on-error: true$/m);
-    expect(advisory).toMatch(/^ {10}node-version: 26\.x$/m);
+    expect(advisory).toMatch(/^ {10}node-version: 26\.12\.1$/m);
   });
 
   it("runs the latest OpenAI lane for manually dispatched release-candidate CI", () => {

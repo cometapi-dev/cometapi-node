@@ -4,7 +4,7 @@
 
 Support for the 0.1 line is limited to the tested operations and runtimes in
 [COMPATIBILITY.md](./COMPATIBILITY.md): Chat Completions, Responses, and Models
-on Node.js 22 and 24. Node.js 26 is advisory. Inherited OpenAI methods and
+on patched Node.js 22.23.4+ and 24.22.1+. Node.js 26 is advisory. Inherited OpenAI methods and
 future provider or CometAPI-specific resources are outside this support
 contract.
 

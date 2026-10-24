@@ -36,7 +36,7 @@ describe("publication-neutral release documents", () => {
     "For stable 0.1.2, CI run 30515861246 passed.",
     "Release 0.2.0 provider adapters are planned.",
     "The minimum supported OpenAI version is 6.47.0.",
-    "Node.js 22.14.0 or later is required for Trusted Publishing.",
+    "Node.js 22.23.4 or later is required for Trusted Publishing.",
     "Release Please 17.6.0 generated the historical release.",
     "```text\nThe current npm release is 0.1.2.\n```",
     "<!-- The current npm release is 0.1.2. -->",

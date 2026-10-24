@@ -26,7 +26,7 @@
     "README.md"
   ],
   "engines": {
-    "node": "^22.0.0 || ^24.0.0"
+    "node": "^22.23.4 || ^24.22.1"
   },
   "repository": {
     "type": "git",
@@ -69,6 +69,7 @@
     "check:standalone-content": "node scripts/check-standalone-content.mjs",
     "check:self-contained": "node scripts/check-self-contained.mjs",
     "check:public-preview": "node scripts/check-public-preview.mjs",
+    "check:runtime": "node scripts/check-node-runtime.mjs",
     "actionlint": "node scripts/run-actionlint.mjs",
     "verify:offline": "node scripts/verify.mjs --offline",
     "verify": "node scripts/verify.mjs",

@@ -18,7 +18,7 @@ const RELEASE_WORKFLOW_STEP = "Run Release Please";
 const PUBLISH_OPERATION = "release";
 const NPM_TAG_POLICY_ID = 55718965;
 const PUBLISH_WORKFLOW_CONTRACT_SHA256 =
-  "684e15c13835ae3b139929ae78e5bbd5ba618ea8f30ebba8dbb4c42004d57a06";
+  "379ba8678416ff96d3bcf220a23e8602d2b55890164b2847331def10b4e99693";
 const PUBLISH_HANDOFF_IF =
   "vars.RELEASE_PLEASE_ENABLED == 'true' && github.event_name == 'workflow_run' && github.run_attempt == 1 && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'";
 const PUBLISH_RESULT_IF = "steps.result.outputs.has-result == 'true'";

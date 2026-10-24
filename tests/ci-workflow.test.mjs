@@ -108,7 +108,10 @@ describe("blocking CI workflow", () => {
       "matrix",
     ]);
     expect(Object.keys(locked.strategy.matrix)).toEqual(["node-version"]);
-    expect(locked.strategy?.matrix?.["node-version"]).toEqual(["22.x", "24.x"]);
+    expect(locked.strategy?.matrix?.["node-version"]).toEqual([
+      "22.23.4",
+      "24.22.1",
+    ]);
 
     const liveContractSteps = locked.steps.filter(
       (step) => step.run === "npm run test:live-contract",

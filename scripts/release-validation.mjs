@@ -16,7 +16,7 @@ const SEMVER_TOKEN_PATTERN = new RegExp(
   "gi",
 );
 
-export const SUPPORTED_NODE_ENGINES = "^22.0.0 || ^24.0.0";
+export const SUPPORTED_NODE_ENGINES = "^22.23.4 || ^24.22.1";
 export const SUPPORTED_OPENAI_RANGE = "^6.47.0";
 
 export const CANONICAL_IDENTITY = Object.freeze({
@@ -154,17 +154,23 @@ function assertSupportedNodeEngines(manifest, label) {
   }
 
   const majors = range.split(/\s*\|\|\s*/).map((clause) => {
-    const match = /^\^(0|[1-9]\d*)\.0\.0$/.exec(clause);
+    const match = /^\^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(clause);
     if (!match) {
       throw new Error(
         `${label} engines.node contains an unsupported range: ${clause}.`,
       );
     }
-    return Number(match[1]);
+    return [Number(match[1]), Number(match[2]), Number(match[3])];
   });
-  if (majors.length !== 2 || majors[0] !== 22 || majors[1] !== 24) {
+  if (
+    JSON.stringify(majors) !==
+    JSON.stringify([
+      [22, 23, 4],
+      [24, 22, 1],
+    ])
+  ) {
     throw new Error(
-      `${label} engines.node must support exactly Node.js 22 and 24.`,
+      `${label} engines.node must support patched Node.js 22.23.4 and 24.22.1 ranges.`,
     );
   }
 }
@@ -387,9 +393,19 @@ export function validatePublicationNeutralReadme(readme) {
       "README.md must link to the unversioned cometapi npm package page.",
     );
   }
+  const readmeVersionText = [
+    document.referenceText,
+    ...markdownCodeValues(document.root),
+  ]
+    .join("\n")
+    // Runtime patch floors are durable compatibility policy, not package
+    // release pins. Keep allowing the explicit Node.js versions required by
+    // the supported runtime matrix while rejecting package and dependency
+    // versions elsewhere in the README.
+    .replace(/\bNode(?:\.js)?\s+\d+\.\d+\.\d+/gi, "Node.js runtime");
   if (
     new RegExp(SEMVER_TOKEN_PATTERN.source, SEMVER_TOKEN_PATTERN.flags).test(
-      [document.referenceText, ...markdownCodeValues(document.root)].join("\n"),
+      readmeVersionText,
     )
   ) {
     throw new Error(

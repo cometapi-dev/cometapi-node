@@ -232,10 +232,11 @@ does not establish GitHub Actions execution.
 
 ## Runtime policy
 
-The package `engines` contract supports Node.js 22 and 24 only. Node.js 26 is an
-advisory compatibility target and remains outside `engines` until it enters LTS
-and the policy is deliberately updated. Node.js 18 and 20 are unsupported. The
-normal publication runtime is Node.js 24 and must satisfy npm Trusted
+The package `engines` contract supports patched Node.js 22.23.4+ and 24.22.1+
+within those major lines only. Node.js 26 is an advisory compatibility target
+and remains outside `engines` until it enters LTS and the policy is deliberately
+updated. Node.js 18 and 20 are unsupported. The normal publication runtime is
+Node.js 24.22.1+ and must satisfy npm Trusted
 Publishing's minimum Node.js and npm CLI versions recorded in
 [RELEASING.md](./RELEASING.md).
 
