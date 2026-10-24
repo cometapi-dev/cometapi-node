@@ -95,11 +95,11 @@ deferred. No compatibility aliases are provided for legacy client names.
 The consumer manifest range is `openai:^6.47.0`. Release documentation may list a
 version as verified only after the corresponding lane passes.
 
-| Lane        | Version selection                | Runtime           | Required evidence                        |
-| ----------- | -------------------------------- | ----------------- | ---------------------------------------- |
-| Minimum     | `6.47.0`                         | Node.js 22        | Runtime and ESM/CommonJS consumer types  |
-| Development | Version from `package-lock.json` | Node.js 22 and 24 | Every blocking runtime                   |
-| Canary      | Latest compatible 6.x            | Node.js 24        | Scheduled and dependency-update workflow |
+| Lane        | Version selection                | Runtime                       | Required evidence                        |
+| ----------- | -------------------------------- | ----------------------------- | ---------------------------------------- |
+| Minimum     | `6.47.0`                         | Node.js 22.23.4+              | Runtime and ESM/CommonJS consumer types  |
+| Development | Version from `package-lock.json` | Node.js 22.23.4+ and 24.22.1+ | Every blocking runtime                   |
+| Canary      | Latest compatible 6.x            | Node.js 24.22.1+              | Scheduled and dependency-update workflow |
 
 The compatible manifest range can resolve an upstream minor before it appears
 in this verified table. If the canary finds an incompatibility, maintainers

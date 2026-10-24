@@ -513,9 +513,10 @@ verification.
 ## First npm Publication Bootstrap
 
 The normal publication path is npm Trusted Publishing from a GitHub-hosted
-runner using Node.js 22.14.0 or later, npm CLI 11.5.1 or later, and a
-`repository.url` that exactly matches the GitHub repository. Node.js 24 is the
-preferred release runtime.
+runner using Node.js 24.22.1 or later, npm CLI 11.5.1 or later, and a
+`repository.url` that exactly matches the GitHub repository. A Node.js 22
+runner must use 22.23.4 or later; Node.js 24.22.1 is the preferred release
+runtime.
 
 Maintainers must first attempt to configure the Trusted Publisher normally. If
 npm does not allow configuration before the first package publication, only

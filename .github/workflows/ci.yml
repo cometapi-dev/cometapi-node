@@ -29,7 +29,7 @@ jobs:
       - name: Set up Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.x
+          node-version: 24.22.1
           cache: npm
       - name: Install locked dependencies
         run: npm ci
@@ -59,15 +59,17 @@ jobs:
         run: npm run actionlint
 
   locked:
-    name: Locked OpenAI / Node.js ${{ matrix.node-version }}
+    name: Locked OpenAI / Node.js ${{ matrix.node-major }}.x
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        node-version:
-          - 22.x
-          - 24.x
+        include:
+          - node-version: 22.23.4
+            node-major: "22"
+          - node-version: 24.22.1
+            node-major: "24"
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,7 +120,7 @@ jobs:
       - name: Set up Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.x
+          node-version: 24.22.1
           cache: npm
       - name: Install locked dependencies
         run: npm ci
@@ -179,7 +181,7 @@ jobs:
       - name: Set up Node.js 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.x
+          node-version: 22.23.4
           cache: npm
       - name: Install locked development dependencies
         run: npm ci
@@ -202,7 +204,7 @@ jobs:
       - name: Set up Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.x
+          node-version: 24.22.1
           cache: npm
       - name: Install locked development dependencies
         run: npm ci
@@ -222,7 +224,7 @@ jobs:
       - name: Set up Node.js 26
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 26.x
+          node-version: 26.12.1
           cache: npm
       - name: Install locked dependencies
         run: npm ci
@@ -249,7 +251,7 @@ jobs:
       - name: Set up Node.js 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24.x
+          node-version: 24.22.1
           cache: npm
       - name: Install locked dependencies
         run: npm ci

@@ -27,12 +27,14 @@ keys are outside the 0.1 scope.
 
 ## Requirements
 
-- Node.js 22 or 24
+- Node.js 22.23.4 or newer within the 22.x line, or Node.js 24.22.1 or newer
+  within the 24.x line
 - A CometAPI API key
 
-Node.js 26 is an advisory test target until it enters LTS. Node.js 18 and 20 are
-not supported. The package `engines` range includes Node.js 22 and 24 only;
-passing the Node.js 26 advisory lane does not create a support claim.
+Node.js 26 is an advisory test target until it enters LTS; the advisory lane uses
+Node.js 26.12.1 or newer. Node.js 18 and 20 are not supported. The package
+`engines` range includes only the patched Node.js 22 and 24 lines; passing the
+Node.js 26 advisory lane does not create a support claim.
 
 Create an API key at <https://www.cometapi.com/console/token>. Keep it secret:
 do not embed it in source code, browser bundles, logs, or committed environment

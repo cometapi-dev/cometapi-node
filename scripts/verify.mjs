@@ -1,6 +1,7 @@
 import { run } from "./lib.mjs";
 
 const offlineOnly = process.argv.includes("--offline");
+run("npm", ["run", "check:runtime"]);
 const offlineChecks = [
   "format:check",
   "lint",
