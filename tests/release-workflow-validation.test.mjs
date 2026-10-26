@@ -369,6 +369,21 @@ describe("Publish workflow dispatch contract", () => {
   });
 
   it.each([
+    "actions/setup-node",
+    "actions/upload-artifact",
+    "actions/download-artifact",
+  ])("rejects an unreviewed %s commit", (action) => {
+    const workflow = workflowContract();
+    const step = Object.values(workflow.jobs)
+      .flatMap((job) => job.steps)
+      .find((candidate) => candidate.uses?.startsWith(`${action}@`));
+    step.uses = `${action}@${"a".repeat(40)}`;
+    expect(() => validatePublishWorkflowContract(workflow)).toThrow(
+      /Publish executable definition digest/,
+    );
+  });
+
+  it.each([
     [
       "optional control input",
       (workflow) => {
