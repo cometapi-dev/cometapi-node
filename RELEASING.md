@@ -182,6 +182,17 @@ Responses streams. It never contacts the production API.
 validate every workflow. It is not a GitHub Actions emulator and does not prove
 that any workflow executed remotely.
 
+Action updates that touch `publish.yml` require a coordinated review of the
+upstream commits and the resulting executable workflow. After that review,
+update `PUBLISH_WORKFLOW_CONTRACT_SHA256` in
+`scripts/release-workflow-validation.mjs` in the same pull request as the action
+pins, then run `npm run verify`. The fingerprint is the SHA-256 of
+`JSON.stringify(parse(publishYaml))`, using the repository's `yaml` package.
+Dependabot cannot perform this review or update the fingerprint. Repeated
+rebases or reruns of an action-only pull request will therefore keep failing;
+finish the coordinated update before merging it. Preserve the negative tests
+for unreviewed action commits, permissions, gates, and publication commands.
+
 ## Version and dist-tag agreement
 
 `package.json` is the sole candidate-version authority; validation must not
